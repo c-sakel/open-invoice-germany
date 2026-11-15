@@ -87,6 +87,10 @@ model Organization {
   paymentProviderEvents   PaymentProviderEvent[]
   bankTransactions        BankTransaction[]
   bankHints               BankCounterpartyHint[]
+  datevSettings           DatevSettings?
+  datevMappings           DatevAccountMapping[]
+  datevExports            DatevExport[]
+  datevExportItems        DatevExportItem[]
   sepaCreditorId          String? // Phase 18e: SEPA-Glaeubiger-ID (BT-90), normalisiert
 }
 
@@ -155,7 +159,9 @@ model Customer {
   sepaMandateSignedAt     DateTime? // Datum der Unterschrift (nur PDF-Vorabankuendigung)
   sepaDebitIban           String? // belastetes Konto (BT-91), personenbezogen
   sepaDebitAccountName    String? // Kontoinhaber, nur PDF
+  datevAccount            Int? // Debitorennummer; nach dem ersten Export unveraenderlich (Domain)
 
+  @@unique([orgId, datevAccount])
   @@index([orgId])
   @@index([orgId, updatedAt]) // Phase 18d: Abgleich updatedSince
   @@index([orgId, customerNumber])
@@ -1996,4 +2002,90 @@ model PaymentProviderEvent {
 
   @@unique([provider, eventId])
   @@index([orgId, receivedAt])
+}
+
+model DatevSettings {
+  id                      String       @id @default(cuid())
+  orgId                   String       @unique
+  org                     Organization @relation(fields: [orgId], references: [id])
+  consultantNumber        Int?
+  clientNumber            Int?
+  accountLength           Int          @default(4)
+  chartOfAccounts         String? // SKR03 | SKR04
+  fiscalYearStartMonth    Int          @default(1)
+  debtorMode              String       @default("PERSONAL") // PERSONAL | COLLECTIVE
+  collectiveDebtorAccount Int?
+  debtorRangeStart        Int?
+  bankAccount             Int?
+  cashAccount             Int?
+  exportPayments          Boolean      @default(false)
+  exportDebtors           Boolean      @default(true)
+  useGeneralReversal      Boolean      @default(true)
+  lockBatch               Boolean      @default(false)
+  dictationCode           String?
+  confirmedHash           String? // Bestaetigung der Kontenzuordnung, gebunden an den Hash der Einstellungen
+  confirmedAt             DateTime?
+  confirmedNote           String?
+  createdAt               DateTime     @default(now())
+  updatedAt               DateTime     @updatedAt
+}
+
+model DatevAccountMapping {
+  id        String       @id @default(cuid())
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id])
+  kind      String // REVENUE | DOWNPAYMENT | MONEY
+  key       String // REVENUE/DOWNPAYMENT: "<taxScheme>|<taxCategory>|<taxRate>"; MONEY: "PROVIDER:<code>" | "METHOD:<code>"
+  account   Int
+  buKey     String?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@unique([orgId, kind, key])
+}
+
+model DatevExport {
+  id           String            @id @default(cuid())
+  orgId        String
+  org          Organization      @relation(fields: [orgId], references: [id])
+  mode         String // PERIOD | SUPPLEMENT
+  fromMonth    String
+  toMonth      String
+  repeat       Boolean           @default(false)
+  lineCount    Int
+  itemCount    Int
+  manualCount  Int
+  debtorCount  Int
+  sha256       String
+  archivePath  String
+  filesJson    String
+  settingsJson String
+  createdBy    String
+  createdAt    DateTime          @default(now())
+  items        DatevExportItem[]
+
+  @@index([orgId, createdAt])
+}
+
+model DatevExportItem {
+  id          String       @id @default(cuid())
+  orgId       String
+  org         Organization @relation(fields: [orgId], references: [id])
+  exportId    String
+  export      DatevExport  @relation(fields: [exportId], references: [id])
+  itemKey     String // INV:<invoiceId> | PAY:<paymentId> | REV:<paymentId>
+  invoiceId   String?
+  paymentId   String?
+  customerId  String?
+  month       String // YYYY-MM (Berliner Buchungstag)
+  status      String // EXPORTED | MANUAL | EMPTY
+  lineCount   Int
+  amountCents Int // EUR, vorzeichenbehaftet
+  reason      String?
+  warning     String?
+  createdAt   DateTime     @default(now())
+
+  @@index([orgId, itemKey])
+  @@index([orgId, month])
+  @@index([exportId])
 }

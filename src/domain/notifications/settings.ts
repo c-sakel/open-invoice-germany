@@ -27,6 +27,7 @@ export const NOTIFICATION_TYPES = {
   PAYMENT_RULE_FAILED: "Regel nach Zahlungseingang fehlgeschlagen",
   ONLINE_OVERPAYMENT: "Online-Zahlung hoeher als offener Betrag",
   ONLINE_PAYMENT_ISSUE: "Online-Zahlung pruefen",
+  DATEV_LATE_ITEMS: "DATEV: Nachtraege in bereits exportierten Monaten",
 } as const;
 
 export type NotificationType = keyof typeof NOTIFICATION_TYPES;

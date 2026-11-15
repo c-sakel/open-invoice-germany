@@ -14,7 +14,7 @@ cleanup
 
 fail() { echo "FEHLGESCHLAGEN: $1" >&2; exit 1; }
 TABLES_BASE=71  # Tabellenstand vor Zahlungsanbieter
-TABLES_EXPECTED=$((TABLES_BASE + 5))  # Zahlungsanbieter: PaymentProviderSettings, PaymentProviderAccount, InvoicePayLink, PaymentProviderAttempt, PaymentProviderEvent (76; Stripe: nur Spalten)
+TABLES_EXPECTED=$((TABLES_BASE + 5 + 4))  # Zahlungsanbieter: PaymentProviderSettings, PaymentProviderAccount, InvoicePayLink, PaymentProviderAttempt, PaymentProviderEvent (76; Stripe: nur Spalten); DATEV: 4 Tabellen (80)
 
 # Portabel: macOS hat kein timeout(1). Beendet den Befehl nach N Sekunden.
 run_with_timeout() {
@@ -42,7 +42,7 @@ run_with_timeout 120 ./scripts/db-prepare.sh >/dev/null
 COUNT=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
   "select count(*) from information_schema.tables where table_schema='public'")
 [ "$COUNT" = "$TABLES_EXPECTED" ] || fail "erwartet ${TABLES_EXPECTED} Tabellen, gefunden $COUNT"
-echo "    ok — ${TABLES_EXPECTED} Tabellen angelegt (inkl. _prisma_migrations; Phase 7: BrandingSettings, PrintSettings; Phase 8a: CustomFieldDefinition; Phase 8b: ActivityLog, Notification, NotificationSettings; Phase 10: ApiKey, ApiIdempotency, WebhookEndpoint, WebhookDelivery; Phase 12d: ApiRequestLog, ApiSettings; Phase 13d: DocumentTemplate, Tag, DocumentTag; Phase 14a: BaseInterestRate; Phase 16a: ArchivedDocument, ChainVerification, SystemMarker; Phase 16b: ExchangeRate; Phase 17a: VatIdCheck; Phase 17d: RecoveryCode, PasswordResetToken; Phase 16d: PostalSettings, PostalJob, PostalJobEvent; Phase 18f: RecurringUsage; Kundenportal: CustomerPortalSettings, CustomerPortalLink, CustomerPortalEvent; Bankabgleich: BankStatementImport, BankTransaction, BankMatch, BankCounterpartyHint; Zahlungsaktionen: PaymentRule, PaymentRuleRun; Zahlungsanbieter: PaymentProviderSettings, PaymentProviderAccount, InvoicePayLink, PaymentProviderAttempt, PaymentProviderEvent)"
+echo "    ok — ${TABLES_EXPECTED} Tabellen angelegt (inkl. _prisma_migrations; Phase 7: BrandingSettings, PrintSettings; Phase 8a: CustomFieldDefinition; Phase 8b: ActivityLog, Notification, NotificationSettings; Phase 10: ApiKey, ApiIdempotency, WebhookEndpoint, WebhookDelivery; Phase 12d: ApiRequestLog, ApiSettings; Phase 13d: DocumentTemplate, Tag, DocumentTag; Phase 14a: BaseInterestRate; Phase 16a: ArchivedDocument, ChainVerification, SystemMarker; Phase 16b: ExchangeRate; Phase 17a: VatIdCheck; Phase 17d: RecoveryCode, PasswordResetToken; Phase 16d: PostalSettings, PostalJob, PostalJobEvent; Phase 18f: RecurringUsage; Kundenportal: CustomerPortalSettings, CustomerPortalLink, CustomerPortalEvent; Bankabgleich: BankStatementImport, BankTransaction, BankMatch, BankCounterpartyHint; Zahlungsaktionen: PaymentRule, PaymentRuleRun; Zahlungsanbieter: PaymentProviderSettings, PaymentProviderAccount, InvoicePayLink, PaymentProviderAttempt, PaymentProviderEvent; DATEV: DatevSettings, DatevAccountMapping, DatevExport, DatevExportItem)"
 
 echo "==> Datenbank leeren und Bestandslage herstellen"
 docker exec "$CONTAINER" psql -U oig -d openinvoice \
@@ -247,7 +247,7 @@ npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >
 # — ebenso ausgeklammert, sonst P1014. Phase 12c: die Marken-Migration UND die Steuersatz-
 # Migration aendern ebenfalls Phase-7-Tabellen (BrandingSettings bzw. DocumentSettings) —
 # aus demselben Grund ausgeklammert.
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260904044136_phase7_settings|20260904140030_phase8b_fixwave|20260907075900_phase11b_layouts|20260907090333_phase11b_footermode_backfill|20260908090100_phase12a_giro_size|20260910090100_phase12c_branding_marke|20260910091100_phase12c_tax_rates|20261111090100_phase16a_gobd_betrieb|20261112090100_phase16b_ausland|20261113090100_phase16e_oss|20261114090100_phase16g_layout|20261115090100_phase17a_erechnung|20261116090100_phase17d_auth|20261117090100_phase16d_postal|20261118090100_phase18c_belegfluss|20261119090100_phase18e_payment_means|20261119100100_phase18d_api_indexes|20261120090100_phase18f_usage|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260904044136_phase7_settings|20260904140030_phase8b_fixwave|20260907075900_phase11b_layouts|20260907090333_phase11b_footermode_backfill|20260908090100_phase12a_giro_size|20260910090100_phase12c_branding_marke|20260910091100_phase12c_tax_rates|20261111090100_phase16a_gobd_betrieb|20261112090100_phase16b_ausland|20261113090100_phase16e_oss|20261114090100_phase16g_layout|20261115090100_phase17a_erechnung|20261116090100_phase17d_auth|20261117090100_phase16d_postal|20261118090100_phase18c_belegfluss|20261119090100_phase18e_payment_means|20261119100100_phase18d_api_indexes|20261120090100_phase18f_usage|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe|20261127090100_datev)$' | sort); do
   npx prisma db execute --url "$DATABASE_URL" \
     --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
   npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
@@ -1004,7 +1004,7 @@ docker exec "$CONTAINER" psql -U oig -d openinvoice \
 npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261111090100_phase16a_gobd_betrieb|20261112090100_phase16b_ausland|20261113090100_phase16e_oss|20261114090100_phase16g_layout|20261115090100_phase17a_erechnung|20261116090100_phase17d_auth|20261117090100_phase16d_postal|20261118090100_phase18c_belegfluss|20261119090100_phase18e_payment_means|20261119100100_phase18d_api_indexes|20261120090100_phase18f_usage|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261111090100_phase16a_gobd_betrieb|20261112090100_phase16b_ausland|20261113090100_phase16e_oss|20261114090100_phase16g_layout|20261115090100_phase17a_erechnung|20261116090100_phase17d_auth|20261117090100_phase16d_postal|20261118090100_phase18c_belegfluss|20261119090100_phase18e_payment_means|20261119100100_phase18d_api_indexes|20261120090100_phase18f_usage|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe|20261127090100_datev)$' | sort); do
   npx prisma db execute --url "$DATABASE_URL" \
     --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
   npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
@@ -1049,7 +1049,7 @@ docker exec "$CONTAINER" psql -U oig -d openinvoice \
 npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261112090100_phase16b_ausland|20261113090100_phase16e_oss|20261114090100_phase16g_layout|20261115090100_phase17a_erechnung|20261116090100_phase17d_auth|20261117090100_phase16d_postal|20261118090100_phase18c_belegfluss|20261119090100_phase18e_payment_means|20261119100100_phase18d_api_indexes|20261120090100_phase18f_usage|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261112090100_phase16b_ausland|20261113090100_phase16e_oss|20261114090100_phase16g_layout|20261115090100_phase17a_erechnung|20261116090100_phase17d_auth|20261117090100_phase16d_postal|20261118090100_phase18c_belegfluss|20261119090100_phase18e_payment_means|20261119100100_phase18d_api_indexes|20261120090100_phase18f_usage|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe|20261127090100_datev)$' | sort); do
   npx prisma db execute --url "$DATABASE_URL" \
     --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
   npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
@@ -1120,7 +1120,7 @@ docker exec "$CONTAINER" psql -U oig -d openinvoice \
 npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261113090100_phase16e_oss|20261114090100_phase16g_layout|20261115090100_phase17a_erechnung|20261116090100_phase17d_auth|20261117090100_phase16d_postal|20261118090100_phase18c_belegfluss|20261119090100_phase18e_payment_means|20261119100100_phase18d_api_indexes|20261120090100_phase18f_usage|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261113090100_phase16e_oss|20261114090100_phase16g_layout|20261115090100_phase17a_erechnung|20261116090100_phase17d_auth|20261117090100_phase16d_postal|20261118090100_phase18c_belegfluss|20261119090100_phase18e_payment_means|20261119100100_phase18d_api_indexes|20261120090100_phase18f_usage|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe|20261127090100_datev)$' | sort); do
   npx prisma db execute --url "$DATABASE_URL" \
     --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
   npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
@@ -1164,7 +1164,7 @@ SRCVAL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select coales
 [ "$SRCVAL" = "<null>|<null>" ] || fail "QuoteLine/RecurringInvoiceLine.ossCategory abweichend ('$SRCVAL'), erwartet <null>|<null>"
 NSVAL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select string_agg(\"enabledTypesJson\", ' ' order by id) from \"NotificationSettings\" where id in ('ns28','ns28b')")
 # Fall 28 laeuft am Ende mit ALLEN Migrationen: spaetere Migrationen ergaenzen weitere Typen.
-[ "$NSVAL" = '["INVOICE_OVERDUE","QUOTE_EXPIRING","OSS_THRESHOLD","POSTAL_FAILED","POSTAL_PENDING","DUNNING_NOT_SENT","PAYMENT_RULE","PAYMENT_RULE_FAILED","ONLINE_OVERPAYMENT","ONLINE_PAYMENT_ISSUE"] ["OSS_THRESHOLD","POSTAL_FAILED","POSTAL_PENDING","DUNNING_NOT_SENT","PAYMENT_RULE","PAYMENT_RULE_FAILED","ONLINE_OVERPAYMENT","ONLINE_PAYMENT_ISSUE"]' ] || fail "NotificationSettings.enabledTypesJson ohne OSS_THRESHOLD/Postversand-/Zahlungsregel-/Online-Zahlungs-Typen ergaenzt ('$NSVAL')"
+[ "$NSVAL" = '["INVOICE_OVERDUE","QUOTE_EXPIRING","OSS_THRESHOLD","POSTAL_FAILED","POSTAL_PENDING","DUNNING_NOT_SENT","PAYMENT_RULE","PAYMENT_RULE_FAILED","ONLINE_OVERPAYMENT","ONLINE_PAYMENT_ISSUE","DATEV_LATE_ITEMS"] ["OSS_THRESHOLD","POSTAL_FAILED","POSTAL_PENDING","DUNNING_NOT_SENT","PAYMENT_RULE","PAYMENT_RULE_FAILED","ONLINE_OVERPAYMENT","ONLINE_PAYMENT_ISSUE","DATEV_LATE_ITEMS"]' ] || fail "NotificationSettings.enabledTypesJson ohne OSS_THRESHOLD/Postversand-/Zahlungsregel-/Online-Zahlungs-/DATEV-Typen ergaenzt ('$NSVAL')"
 COUNT28=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from information_schema.tables where table_schema='public'")
 [ "$COUNT28" = "$TABLES_EXPECTED" ] || fail "erwartet weiterhin ${TABLES_EXPECTED} Tabellen nach Phase 16e (nur sechs Spalten), gefunden $COUNT28"
 echo "    ok — DocumentSettings ALL_EU_B2C/80, Product.ossCategory=NONE, InvoiceLine.ossCategory NULL auf Bestandszeilen, OSS_THRESHOLD in NotificationSettings ergaenzt, ${TABLES_EXPECTED} Tabellen"
@@ -1177,7 +1177,7 @@ docker exec "$CONTAINER" psql -U oig -d openinvoice \
 npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261114090100_phase16g_layout|20261115090100_phase17a_erechnung|20261116090100_phase17d_auth|20261117090100_phase16d_postal|20261118090100_phase18c_belegfluss|20261119090100_phase18e_payment_means|20261119100100_phase18d_api_indexes|20261120090100_phase18f_usage|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261114090100_phase16g_layout|20261115090100_phase17a_erechnung|20261116090100_phase17d_auth|20261117090100_phase16d_postal|20261118090100_phase18c_belegfluss|20261119090100_phase18e_payment_means|20261119100100_phase18d_api_indexes|20261120090100_phase18f_usage|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe|20261127090100_datev)$' | sort); do
   npx prisma db execute --url "$DATABASE_URL" \
     --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
   npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
@@ -1223,7 +1223,7 @@ docker exec "$CONTAINER" psql -U oig -d openinvoice \
 npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261115090100_phase17a_erechnung|20261116090100_phase17d_auth|20261117090100_phase16d_postal|20261118090100_phase18c_belegfluss|20261119090100_phase18e_payment_means|20261119100100_phase18d_api_indexes|20261120090100_phase18f_usage|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261115090100_phase17a_erechnung|20261116090100_phase17d_auth|20261117090100_phase16d_postal|20261118090100_phase18c_belegfluss|20261119090100_phase18e_payment_means|20261119100100_phase18d_api_indexes|20261120090100_phase18f_usage|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe|20261127090100_datev)$' | sort); do
   npx prisma db execute --url "$DATABASE_URL" \
     --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
   npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
@@ -1259,7 +1259,7 @@ docker exec "$CONTAINER" psql -U oig -d openinvoice \
 npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261116090100_phase17d_auth|20261117090100_phase16d_postal|20261118090100_phase18c_belegfluss|20261119090100_phase18e_payment_means|20261119100100_phase18d_api_indexes|20261120090100_phase18f_usage|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261116090100_phase17d_auth|20261117090100_phase16d_postal|20261118090100_phase18c_belegfluss|20261119090100_phase18e_payment_means|20261119100100_phase18d_api_indexes|20261120090100_phase18f_usage|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe|20261127090100_datev)$' | sort); do
   npx prisma db execute --url "$DATABASE_URL" \
     --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
   npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
@@ -1337,7 +1337,7 @@ docker exec "$CONTAINER" psql -U oig -d openinvoice \
 npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261117090100_phase16d_postal|20261118090100_phase18c_belegfluss|20261119090100_phase18e_payment_means|20261119100100_phase18d_api_indexes|20261120090100_phase18f_usage|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261117090100_phase16d_postal|20261118090100_phase18c_belegfluss|20261119090100_phase18e_payment_means|20261119100100_phase18d_api_indexes|20261120090100_phase18f_usage|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe|20261127090100_datev)$' | sort); do
   npx prisma db execute --url "$DATABASE_URL" \
     --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
   npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
@@ -1359,7 +1359,7 @@ CHVAL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"deliv
 STVAL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"channel\"||'|'||\"postFallback\"::text from \"DunningStage\" where id='ds32'")
 [ "$STVAL" = "CUSTOMER|true" ] || fail "DunningStage-Bestand abweichend ('$STVAL'), erwartet CUSTOMER|true"
 NS32=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"enabledTypesJson\" from \"NotificationSettings\" where id='ns32'")
-[ "$NS32" = '["INVOICE_OVERDUE","POSTAL_FAILED","POSTAL_PENDING","DUNNING_NOT_SENT","PAYMENT_RULE","PAYMENT_RULE_FAILED","ONLINE_OVERPAYMENT","ONLINE_PAYMENT_ISSUE"]' ] || fail "NotificationSettings.enabledTypesJson ohne Postversand-/Zahlungsregel-/Online-Zahlungs-Typen ergaenzt ('$NS32')"
+[ "$NS32" = '["INVOICE_OVERDUE","POSTAL_FAILED","POSTAL_PENDING","DUNNING_NOT_SENT","PAYMENT_RULE","PAYMENT_RULE_FAILED","ONLINE_OVERPAYMENT","ONLINE_PAYMENT_ISSUE","DATEV_LATE_ITEMS"]' ] || fail "NotificationSettings.enabledTypesJson ohne Postversand-/Zahlungsregel-/Online-Zahlungs-/DATEV-Typen ergaenzt ('$NS32')"
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO "PostalSettings" ("id","orgId","updatedAt") VALUES ('ps32','org32',NOW());
 SQL
@@ -1402,7 +1402,7 @@ docker exec "$CONTAINER" psql -U oig -d openinvoice \
 npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261118090100_phase18c_belegfluss|20261119090100_phase18e_payment_means|20261119100100_phase18d_api_indexes|20261120090100_phase18f_usage|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261118090100_phase18c_belegfluss|20261119090100_phase18e_payment_means|20261119100100_phase18d_api_indexes|20261120090100_phase18f_usage|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe|20261127090100_datev)$' | sort); do
   npx prisma db execute --url "$DATABASE_URL" \
     --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
   npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
@@ -1441,7 +1441,7 @@ docker exec "$CONTAINER" psql -U oig -d openinvoice \
 npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261119090100_phase18e_payment_means|20261119100100_phase18d_api_indexes|20261120090100_phase18f_usage|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261119090100_phase18e_payment_means|20261119100100_phase18d_api_indexes|20261120090100_phase18f_usage|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe|20261127090100_datev)$' | sort); do
   npx prisma db execute --url "$DATABASE_URL" \
     --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
   npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
@@ -1480,7 +1480,7 @@ docker exec "$CONTAINER" psql -U oig -d openinvoice \
 npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261119100100_phase18d_api_indexes|20261120090100_phase18f_usage|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261119100100_phase18d_api_indexes|20261120090100_phase18f_usage|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe|20261127090100_datev)$' | sort); do
   npx prisma db execute --url "$DATABASE_URL" \
     --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
   npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
@@ -1516,7 +1516,7 @@ docker exec "$CONTAINER" psql -U oig -d openinvoice \
 npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261120090100_phase18f_usage|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261120090100_phase18f_usage|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe|20261127090100_datev)$' | sort); do
   npx prisma db execute --url "$DATABASE_URL" \
     --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
   npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
@@ -1582,7 +1582,7 @@ docker exec "$CONTAINER" psql -U oig -d openinvoice \
 npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe|20261127090100_datev)$' | sort); do
   npx prisma db execute --url "$DATABASE_URL" \
     --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
   npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
@@ -1640,7 +1640,7 @@ docker exec "$CONTAINER" psql -U oig -d openinvoice \
 npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe|20261127090100_datev)$' | sort); do
   npx prisma db execute --url "$DATABASE_URL" \
     --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
   npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
@@ -1702,7 +1702,7 @@ docker exec "$CONTAINER" psql -U oig -d openinvoice \
 npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe|20261127090100_datev)$' | sort); do
   npx prisma db execute --url "$DATABASE_URL" \
     --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
   npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
@@ -1743,7 +1743,7 @@ docker exec "$CONTAINER" psql -U oig -d openinvoice \
 npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe|20261127090100_datev)$' | sort); do
   npx prisma db execute --url "$DATABASE_URL" \
     --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
   npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
@@ -1800,7 +1800,7 @@ docker exec "$CONTAINER" psql -U oig -d openinvoice \
 npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261125090100_zahlungsanbieter|20261126090100_stripe)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261125090100_zahlungsanbieter|20261126090100_stripe|20261127090100_datev)$' | sort); do
   npx prisma db execute --url "$DATABASE_URL" \
     --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
   npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
@@ -1881,7 +1881,7 @@ docker exec "$CONTAINER" psql -U oig -d openinvoice \
 npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261126090100_stripe)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261126090100_stripe|20261127090100_datev)$' | sort); do
   npx prisma db execute --url "$DATABASE_URL" \
     --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
   npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
@@ -1918,5 +1918,80 @@ SQL
 COUNT42=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from information_schema.tables where table_schema='public'")
 [ "$COUNT42" = "$TABLES_EXPECTED" ] || fail "erwartet $TABLES_EXPECTED Tabellen nach Stripe, gefunden $COUNT42"
 echo "    ok — Bestandslink liveIssued true (boolean), Zahlungsreferenz NULL, mehrere NULL erlaubt, doppelte Referenz je Anbieter scheitert (unique), ${TABLES_EXPECTED} Tabellen"
+
+echo "==> Fall 43: DATEV — Einstellungen, Kontenzuordnung, Exportprotokoll, Debitorennummer"
+# Praeambel wie Fall 42, Ausschluss nur der DATEV-Migration. Bestand: zwei Organisationen (Benachrichtigungstypen), Kunde.
+docker exec "$CONTAINER" psql -U oig -d openinvoice \
+  -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;' >/dev/null
+npx prisma db execute --url "$DATABASE_URL" \
+  --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
+npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261127090100_datev)$' | sort); do
+  npx prisma db execute --url "$DATABASE_URL" \
+    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
+  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+done
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
+INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
+  VALUES ('org43a','Bestand Dreiundvierzig GmbH','Weg 43','99943','Bestadt',NOW()),
+         ('org43b','Bestand Dreiundvierzig Zwei GmbH','Weg 44','99943','Bestadt',NOW());
+INSERT INTO "Customer" ("id","orgId","name","addressLine1","postalCode","city","countryCode","updatedAt")
+  VALUES ('cust43a','org43a','Dreiundvierzig-Kunde GmbH','Kundenweg 43','99943','Bestadt','DE',NOW());
+INSERT INTO "NotificationSettings" ("id","orgId","enabledTypesJson","updatedAt")
+  VALUES ('ns43a','org43a','["INVOICE_DUE_TODAY"]',NOW()),
+         ('ns43b','org43b','[]',NOW());
+SQL
+npx prisma migrate deploy --config prisma.postgres.config.ts >/dev/null \
+  || fail "DATEV-Migration ist auf der Bestands-DB fehlgeschlagen"
+for T in DatevSettings DatevAccountMapping DatevExport DatevExportItem; do
+  T43=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from information_schema.tables where table_schema='public' and table_name='$T'")
+  [ "$T43" = "1" ] || fail "Tabelle $T fehlt"
+done
+DA43=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from \"Customer\" where id='cust43a' and \"datevAccount\" is null")
+[ "$DA43" = "1" ] || fail "Customer.datevAccount nicht NULL auf Bestand"
+DT43=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select data_type from information_schema.columns where table_schema='public' and table_name='Customer' and column_name='datevAccount'")
+[ "$DT43" = "integer" ] || fail "datevAccount hat Typ '$DT43', erwartet integer"
+for NSID in ns43a ns43b; do
+  N43=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select (length(\"enabledTypesJson\") - length(replace(\"enabledTypesJson\", 'DATEV_LATE_ITEMS', ''))) / length('DATEV_LATE_ITEMS') from \"NotificationSettings\" where id='$NSID'")
+  [ "$N43" = "1" ] || fail "Benachrichtigungstyp DATEV_LATE_ITEMS bei $NSID nicht genau einmal ('$N43')"
+done
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL' || fail "Debitorennummern nicht einfuegbar (gleiche Nummer in zwei Organisationen, zwei NULL)"
+INSERT INTO "Customer" ("id","orgId","name","addressLine1","postalCode","city","countryCode","updatedAt","datevAccount")
+  VALUES ('cust43b','org43a','Dreiundvierzig Zwei','Weg 1','99943','Bestadt','DE',NOW(),10001),
+         ('cust43c','org43b','Dreiundvierzig Drei','Weg 2','99943','Bestadt','DE',NOW(),10001),
+         ('cust43d','org43a','Dreiundvierzig Vier','Weg 3','99943','Bestadt','DE',NOW(),NULL);
+SQL
+pg_expect_error 'duplicate key value violates unique constraint "Customer_orgId_datevAccount_key"' "Doppelte Debitorennummer je Organisation wurde nicht abgewiesen" <<'SQL'
+INSERT INTO "Customer" ("id","orgId","name","addressLine1","postalCode","city","countryCode","updatedAt","datevAccount")
+  VALUES ('cust43e','org43a','Dreiundvierzig Fuenf','Weg 4','99943','Bestadt','DE',NOW(),10001);
+SQL
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL' || fail "Einstellung, Zuordnung und Export nicht einfuegbar"
+INSERT INTO "DatevSettings" ("id","orgId","updatedAt") VALUES ('ds43a','org43a',NOW());
+INSERT INTO "DatevAccountMapping" ("id","orgId","kind","key","account","updatedAt")
+  VALUES ('dm43a','org43a','REVENUE','REGULAR|S|19',8400,NOW());
+INSERT INTO "DatevExport" ("id","orgId","mode","fromMonth","toMonth","lineCount","itemCount","manualCount","debtorCount","sha256","archivePath","filesJson","settingsJson","createdBy")
+  VALUES ('de43a','org43a','PERIOD','2096-01','2096-01',1,1,0,1,'sha43','datev/x.zip','[]','{}','test');
+INSERT INTO "DatevExportItem" ("id","orgId","exportId","itemKey","month","status","lineCount","amountCents")
+  VALUES ('di43a','org43a','de43a','INV:inv43a','2096-01','EXPORTED',1,11900);
+SQL
+DEF43=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"accountLength\"::text || '|' || \"debtorMode\" || '|' || \"lockBatch\"::text || '|' || \"exportPayments\"::text from \"DatevSettings\" where id='ds43a'")
+[ "$DEF43" = "4|PERSONAL|false|false" ] || fail "DatevSettings-Standardwerte falsch ('$DEF43')"
+pg_expect_error 'duplicate key value violates unique constraint "DatevSettings_orgId_key"' "Zweite DatevSettings je Organisation wurde nicht abgewiesen" <<'SQL'
+INSERT INTO "DatevSettings" ("id","orgId","updatedAt") VALUES ('ds43b','org43a',NOW());
+SQL
+pg_expect_error 'duplicate key value violates unique constraint "DatevAccountMapping_orgId_kind_key_key"' "Doppelte Kontenzuordnung wurde nicht abgewiesen" <<'SQL'
+INSERT INTO "DatevAccountMapping" ("id","orgId","kind","key","account","updatedAt")
+  VALUES ('dm43b','org43a','REVENUE','REGULAR|S|19',8401,NOW());
+SQL
+pg_expect_error 'violates foreign key constraint "DatevExportItem_exportId_fkey"' "Position ohne Export wurde nicht abgewiesen" <<'SQL'
+INSERT INTO "DatevExportItem" ("id","orgId","exportId","itemKey","month","status","lineCount","amountCents")
+  VALUES ('di43b','org43a','gibt-es-nicht','INV:x','2096-01','EXPORTED',1,1);
+SQL
+pg_expect_error 'violates foreign key constraint "DatevExportItem_exportId_fkey"' "Export mit Positionen wurde loeschbar (erwartet: Restrict)" <<'SQL'
+DELETE FROM "DatevExport" WHERE id='de43a';
+SQL
+COUNT43=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from information_schema.tables where table_schema='public'")
+[ "$COUNT43" = "$TABLES_EXPECTED" ] || fail "erwartet $TABLES_EXPECTED Tabellen nach DATEV, gefunden $COUNT43"
+echo "    ok — vier Tabellen, datevAccount NULL (integer) auf Bestand, Benachrichtigungstyp je Organisation genau einmal, Debitorennummer je Organisation eindeutig (zwei Organisationen und zwei NULL ok), Einstellungs-Standardwerte 4|PERSONAL|false|false, Unique- und Restrict-Regeln greifen, ${TABLES_EXPECTED} Tabellen"
 
 echo "ALLE TESTS BESTANDEN"
