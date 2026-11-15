@@ -1034,6 +1034,7 @@ Siehe `docs/LIMITATIONEN.md` — insbesondere: kein Mischen von Teil- und Abschl
 | DSGVO Löschung vs. Aufbewahrung | **Soft-Delete/Archiv-Flag** bei rechnungsrelevanten Daten; Hard-Delete blockieren bis Fristablauf; AVV-Hinweis bei Hosting | **Teilweise:** Archiv-Flag am Kunden, Löschschutz festgeschriebener Belege; kein AVV-Hinweis in der Software |
 | Kontoauszug und Zahlungseingang (§ 146 Abs. 4, § 147 AO) | Kontoauszug bleibt Buchungsbeleg der Buchhaltung; Zahlungen append-only mit Gegenbuchung; keine automatische Buchung; Gegenkonto-Daten nur soweit nötig | **Umgesetzt** (CAMT.053/.054, Zuordnung nur nach Bestätigung, Rücklastschrift per Gegenbuchung, Guard in `src/lib/db.ts`; siehe § 22) |
 | Zahlungsbestätigung per Mail (§ 14 UStG, § 368 BGB, § 257 HGB, § 147 AO) | keine Rechnung und keine Quittung; Wiedergabe im E-Mail-Protokoll, Zahlung unverändert, Protokoll + ChangeLog EMAIL | **Umgesetzt** (Regeln nach Zahlungseingang, § 23) |
+| Online-Zahlung (§ 146 Abs. 4, § 147 AO, GoBD Rz. 58 ff., Art. 5/6 DSGVO) | Buchung nur über Zahlungserfassung und Gegenbuchung, Status immer vom Anbieter nachgeladen, Ereignisprotokoll append-only, Link als Snapshot im Archiv, Datenminimierung gegenüber dem Anbieter | **Umgesetzt** (Mollie; kein Skonto, Überzahlung nur gemeldet; Datenschutzrolle des Anbieters klärt der Betreiber) |
 | Übermittlung per Kundenportal | Download über ein Internetportal ist ein zulässiger Übermittlungsweg (UStAE 14.1 Abs. 4 S. 6, BMF 15.10.2025); Einigung mit dem Kunden zivilrechtlich; Abrufprotokoll datensparsam | **Umgesetzt** (Portal standardmäßig aus; Dateien aus dem Belegarchiv; Abrufprotokoll ohne IP, 24 Monate; Widerruf/Ablauf; siehe § 13) |
 | Mahnwesen Verzug/Zinsen | **Verbraucher-Flag** pro Schuldner steuert: 5/9 Pp, 40-€-Pauschale (nur B2B), Pflicht-30-Tage-Hinweis (B2C); Basiszins halbjahresgenau (1,27 % H1 2026) | **Teilweise:** Kundentyp Verbraucher steuert 5/9 Pp und 40-€-Pauschale (nur B2B, einmal je Rechnung), Basiszins halbjahresgenau; der B2C-30-Tage-Hinweis ist nicht umgesetzt |
 | Mahngebühren | erste Mahnung **kostenfrei** (Zahlungserinnerung), Mahnkosten erst ab 2. Mahnung; nur konkrete Porto-/Materialkosten | **Umgesetzt** (Gebühren erst ab Mahnstufe 2, erste Stufe kostenfrei) |
@@ -1357,6 +1358,31 @@ Gegenkonto-Name und IBAN können Privatpersonen betreffen. Der Betreiber führt 
 | Zweck und Rechtsgrundlage | Information des Vertragspartners über den Zahlungseingang im Rahmen der Vertragsabwicklung | Art. 6 Abs. 1 lit. b |
 | Datenminimierung | Der eingebaute Text nennt nur Rechnungsnummer, Betrag, Datum, Zahlungsart und offenen Rest (eigene Vorlagen legt der Betreiber fest); es gibt keine Standardregel, versendet wird nur, wenn der Betreiber eine Regel mit dieser Aktion anlegt | Art. 5 Abs. 1 lit. c |
 | Begrenzung | höchstens 5 Bestätigungen je Kunde und 100 je Firma und Stunde | Art. 5 Abs. 1 lit. f |
+
+---
+
+## 24. Online-Zahlung: Buchung, Protokoll, Zahlungslink, Datenschutz
+
+**Umsetzung dieser Software:**
+
+- **Buchung nur über die regulären Zahlungsfunktionen.** Eine Online-Zahlung wird ausschließlich über dieselbe Zahlungserfassung gebucht wie jede andere Zahlung (Zahlungsart „Online", Referenz = Zahlungsnummer des Anbieters); eine Erstattung oder Rückbuchung des Anbieters ausschließlich über die Gegenbuchung. Es gibt keinen zweiten Schreibpfad und keinen Zugriff am GoBD-Guard vorbei. Die Zahlung ist append-only, ändert die festgeschriebene Rechnung nicht und steht in der Hash-Kette (ChangeLog).
+- **Der Anbieter wird nicht als Beleg behandelt.** Der Inhalt eines Webhooks wird nie übernommen; die Anwendung lädt den Zustand selbst beim Anbieter nach und bucht erst bei Status „bezahlt". Im Testmodus wird nie gebucht.
+- **Ereignisprotokoll:** Jede Statusmeldung steht unveränderlich (append-only, je Anbieter und Ereignis nur einmal) in `PaymentProviderEvent` mit Ergebnis (gebucht, Test, ignoriert, Fehler); Abweichungen (Betrag, Währung, Modus, Überzahlung, verringerte Erstattung) erzeugen Benachrichtigungen statt Buchungen. Aufbewahrung: Buchungsbelege nach § 147 Abs. 1 AO, § 257 HGB; Grundsätze der Nachvollziehbarkeit und Unveränderbarkeit GoBD Rz. 58 ff. Die Anwendung ersetzt weder den Kontoauszug noch die Buchhaltung (§ 146 Abs. 4 AO: Änderungen sind so vorzunehmen, dass der ursprüngliche Inhalt feststellbar bleibt).
+- **Snapshot des Links, Archiv unverändert:** Der Bezahllink wird beim Festschreiben festgelegt und steht in Archiv-PDF und -XML genau so, wie er zum Zeitpunkt der ersten Ausgabe war. Ein späteres Deaktivieren verändert den archivierten Beleg nicht; die Bezahlseite zeigt dann „nicht verfügbar". Der Link ist kein Rechnungsbestandteil im Sinne des § 14 UStG.
+- **E-Rechnung:** Der Link steht als Satz am Ende der Zahlungsbedingungen (EN 16931 BT-20 „Payment terms"). Die Systemzahlungsart „Online-Zahlung" trägt den UNTDID-4461-Code 68 (BT-81, „Online payment service"); bei diesem Code wird kein Zahlungsempfänger-Konto (BG-17) ausgegeben. Alle anderen Zahlungsarten, Codes und Bankdaten (BG-16/BG-17) bleiben unverändert. Der Validierer (KoSIT) bleibt Prüfstein.
+- **Kein Skonto online, Überzahlung nicht gebucht:** Gebucht wird höchstens der offene Rest; ein Mehrbetrag bleibt außerhalb der Buchhaltung und wird zur Erstattung gemeldet.
+- **Schlüssel und Tokens:** API-Schlüssel und Link-Token liegen nur verschlüsselt (Token zusätzlich als Hash) in der Datenbank und stehen nie in Versandprotokoll, Hash-Kette, Aktivitätsprotokoll oder API-Antworten.
+
+**DSGVO:**
+
+| Grundsatz | Umsetzung | Norm |
+|-----------|-----------|------|
+| Zweck und Rechtsgrundlage | Abwicklung der Zahlung im Rahmen des Vertrags, wenn der Kunde den Bezahllink nutzt | Art. 6 Abs. 1 lit. b |
+| Datenminimierung | An den Anbieter gehen nur Betrag, Währung, Rechnungsnummer als Bezeichnung sowie Rücksprung- und Webhook-Adresse; keine Positionen, kein Kundenname, keine internen Notizen | Art. 5 Abs. 1 lit. c |
+| Rolle des Anbieters | richtet sich nach dessen Bedingungen (Auftragsverarbeitung oder eigene Verantwortlichkeit); der Betreiber prüft das **vor dem Einschalten im Livemodus** und ergänzt seine Datenschutzhinweise | Art. 28, Art. 13 |
+| Zugriffsschutz | Token mit 256 Bit, Ratenbegrenzung, keine Anmeldedaten des Kunden; Reverse-Proxy-Protokolle für `/zahlen/` ohne Pfad führen | Art. 32 |
+
+Dies ist keine Rechts- oder Steuerberatung; die Einordnung (Anbieter-Vertrag, Datenschutzhinweise, Buchung von Überzahlungen und Gebühren) klärt der Betreiber mit seinem Steuerberater.
 
 ---
 

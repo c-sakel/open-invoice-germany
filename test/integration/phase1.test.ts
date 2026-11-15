@@ -95,7 +95,7 @@ describe("Phase 1 — Verknuepfungen", () => {
     const org = await dbInternal.organization.create({ data: { legalName: "Neu GmbH", addressLine1: "A 1", postalCode: "1", city: "B" } });
     await ensureOrgMasterdata(dbInternal, org.id);
     await ensureOrgMasterdata(dbInternal, org.id); // idempotent
-    expect(await dbInternal.paymentMethod.count({ where: { orgId: org.id, isSystem: true } })).toBe(9);
+    expect(await dbInternal.paymentMethod.count({ where: { orgId: org.id, isSystem: true } })).toBe(10);
     expect(await dbInternal.dunningStage.count({ where: { orgId: org.id } })).toBe(4);
   });
 

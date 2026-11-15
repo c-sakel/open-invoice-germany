@@ -328,6 +328,20 @@ Kontoauszüge (CAMT.053/.054) importieren und Umsätze Rechnungen zuordnen. Dies
 | `revoke_api_key` | API-Schlüssel unwiderruflich widerrufen (idempotent) | „Widerrufe den API-Schlüssel ‚Buchhaltung'." |
 | `list_api_keys` | API-Schlüssel auflisten (Name, Präfix, Scopes, zuletzt genutzt, Ablauf, Widerruf) — nie das Klartext-Token | „Welche API-Schlüssel gibt es?" |
 
+### Online-Zahlung
+
+Dieselben Domainfunktionen wie REST. Der API-Schlüssel des Zahlungsanbieters und der Einschalter lassen sich nur in der Oberfläche ändern; die Werkzeuge lehnen solche Felder ab und liefern nie einen Schlüssel.
+
+| Tool | Zweck | Beispiel |
+|---|---|---|
+| `get_online_payment_settings` | Standardanbieter, Anzeigeoptionen, je Anbieter Einschalter, Modus, ob ein Schlüssel hinterlegt ist, letztes Testergebnis | „Ist die Online-Zahlung eingeschaltet?" |
+| `update_online_payment_settings` | Teil-Update von `defaultProvider`, `showOnPdf`, `showInMail`, `showInPortal` | „Zeige den Bezahllink nicht mehr im PDF." |
+| `test_online_payment_connection` | Verbindungstest zum Anbieter (bucht nichts) | „Teste die Verbindung zu Mollie." |
+| `get_invoice_pay_link` | Linkstatus, Vorgänge und Adresse einer Rechnung | „Wie lautet der Bezahllink für RE-50012?" |
+| `create_invoice_pay_link` | Link anlegen oder reaktivieren | „Lege für RE-50012 einen Bezahllink an." |
+| `disable_invoice_pay_link` | Link deaktivieren | „Deaktiviere den Bezahllink von RE-50012." |
+| `refresh_invoice_pay_link` | Status offener Vorgänge abrufen | „Prüfe, ob RE-50012 online bezahlt wurde." |
+
 ### Regeln nach Zahlungseingang
 
 Dieselben Schemas und Domainfunktionen wie REST (`/api/v1/PaymentRule`, `/api/v1/PaymentRuleRun`). Der Trockenlauf ist rein lesend.
