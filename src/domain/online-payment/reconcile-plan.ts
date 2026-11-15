@@ -48,7 +48,7 @@ export function providerCentsFromEventId(eventId: string): number | null {
 }
 
 export function providerSplitFromEventId(eventId: string): { refunded: number; chargedBack: number } | null {
-  const m = /:(\d+):(\d+)$/.exec(eventId.replace(/#err-.*$/, ""));
+  const m = /:(\d+):(\d+)$/.exec(eventId.replace(/#(err-|r\d).*$/, ""));
   return m ? { refunded: Number(m[1]), chargedBack: Number(m[2]) } : null;
 }
 

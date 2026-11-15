@@ -9,7 +9,8 @@ describe("paymentSource", () => {
     expect(paymentSource("user", "BANK")).toBe("BANK");
     expect(paymentSource("mcp", "MOLLIE")).toBe("MOLLIE");
     expect(paymentSource("webhook", "MOLLIE")).toBe("MOLLIE");
-    expect(paymentSource("mcp", "STRIPE")).toBe("MCP");
+    expect(paymentSource("webhook", "STRIPE")).toBe("STRIPE");
+    expect(paymentSource("mcp", "STRIPE")).toBe("STRIPE");
   });
   it("Erfasser ohne Anbieter", () => {
     expect(paymentSource("api", null)).toBe("API");

@@ -84,7 +84,7 @@ export async function handleProviderWebhook(
         if (!(e instanceof OnlinePaymentError)) throw e;
       }
       if (!signingSecret) {
-        await reportProviderProblem(orgId, "Online-Zahlung: Zugang nicht nutzbar", `${label}: Signaturschluessel fehlt oder ist nicht lesbar; Benachrichtigungen koennen nicht geprueft werden.`, now, `nowhsec:${provider}`);
+        await reportQuietly(orgId, "Online-Zahlung: Zugang nicht nutzbar", `${label}: Signaturschluessel fehlt oder ist nicht lesbar; Benachrichtigungen koennen nicht geprueft werden.`, now, `nowhsec:${provider}`);
         return { status: 503 };
       }
     }
@@ -93,9 +93,10 @@ export async function handleProviderWebhook(
     if (hook.kind === "REJECT") {
       if (hook.reason === "NO_SECRET") return { status: 503 };
       if (hook.reason === "UNSUPPORTED_FORMAT") {
-        await reportProviderProblem(orgId, "Online-Zahlung: Ereignisziel pruefen", `${label}: Ereignisziel im Format Snapshot anlegen.`, now, `fmt:${provider}`);
-      } else if (hook.reason === "SIGNATURE" || hook.reason === "STALE") {
-        await reportProviderProblem(orgId, "Online-Zahlung: Signatur ungueltig", `${label}-Benachrichtigung mit ungueltiger Signatur — Signaturschluessel pruefen.`, now, `sig:${provider}`);
+        await reportQuietly(orgId, "Online-Zahlung: Ereignisziel pruefen", `${label}: Ereignisziel im Format Snapshot anlegen.`, now, `fmt:${provider}`);
+      } else if (adapter.webhookAuth === "signature") {
+        // Vor gueltiger Signatur hoechstens eine Tagesmeldung (dedupe), Fehler darin ohne Wirkung auf die Antwort.
+        await reportQuietly(orgId, "Online-Zahlung: Signatur ungueltig", `${label}-Benachrichtigung mit ungueltiger Signatur — Signaturschluessel pruefen.`, now, `sig:${provider}`);
       }
       return { status: 400 };
     }
@@ -151,6 +152,15 @@ export async function handleProviderWebhook(
   } catch (e) {
     console.error("Online-Zahlung: Benachrichtigung nicht verarbeitet:", describeError(e));
     return { status: 503 };
+  }
+}
+
+/** Tagesmeldung ohne Einfluss auf die Antwort: Fehler beim Schreiben werden geschluckt. */
+async function reportQuietly(orgId: string, title: string, body: string, now: Date, key: string): Promise<void> {
+  try {
+    await reportProviderProblem(orgId, title, body, now, key);
+  } catch (e) {
+    console.error("Online-Zahlung: Meldung nicht gespeichert:", describeError(e));
   }
 }
 

@@ -280,8 +280,13 @@ export async function reactivatePayLinkAfterReopenWithinTx(
 
 /** Voller Link fuer den Betreiber; nur ACTIVE. */
 export async function revealPayLinkUrl(orgId: string, invoiceId: string, baseUrl: string): Promise<string | null> {
-  const link = await dbInternal.invoicePayLink.findFirst({ where: { invoiceId, orgId }, select: { status: true, tokenEnc: true } });
+  const link = await dbInternal.invoicePayLink.findFirst({ where: { invoiceId, orgId }, select: { id: true, status: true, tokenEnc: true, provider: true, liveIssued: true } });
   if (!link || link.status !== "ACTIVE") return null;
+  // Der Betreiber kann die Adresse weitergeben: im Livekonto gilt der Link ab jetzt als ausgegeben (nur false -> true).
+  if (!link.liveIssued) {
+    const account = await dbInternal.paymentProviderAccount.findFirst({ where: { orgId, provider: link.provider, mode: "LIVE" }, select: { id: true } });
+    if (account) await dbInternal.invoicePayLink.updateMany({ where: { id: link.id, orgId, liveIssued: false }, data: { liveIssued: true } });
+  }
   return `${baseUrl.replace(/\/+$/, "")}/zahlen/${decryptSecret(link.tokenEnc, PAYLINK_TOKEN_PURPOSE)}`;
 }
 

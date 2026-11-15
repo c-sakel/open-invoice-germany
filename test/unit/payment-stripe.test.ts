@@ -237,7 +237,7 @@ describe("Stripe-Adapter", () => {
     expect(stripeAdapter.supportsCurrency("JPY")).toBe(false);
     expect(stripeAdapter.payoutPattern.test("STRIPE PAYMENTS EUROPE")).toBe(true);
     expect(stripeAdapter.webhookAuth).toBe("signature");
-    expect(stripeAdapter.webhookBodyMax).toBe(262_144);
+    expect(stripeAdapter.webhookBodyMax).toBe(131_072);
     expect(stripeAdapter.knownMethods).toContain("card");
     expect(adapterFor("STRIPE")).toBe(stripeAdapter);
   });

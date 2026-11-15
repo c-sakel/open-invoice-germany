@@ -220,7 +220,7 @@ export const stripeAdapter: PaymentProviderAdapter = {
   // Eigene Checkout-Domains des Kontos werden nicht unterstuetzt.
   checkoutHosts: ["checkout.stripe.com"],
   webhookAuth: "signature",
-  webhookBodyMax: 262_144,
+  webhookBodyMax: 131_072,
   knownMethods: STRIPE_KNOWN_METHODS,
   modeFromKey,
 

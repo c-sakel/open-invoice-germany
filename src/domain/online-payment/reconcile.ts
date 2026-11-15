@@ -49,6 +49,11 @@ function money(cents: number, currency: string): string {
   return `${sign}${Math.floor(abs / 100)},${String(abs % 100).padStart(2, "0")} ${currency}`;
 }
 
+/** Ereigniskennung ohne Wiederkehr-/Fehlersuffix. */
+function baseEventId(id: string): string {
+  return id.replace(/#(err-|r\d).*$/, "");
+}
+
 const FROM_OPEN: AttemptStatus[] = ["CREATING", "OPEN"];
 
 function detailFor(plan: ReconcilePlan, state: ProviderPaymentState): string {
@@ -90,14 +95,36 @@ export async function reconcileAttempt(attemptId: string, state: ProviderPayment
         await lockRow(tx, "Invoice", invoiceId, orgId);
         // Zahlungs-Id des Anbieters (Stripe: PaymentIntent) am Vorgang festhalten, damit spaetere Ereignisse ihn finden.
         if (paymentRef !== state.objectId) {
+          const clash = await tx.paymentProviderAttempt.findFirst({
+            where: { provider, providerPaymentRef: paymentRef, id: { not: attempt.id } },
+            select: { id: true },
+          });
+          // Dieselbe Zahlungs-Id gehoert schon zu einem anderen Vorgang: nichts buchen, nur protokollieren und melden.
+          if (clash) return { duplicate: false as const, refConflict: true as const };
           await tx.paymentProviderAttempt.updateMany({ where: { id: attempt.id, orgId, providerPaymentRef: null }, data: { providerPaymentRef: paymentRef } });
         }
-        const dup = await tx.paymentProviderEvent.findUnique({ where: { provider_eventId: { provider, eventId } }, select: { id: true } });
-        if (dup) {
-          // Unveraenderter Zustand: Pruefzeitpunkt trotzdem fortschreiben, damit der Abgleich reihum laeuft.
+        const prev = await tx.paymentProviderEvent.findFirst({
+          where: { provider, objectId: state.objectId, result: { in: ["APPLIED", "TEST"] } },
+          orderBy: [{ receivedAt: "desc" }, { id: "desc" }],
+          select: { eventId: true },
+        });
+        // Unveraenderter Zustand = derselbe wie beim juengsten verarbeiteten Ereignis. Kehrt der Zustand zu einem
+        // frueheren zurueck (z. B. Streitfall aufgehoben), ist das ein neues Ereignis mit eigener Kennung.
+        const recent = await tx.paymentProviderEvent.findMany({
+          where: { provider, objectId: state.objectId },
+          orderBy: [{ receivedAt: "desc" }, { id: "desc" }],
+          take: 10,
+          select: { eventId: true },
+        });
+        const latest = recent.find((e) => /:\d+:\d+(#r\d+)?$/.test(e.eventId)) ?? null;
+        const known = await tx.paymentProviderEvent.findUnique({ where: { provider_eventId: { provider, eventId } }, select: { id: true } });
+        if (known && (latest === null || baseEventId(latest.eventId) === eventId)) {
+          // Pruefzeitpunkt trotzdem fortschreiben, damit der Abgleich reihum laeuft.
           await tx.paymentProviderAttempt.updateMany({ where: { id: attempt.id, orgId }, data: { lastCheckedAt: now } });
           return { duplicate: true as const };
         }
+        const revisits = known ? await tx.paymentProviderEvent.count({ where: { provider, eventId: { startsWith: `${eventId}#r` } } }) : 0;
+        const evId = known ? `${eventId}#r${revisits + 1}` : eventId;
 
         const inv = await tx.invoice.findFirst({
           where: { id: invoiceId, orgId },
@@ -114,11 +141,6 @@ export async function reconcileAttempt(attemptId: string, state: ProviderPayment
           const agg = await tx.payment.aggregate({ where: { reversesPaymentId: existing.id, kind: "REVERSAL" }, _sum: { amountCents: true } });
           booked = { paymentId: existing.id, amountCents: existing.amountCents, reversedCents: -(agg._sum.amountCents ?? 0) };
         }
-        const prev = await tx.paymentProviderEvent.findFirst({
-          where: { provider, objectId: state.objectId, result: { in: ["APPLIED", "TEST"] } },
-          orderBy: [{ receivedAt: "desc" }, { id: "desc" }],
-          select: { eventId: true },
-        });
         const openCents = payableBaseCents(inv) - inv.paidAmountCents;
         const creditNotes = await tx.invoice.count({
           where: { orgId, correctsInvoiceId: invoiceId, type: "CREDIT_NOTE", status: { not: "DRAFT" } },
@@ -164,7 +186,7 @@ export async function reconcileAttempt(attemptId: string, state: ProviderPayment
             title: `Online-Zahlung hoeher als offener Betrag${num ? ` (${num})` : ""}`,
             body: `Der Anbieter meldet ${money(state.amountCents, inv.currency)}, gebucht wurden ${money(plan.book ?? 0, inv.currency)}. Der Rest (${money(plan.overpaidCents, inv.currency)}) ist zu erstatten.`,
             invoiceId,
-            dedupeKey: `online:${eventId}:over`,
+            dedupeKey: `online:${evId}:over`,
             at: now,
           });
         }
@@ -174,7 +196,7 @@ export async function reconcileAttempt(attemptId: string, state: ProviderPayment
             title: `Online-Zahlung nicht gebucht${num ? ` (${num})` : ""}`,
             body: `${plan.unassigned === "CANCELLED" ? "Die Rechnung ist storniert" : "Die Rechnung hat keinen offenen Betrag"}; ${money(state.amountCents, inv.currency)} wurden beim Anbieter bezahlt und sind zu erstatten.`,
             invoiceId,
-            dedupeKey: `online:${eventId}:unassigned`,
+            dedupeKey: `online:${evId}:unassigned`,
             at: now,
           });
         }
@@ -192,7 +214,7 @@ export async function reconcileAttempt(attemptId: string, state: ProviderPayment
             title: plan.review === "REFUND_WITH_CREDIT_NOTE" ? `Erstattung beim Zahlungsanbieter${num ? ` (${num})` : ""}` : `Online-Zahlung pruefen${num ? ` (${num})` : ""}`,
             body: why,
             invoiceId,
-            dedupeKey: `online:${eventId}:review`,
+            dedupeKey: `online:${evId}:review`,
             at: now,
           });
         }
@@ -202,7 +224,7 @@ export async function reconcileAttempt(attemptId: string, state: ProviderPayment
             title: `Testzahlung eingegangen${num ? ` (${num})` : ""}`,
             body: "Der Zugang steht auf Testmodus; die Zahlung wurde nicht gebucht.",
             invoiceId,
-            dedupeKey: `online:${eventId}:test`,
+            dedupeKey: `online:${evId}:test`,
             at: now,
           });
         }
@@ -220,7 +242,7 @@ export async function reconcileAttempt(attemptId: string, state: ProviderPayment
           data: {
             orgId,
             provider,
-            eventId,
+            eventId: evId,
             type: "payment.status",
             objectId: state.objectId,
             attemptId: attempt.id,
@@ -235,6 +257,20 @@ export async function reconcileAttempt(attemptId: string, state: ProviderPayment
       }),
     );
     if (out.duplicate) return { result: "IGNORED", paymentId: null, duplicate: true };
+    if ("refConflict" in out) {
+      try {
+        await dbInternal.paymentProviderEvent.create({
+          data: { orgId, provider, eventId: `${eventId}#refconflict`, type: "payment.status", objectId: state.objectId, attemptId: attempt.id, receivedAt: now, result: "IGNORED", detail: "Zahlungs-Id bereits einem anderen Vorgang zugeordnet; nichts gebucht" },
+          select: { id: true },
+        });
+      } catch {
+        // bereits protokolliert
+      }
+      await reportProviderProblem(orgId, "Online-Zahlung pruefen", "Die Zahlungs-Id des Anbieters ist bereits einem anderen Bezahlvorgang zugeordnet; es wurde nichts gebucht.", now, `refclash:${state.objectId}`).catch((e: unknown) => {
+        console.error("reconcileAttempt: Meldung nicht gespeichert", describeError(e));
+      });
+      return { result: "IGNORED", paymentId: null, duplicate: false };
+    }
     if (out.changed) kickPaymentRules(orgId);
     if (out.invoiceStatus === "PAID" || out.invoiceStatus === "CANCELLED") cancelOpenAttemptsAfterCommit(orgId, invoiceId);
     return { result: out.plan.result, paymentId: out.paymentId, duplicate: false };
