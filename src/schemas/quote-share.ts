@@ -16,16 +16,16 @@ const currencyCode = z
   .string()
   .regex(/^[A-Z]{3}$/, "Waehrung muss aus drei Grossbuchstaben bestehen (ISO 4217)");
 
-// Phase 12c, §33 — org-eigene Liste erlaubter Steuersaetze (ganze Prozentwerte, 1..10
-// Eintraege). KEIN `.transform` (Ruling): ein ZodPipe wird von `partialInputShape`
-// (src/mcp/tools/partial-input.ts, unwrappt nur ZodDefault) und zod-to-openapi nur
-// unsauber abgebildet. Sortierung/Deduplizierung uebernimmt normalizeTaxRates,
-// aufgerufen in saveDocumentSettings.
 /** § 19 UStG: Umsatz ausserhalb des Programms je Kalenderjahr (Cent, hoechstens 10 Jahre). */
 export const kuExternalRevenueSchema = z
   .record(z.string().regex(/^20\d\d$/, "Jahr im Format 20JJ"), z.number().int().min(0).max(2_147_483_647))
   .refine((r) => Object.keys(r).length <= 10, "Hoechstens 10 Jahre");
 
+// Phase 12c, §33 — org-eigene Liste erlaubter Steuersaetze (ganze Prozentwerte, 1..10
+// Eintraege). KEIN `.transform` (Ruling): ein ZodPipe wird von `partialInputShape`
+// (src/mcp/tools/partial-input.ts, unwrappt nur ZodDefault) und zod-to-openapi nur
+// unsauber abgebildet. Sortierung/Deduplizierung uebernimmt normalizeTaxRates,
+// aufgerufen in saveDocumentSettings.
 export const taxRatesSchema = z.array(z.number().int().min(0).max(100)).min(1).max(10);
 
 /** Dedupliziert und sortiert aufsteigend — reine Funktion, kein Zod-Transform (s. o.). */

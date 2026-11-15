@@ -20,7 +20,7 @@ import { kickPaymentRules } from "@/domain/payment-rule/kick";
 import { createDraftInvoiceWithinTx } from "@/domain/invoice/create";
 import { finalizeWithinTx } from "@/domain/invoice/finalize";
 import { recordPaymentWithinTx, PaymentError, type PaymentCreatedBy } from "@/domain/invoice/payment";
-import { collectFinalizeWarningsFor, insertMeansWarnings, paymentMeansWarnings, MEANS_WARNING_SELECT } from "@/domain/invoice/finalize-warnings";
+import { collectFinalizeWarningsFor, documentCheckWarnings, insertMeansWarnings, paymentMeansWarnings, MEANS_WARNING_SELECT } from "@/domain/invoice/finalize-warnings";
 import { payableBaseCents } from "@/domain/invoice/amounts";
 import { onInvoiceFinalizedKu, onInvoiceFinalizedOss } from "@/domain/notifications/hooks";
 import { recordPaymentSchema, type AtomicPaymentInput, type CreateInvoiceInput } from "@/schemas";
@@ -94,6 +94,20 @@ export async function createInvoiceComplete(
     await onInvoiceFinalizedKu(orgId, now);
   } catch (e) {
     console.error("OSS-Pruefung nach atomarer Rechnung fehlgeschlagen", e instanceof Error ? e.name : "Fehler");
+  }
+  // Ausstellfrist und Umsatzgrenze: nach dem Commit ausgewertet (die Auswertung nutzt den globalen Client und darf
+  // nicht in der Transaktion laufen). Der Beleg zaehlt dann schon im Jahresumsatz, daher eigener Nettobetrag 0.
+  // Wirft nie; die Hinweise sind nicht Teil einer gespeicherten Idempotenz-Antwort.
+  try {
+    const inv = result.invoice;
+    const extra = await documentCheckWarnings(
+      orgId,
+      { taxScheme: inv.taxScheme, currency: inv.currency, issueDate: inv.issueDate, deliveryDate: inv.deliveryDate, deliveryEnd: inv.deliveryEnd, netTotalCents: 0 },
+      now ?? new Date(),
+    );
+    for (const w of extra) result.warnings.push(w.message);
+  } catch {
+    // Hinweise blockieren nie.
   }
   return result;
 }

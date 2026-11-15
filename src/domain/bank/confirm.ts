@@ -11,6 +11,7 @@ import { logActivity } from "@/domain/activity/log";
 import { NotFoundError } from "@/domain/errors";
 import { describeError } from "@/lib/safe-error";
 import { kickPaymentRules } from "@/domain/payment-rule/kick";
+import { onPaymentChangedKu } from "@/domain/notifications/hooks";
 import { cancelOpenAttemptsAfterCommit } from "@/domain/online-payment/cancel-open";
 import { PaymentError, recordPaymentWithinTx, type PaymentCreatedBy } from "@/domain/invoice/payment";
 import { reversePaymentWithinTx } from "@/domain/invoice/payment-reversal";
@@ -66,6 +67,7 @@ export async function confirmBankMatch(orgId: string, txId: string, raw: unknown
   const result = await confirmBankMatchInTx(orgId, txId, raw, opts);
   // Nach dem Commit: faellige Regel-Laeufe anstossen (Fehler beruehren die Buchung nie).
   kickPaymentRules(orgId);
+  await onPaymentChangedKu(orgId, opts.now);
   for (const pay of result.payments) cancelOpenAttemptsAfterCommit(orgId, pay.invoiceId);
   return result;
 }
@@ -335,5 +337,7 @@ export async function undoBankMatch(orgId: string, txId: string, raw: unknown, o
   } catch (e) {
     console.error("undoBankMatch: Aktivitaetsprotokoll fehlgeschlagen", e);
   }
+  // Nach dem Commit: Umsatzgrenzen neu auswerten (die Rueckbuchung zaehlt im Jahr der Ursprungszahlung; reversedAt = paidAt).
+  await onPaymentChangedKu(orgId, opts.now);
   return done.view;
 }

@@ -83,7 +83,8 @@ function invoicedContribution(doc: KuDoc): number | null {
   const net = netEurOf(doc);
   if (net === null) return null;
   let value = net;
-  // Schlussrechnung: um bereits berechnete Abschlaege vermindert, sonst doppelt gezaehlt.
+  // Schlussrechnung: um bereits berechnete Abschlaege vermindert, sonst doppelt gezaehlt. Der Anteil net * payable / gross
+  // ist bei gemischten Steuersaetzen eine Naeherung (Abschlaege werden nicht je Steuersatz zugeordnet).
   if (doc.type === "FINAL" && doc.payableCents != null && doc.grossTotalCents !== 0) {
     value = mulDivRound(net, doc.payableCents, doc.grossTotalCents);
   }

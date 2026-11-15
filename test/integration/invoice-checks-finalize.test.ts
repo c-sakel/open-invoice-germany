@@ -10,6 +10,7 @@ import { createDraftInvoice } from "@/domain/invoice/create";
 import { updateDraftInvoice } from "@/domain/invoice/update";
 import { finalizeInvoice } from "@/domain/invoice/finalize";
 import { cancelInvoice } from "@/domain/invoice/cancel";
+import { createInvoiceComplete } from "@/domain/invoice/create-complete";
 import { collectFinalizeWarnings } from "@/domain/invoice/finalize-warnings";
 import { saveDocumentSettings } from "@/domain/document/settings";
 import { saveMailSettings } from "@/domain/email/settings";
@@ -105,6 +106,14 @@ describe("Hinweis Ausstellfrist (§ 14a UStG)", () => {
     expect(w.map((x) => x.code)).toContain("ausstellfrist");
     const done = await finalizeInvoice(d.id, { now: NOW });
     expect(done.status).toBe("FINALIZED");
+  });
+
+  it("atomare Anlage meldet die Ausstellfrist in der Antwort", async () => {
+    const late = await createInvoiceComplete(c.orgId, draftInput(c.eu, { scheme: "IG_LIEFERUNG", delivery: new Date("2230-03-03T10:00:00.000Z") }), { actor: "test", createdBy: "user", now: NOW });
+    expect(late.invoice.status).toBe("FINALIZED");
+    expect(late.warnings.some((m) => m.includes("Ausstellfrist"))).toBe(true);
+    const ok = await createInvoiceComplete(c.orgId, draftInput(c.eu, { scheme: "IG_LIEFERUNG", delivery: new Date("2230-04-20T10:00:00.000Z") }), { actor: "test", createdBy: "user", now: NOW });
+    expect(ok.warnings.some((m) => m.includes("Ausstellfrist"))).toBe(false);
   });
 
   it("innerhalb der Frist: kein Hinweis", async () => {

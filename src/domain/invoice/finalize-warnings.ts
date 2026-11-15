@@ -249,13 +249,13 @@ interface CheckWarningInvoice {
 }
 
 /** Ausstellfrist (§ 14a UStG) und Umsatzgrenze (§ 19 UStG); Fehler der Auswertung werden verschluckt. */
-async function documentCheckWarnings(orgId: string, invoice: CheckWarningInvoice, now: Date): Promise<FinalizeWarning[]> {
+export async function documentCheckWarnings(orgId: string, invoice: CheckWarningInvoice, now: Date): Promise<FinalizeWarning[]> {
   const out: FinalizeWarning[] = [];
+  // Beim Festschreiben kann das Belegdatum auf heute nachgezogen werden (refreshIssueDateOnFinalize).
+  let issueDate = invoice.issueDate ?? now;
   try {
-    // Beim Festschreiben kann das Belegdatum auf heute nachgezogen werden (refreshIssueDateOnFinalize).
     const settings = await loadDocumentSettings(orgId);
-    let issueDate = invoice.issueDate ?? now;
-    if (settings.refreshIssueDateOnFinalize && invoice.issueDate && berlinCalendarDay(invoice.issueDate).getTime() < berlinCalendarDay(new Date()).getTime()) {
+    if (settings.refreshIssueDateOnFinalize && invoice.issueDate && berlinCalendarDay(invoice.issueDate).getTime() < berlinCalendarDay(now).getTime()) {
       issueDate = now;
     }
     if (isIssueDeadlineMissed(issueDeadline(invoice), issueDate)) {
@@ -266,7 +266,6 @@ async function documentCheckWarnings(orgId: string, invoice: CheckWarningInvoice
   }
   try {
     if (invoice.taxScheme === "KLEINUNTERNEHMER") {
-      const issueDate = invoice.issueDate ?? now;
       const ku = await kuThreshold(orgId, berlinYear(issueDate));
       const ownNet = invoice.currency === "EUR" ? invoice.netTotalCents : 0;
       if (ku.level === "EXCEEDED" || ku.current.totalInvoicedCents + ownNet > ku.currentLimitCents) {
