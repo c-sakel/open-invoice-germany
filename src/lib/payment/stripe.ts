@@ -18,7 +18,10 @@ const SESSION_ID = /^cs_(test|live)_[A-Za-z0-9]{10,240}$/;
 const PAYMENT_INTENT_ID = /^pi_[A-Za-z0-9_]{4,200}$/;
 const SESSION_TTL_S = 3600;
 
-/** Werte von `allowed_payment_method_types` (Checkout Session, API-Version 2026-10-28.endive). */
+/**
+ * Werte von `allowed_payment_method_types` (Checkout Session). Ab API-Version 2026-09-30.endive ist das der richtige
+ * Parameter; `payment_method_types` wurde entfernt (docs.stripe.com/changelog/endive/2026-09-30/remove-payment-method-types-checkout-sessions).
+ */
 export const STRIPE_KNOWN_METHODS = [
   "acss_debit", "affirm", "afterpay_clearpay", "alipay", "alma", "amazon_pay", "au_becs_debit", "bacs_debit", "bancontact",
   "billie", "bizum", "blik", "boleto", "card", "cashapp", "crypto", "customer_balance", "eps", "fpx", "giropay", "grabpay",
@@ -159,6 +162,10 @@ function paymentIntentOf(s: z.infer<typeof stripeSessionSchema>): { id: string |
     return { id: pi, charge: null };
   }
   const c = pi.latest_charge;
+  // Ohne expandierte Charge ist der Erstattungsstand unbekannt: nie als 0 annehmen.
+  if (typeof c === "string" || (c === undefined && s.payment_status === "paid")) {
+    throw new PaymentProviderError("invalid", "Unvollstaendige Antwort des Zahlungsanbieters.");
+  }
   return { id: pi.id, charge: c !== null && c !== undefined && typeof c === "object" ? c : null };
 }
 
@@ -261,6 +268,9 @@ export const stripeAdapter: PaymentProviderAdapter = {
       s.livemode !== (expectedMode === "LIVE") ||
       s.status !== "open"
     ) {
+      throw new PaymentProviderError("invalid", "Antwort des Zahlungsanbieters passt nicht zur Anfrage.");
+    }
+    if (s.client_reference_id !== req.attemptId) {
       throw new PaymentProviderError("invalid", "Antwort des Zahlungsanbieters passt nicht zur Anfrage.");
     }
     if (!s.url) throw new PaymentProviderError("invalid", "Antwort des Zahlungsanbieters ohne Bezahladresse.");

@@ -6,7 +6,7 @@
 import type { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { decryptSecret, encryptSecret, PAYLINK_TOKEN_PURPOSE } from "@/lib/crypto/secrets";
-import { lockOrganization, lockRow } from "@/lib/db-lock";
+import { lockRow } from "@/lib/db-lock";
 import { generateToken, hashToken } from "@/domain/quote-share/token";
 import { logActivity } from "@/domain/activity/log";
 import { ONLINE_PROVIDERS, type OnlineProvider } from "@/lib/payment/types";
@@ -122,10 +122,10 @@ export async function createPayLinkWithinTx(
   // Org-Konsistenz: der Link gehoert immer zur Organisation der Rechnung (Attempt/Event erben spaeter die orgId des Links).
   const owner = await tx.invoice.findFirst({ where: { id: input.invoiceId, orgId: input.orgId }, select: { id: true } });
   if (!owner) throw new OnlinePaymentError("Rechnung nicht gefunden.", "NOT_FOUND");
-  // Kontomodus unter derselben Organisationssperre lesen wie setProviderEnabled: paralleles Einschalten eines Live-Kontos
-  // laesst sonst einen Link mit liveIssued=false zurueck. Ein im Testmodus angelegter Link gilt nie als live ausgegeben
-  // (Standard der Spalte ist true).
-  await lockOrganization(tx, input.orgId);
+  // Keine Organisationssperre hier: dieser Aufruf liegt mitten in der Festschreibe-Transaktion, die Sperrreihenfolge
+  // "Organisation zuerst" wuerde verletzt (Deadlock-Risiko). Restrisiko bei exakt parallelem Einschalten eines Live-Kontos:
+  // der Link behaelt liveIssued=false; setProviderEnabled hebt nach dem Commit erneut. Ein im Testmodus angelegter Link
+  // gilt nie als live ausgegeben (Standard der Spalte ist true).
   const account = await tx.paymentProviderAccount.findUnique({
     where: { orgId_provider: { orgId: input.orgId, provider: input.provider } },
     select: { mode: true },

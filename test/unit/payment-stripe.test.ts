@@ -153,6 +153,21 @@ describe("Stripe-Adapter", () => {
     const open = createStripeFake({ [`GET /checkout/sessions/cs_test_FAKEsession0001`]: { status: 200, text: stripeFixture("session-open") } });
     expect(await stripeAdapter.fetchPayment(TEST, "cs_test_FAKEsession0001", open.transport)).toMatchObject({ status: "OPEN", testMode: true });
   });
+  it("nicht expandierte Charge fuehrt zu Fehler statt Erstattung 0", async () => {
+    const body = JSON.parse(stripeFixture("session-paid")) as { payment_intent: Record<string, unknown> };
+    body.payment_intent.latest_charge = "ch_FAKEaaaa0001";
+    const f = createStripeFake({ [`GET /checkout/sessions/${SID}`]: { status: 200, text: JSON.stringify(body) } });
+    await expect(stripeAdapter.fetchPayment(LIVE, SID, f.transport)).rejects.toMatchObject({ kind: "invalid" });
+  });
+  it("createCheckout: abweichende client_reference_id wird abgelehnt", async () => {
+    const fake = createStripeFake({ "POST /checkout/sessions": { status: 200, text: stripeFixtureWith("session-open", { client_reference_id: "att_other" }) } });
+    await expect(stripeAdapter.createCheckout(TEST, req, fake.transport)).rejects.toMatchObject({ kind: "invalid" });
+  });
+  it("createCheckout: lose Surrogate in der Beschreibung -> PaymentProviderError", async () => {
+    const fake = createStripeFake({ "POST /checkout/sessions": { status: 200, text: stripeFixture("session-open") } });
+    await expect(stripeAdapter.createCheckout(TEST, { ...req, description: "Rechnung \uD800" }, fake.transport)).rejects.toBeInstanceOf(PaymentProviderError);
+    expect(fake.calls).toHaveLength(0);
+  });
   it("Streitfaelle: abgezogen zaehlt, zurueckgebucht und Warnung nicht", async () => {
     const disputes = (name: string) => createStripeFake(getRoutes("session-paid-disputed", { "GET /disputes": { status: 200, text: stripeFixture(name) } }));
     const w = disputes("disputes-withdrawn");

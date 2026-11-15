@@ -252,6 +252,17 @@ export async function setProviderEnabled(orgId: string, providerRaw: unknown, en
     }
     await logProvider(tx, orgId, acc.id, actor, { provider, changed: ["enabled"], enabled, mode: asMode(acc.mode) });
   });
+  if (enabled) {
+    // Zweiter idempotenter Durchlauf nach dem Commit: erfasst Links, die parallel (ohne Organisationssperre) mit
+    // liveIssued=false angelegt wurden.
+    const acc = await dbInternal.paymentProviderAccount.findUnique({
+      where: { orgId_provider: { orgId, provider } },
+      select: { mode: true, enabled: true },
+    });
+    if (acc?.enabled && acc.mode === "LIVE") {
+      await dbInternal.invoicePayLink.updateMany({ where: { orgId, provider, liveIssued: false }, data: { liveIssued: true } });
+    }
+  }
   return loadOnlinePaymentSettings(orgId);
 }
 
