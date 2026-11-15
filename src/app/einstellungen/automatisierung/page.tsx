@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getActiveOrg } from "@/lib/org";
 import { SettingsTabs } from "@/components/SettingsTabs";
 import { dbInternal } from "@/lib/db";
@@ -19,6 +20,10 @@ export default async function AutomatisierungPage() {
       <p className="text-sm text-ink-soft">
         Der Scheduler prüft automatisch fällige Mahnungen, wiederkehrende Rechnungen und erzeugt In-App-Benachrichtigungen (Job „notifications“ — fällige/überfällige Rechnungen, Mahnstufen, ablaufende Angebote
         usw., siehe Einstellungen → Benachrichtigungen; Standardintervall siehe Umgebungsvariablen). Hier lässt sich ein Lauf manuell anstoßen und das Protokoll der letzten Läufe einsehen.
+      </p>
+      <p className="text-sm text-ink-soft">
+        Aktionen nach einer Zahlung (Bestätigungsmail, Tag, Benachrichtigung, Abo fortsetzen) richten Sie unter{" "}
+        <Link className="underline" href="/einstellungen/zahlungsregeln">Nach Zahlungseingang</Link> ein.
       </p>
       <SchedulerRunsTable
         initialRuns={runs.map((r) => ({

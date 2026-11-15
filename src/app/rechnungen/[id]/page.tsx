@@ -30,6 +30,7 @@ import { tagsForDocuments } from "@/domain/tag/list";
 import { refundablePaidCents } from "@/domain/invoice/amounts";
 import { buildInvoiceViewModel, primaryAction, TYPE_TITLE } from "./_parts/invoice-view-model";
 import { InvoiceStatusCard } from "./_parts/InvoiceStatusCard";
+import { listInvoicePaymentRuleRuns } from "@/domain/payment-rule/views";
 import { InvoiceMoreMenu } from "./_parts/InvoiceMoreMenu";
 import { InvoiceTotals } from "./_parts/InvoiceTotals";
 import { CorrectionSection } from "./_parts/CorrectionSection";
@@ -154,6 +155,7 @@ export default async function InvoiceDetail({
   // dieses Belegs plus die volle Tag-Liste der Organisation (Auswahlfeld in TagPicker).
   const [allTags, docTags] = await Promise.all([listTags(org.id), tagsForDocuments(org.id, "INVOICE", [invoice.id])]);
   const invoiceTags = docTags.get(invoice.id) ?? [];
+  const paymentRuleRuns = await listInvoicePaymentRuleRuns(org.id, invoice.id);
 
   // S6 (Fix-Welle 1, Spec C "Detail-Layout"): "versendet am + Kanal" in der Details-Karte —
   // aus dem juengsten EmailLog-Eintrag, kein neues Feld auf Invoice. "Kanal" ist bislang
@@ -300,6 +302,7 @@ export default async function InvoiceDetail({
             tags={invoiceTags}
             tagOptions={allTags}
             archive={archive}
+            paymentRuleRuns={paymentRuleRuns}
           />
           <AttachmentPanel
             docType="INVOICE"

@@ -49,6 +49,7 @@ export const SETTINGS_KEYS = [
   "tags",
   "benachrichtigungen",
   "automatisierung",
+  "zahlungsregeln",
   "api",
   "webhooks",
   "pruefung",
@@ -123,6 +124,7 @@ export const SETTINGS_ITEMS: readonly SettingsNavItem[] = [
   { href: "/einstellungen/tags", label: "Tags", key: "tags" },
   { href: "/einstellungen/benachrichtigungen", label: "Benachrichtigungen", key: "benachrichtigungen" },
   { href: "/einstellungen/automatisierung", label: "Automatisierung", key: "automatisierung" },
+  { href: "/einstellungen/zahlungsregeln", label: "Nach Zahlungseingang", key: "zahlungsregeln" },
   { href: "/einstellungen/api", label: "API", key: "api" },
   { href: "/einstellungen/webhooks", label: "Webhooks", key: "webhooks" },
   { href: "/einstellungen/pruefung", label: "Prüfung", key: "pruefung" },
@@ -140,7 +142,7 @@ export const SETTINGS_GROUPS: readonly { label: string; keys: readonly SettingsK
   { label: "Firma", keys: ["stammdaten", "marke", "briefpapier", "zahlungsmethoden"] },
   { label: "Belege", keys: ["belege", "nummernkreise", "kurse", "vorlagen", "textvorlagen", "mahnwesen", "kundenfelder", "tags"] },
   { label: "Kommunikation", keys: ["email", "post", "kundenportal", "benachrichtigungen"] },
-  { label: "System", keys: ["automatisierung", "api", "webhooks", "pruefung", "konto"] },
+  { label: "System", keys: ["automatisierung", "zahlungsregeln", "api", "webhooks", "pruefung", "konto"] },
 ];
 
 function splitHref(href: string): { path: string; params: URLSearchParams } {
