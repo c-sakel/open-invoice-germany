@@ -22,6 +22,7 @@ export const WEBHOOK_EVENTS = [
   "postal.done",
   "postal.failed",
   "postal.cancelled",
+  "payment_rule.triggered",
 ] as const;
 
 export const webhookEventSchema = z.enum(WEBHOOK_EVENTS);

@@ -24,6 +24,7 @@ Webhooks** oder per REST-API (`/api/v1/Webhook`, Scope `admin`) bzw. MCP
 | `postal.done` | Postauftrag abgeschlossen (Brief fertig bzw. manuell als versendet abgeschlossen) |
 | `postal.failed` | Postauftrag fehlgeschlagen oder manuell als nicht versendet abgeschlossen |
 | `postal.cancelled` | Postauftrag storniert (auch: Testauftrag in der geleerten Postbox) |
+| `payment_rule.triggered` | Eine Regel nach Zahlungseingang hat die Aktion „Webhook senden“ ausgeführt (Daten: Regel, Zahlung, Rechnung) |
 
 Ein Endpunkt abonniert eine oder mehrere dieser Ereignisse (`events`-Feld bei
 Anlage/Änderung). Eine **Test-Zustellung** (`webhook.test`, über „Testen"/

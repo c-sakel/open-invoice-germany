@@ -191,6 +191,15 @@ const PAYMENT_RULE_RUN_MUTABLE_KEYS: ReadonlySet<string> = new Set([
   "finishedAt",
 ]);
 
+/** Status nur vorwaerts: PENDING -> RUNNING -> DONE|FAILED|SKIPPED; Rueckkehr nach PENDING (Wiederholung) und FAILED -> PENDING (Retry). DONE/SKIPPED sind endgueltig. */
+const PAYMENT_RULE_RUN_TRANSITIONS: Readonly<Record<string, readonly string[]>> = {
+  PENDING: ["PENDING", "RUNNING", "SKIPPED"],
+  RUNNING: ["RUNNING", "PENDING", "DONE", "FAILED", "SKIPPED"],
+  FAILED: ["PENDING"],
+  DONE: [],
+  SKIPPED: [],
+};
+
 function unwrapSet(v: unknown): unknown {
   if (v !== null && typeof v === "object" && !(v instanceof Date) && "set" in v) return (v as { set: unknown }).set;
   return v;
@@ -200,6 +209,19 @@ async function guardPaymentRuleRunUpdate(where: unknown, data: unknown): Promise
   const record = (data ?? {}) as Record<string, unknown>;
   const badKeys = Object.keys(record).filter((k) => !PAYMENT_RULE_RUN_MUTABLE_KEYS.has(k));
   if (badKeys.length > 0) throw new PaymentRuleRunImmutabilityError(badKeys.join(", "));
+  if ("status" in record) {
+    const nextStatus = unwrapSet(record.status);
+    if (typeof nextStatus !== "string") throw new PaymentRuleRunImmutabilityError("status");
+    const current = await base.paymentRuleRun.findMany({
+      where: where as Prisma.PaymentRuleRunWhereInput,
+      select: { status: true },
+    });
+    for (const row of current) {
+      if (!(PAYMENT_RULE_RUN_TRANSITIONS[row.status] ?? []).includes(nextStatus)) {
+        throw new PaymentRuleRunImmutabilityError(`Status ${row.status} -> ${nextStatus}`);
+      }
+    }
+  }
   if ("mailSentAt" in record) {
     const next = unwrapSet(record.mailSentAt);
     if (!(next instanceof Date)) throw new PaymentRuleRunImmutabilityError("mailSentAt nur von NULL auf einen Wert");

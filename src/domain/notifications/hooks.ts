@@ -170,3 +170,23 @@ export async function onInvoiceFinalizedOss(orgId: string, invoiceId: string, no
   }
   await safeNotify(orgId, "OSS_THRESHOLD", () => checkOssNotifications(orgId, now));
 }
+
+/** Ein Regel-Lauf nach Zahlungseingang ist endgueltig fehlgeschlagen. */
+export async function onPaymentRuleFailed(
+  orgId: string,
+  input: { runId: string; ruleName: string; invoiceId: string; invoiceNumber: string | null; message: string; at: Date },
+): Promise<void> {
+  await safeNotify(orgId, "PAYMENT_RULE_FAILED", () =>
+    createNotification({
+      orgId,
+      type: "PAYMENT_RULE_FAILED",
+      title: `Regel "${input.ruleName}" fehlgeschlagen${input.invoiceNumber ? ` (${input.invoiceNumber})` : ""}`,
+      body: input.message,
+      link: `/rechnungen/${input.invoiceId}`,
+      entityType: "INVOICE",
+      entityId: input.invoiceId,
+      dedupeKey: `payment-rule-failed:${input.runId}`,
+      at: input.at,
+    }),
+  );
+}

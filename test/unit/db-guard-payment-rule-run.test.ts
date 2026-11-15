@@ -86,12 +86,30 @@ describe("PaymentRuleRun-Guard", () => {
 
   it("erlaubt Ausfuehrungsstand", async () => {
     const finished = new Date();
+    await prisma.paymentRuleRun.update({ where: { id: runId }, data: { status: "RUNNING" } });
     await prisma.paymentRuleRun.update({
       where: { id: runId },
       data: { status: "DONE", attempts: 1, stepsJson: "[{}]", finishedAt: finished, lastError: null, skipReason: null },
     });
     const row = await dbInternal.paymentRuleRun.findUniqueOrThrow({ where: { id: runId }, select: { status: true, attempts: true } });
     expect(row).toEqual({ status: "DONE", attempts: 1 });
+  });
+
+  it("Status nur vorwaerts: DONE ist endgueltig, FAILED nur zurueck nach PENDING, PENDING nicht direkt nach DONE", async () => {
+    const rule = await dbInternal.paymentRule.findFirstOrThrow({ where: { orgId }, select: { id: true } });
+    const id = await makeRun(rule.id, "pay-guard-run-status");
+    await expect(prisma.paymentRuleRun.updateMany({ where: { id }, data: { status: "DONE" } })).rejects.toBeInstanceOf(PaymentRuleRunImmutabilityError);
+    await prisma.paymentRuleRun.updateMany({ where: { id }, data: { status: "RUNNING" } });
+    await prisma.paymentRuleRun.updateMany({ where: { id }, data: { status: "FAILED" } });
+    await expect(prisma.paymentRuleRun.updateMany({ where: { id }, data: { status: "DONE" } })).rejects.toBeInstanceOf(PaymentRuleRunImmutabilityError);
+    await prisma.paymentRuleRun.updateMany({ where: { id }, data: { status: "PENDING" } });
+    await prisma.paymentRuleRun.updateMany({ where: { id }, data: { status: "RUNNING" } });
+    await prisma.paymentRuleRun.updateMany({ where: { id }, data: { status: "DONE" } });
+    for (const next of ["PENDING", "RUNNING", "FAILED", "SKIPPED"]) {
+      await expect(prisma.paymentRuleRun.updateMany({ where: { id }, data: { status: next } })).rejects.toBeInstanceOf(PaymentRuleRunImmutabilityError);
+    }
+    const row = await dbInternal.paymentRuleRun.findUniqueOrThrow({ where: { id }, select: { status: true } });
+    expect(row.status).toBe("DONE");
   });
 
   it("mailSentAt nur von NULL auf einen Wert", async () => {

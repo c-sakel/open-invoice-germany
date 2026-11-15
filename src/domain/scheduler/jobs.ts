@@ -13,6 +13,7 @@ import { runFxJob } from "@/domain/fx/job";
 import { runCleanupJob } from "./cleanup";
 import { pollPostalJobs } from "@/domain/postal/poll";
 import { runArchiveJob } from "./archive-job";
+import { processPaymentRuleRuns } from "@/domain/payment-rule/execute";
 import type { SchedulerJob } from "./runner";
 
 export const jobs: Record<SchedulerJob, (now: Date) => Promise<Record<string, unknown>>> = {
@@ -35,6 +36,11 @@ export const jobs: Record<SchedulerJob, (now: Date) => Promise<Record<string, un
   archive: async (now) => {
     const result = await runArchiveJob(now);
     return { ...result };
+  },
+  "payment-rules": async (now) => {
+    const { skipped, ...rest } = await processPaymentRuleRuns({ now });
+    // "skipped" ist im Runner fuer uebersprungene Jobs reserviert.
+    return { ...rest, skippedRuns: skipped };
   },
   notifications: async (now) => {
     const result = await runNotificationsJob(now);
