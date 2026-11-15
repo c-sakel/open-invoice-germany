@@ -128,6 +128,8 @@ export async function updateDraftInvoice(orgId: string, id: string, rawInput: un
     // § 14 Abs. 4 Nr. 9 / § 14b Abs. 1 S. 5 UStG — Aufbewahrungshinweis (Phase 12b, Task 5).
     if (input.consumerRetentionHint !== undefined) { data.consumerRetentionHint = input.consumerRetentionHint; changedFields.push("consumerRetentionHint"); }
 
+    if (input.consumerDefaultNotice !== undefined) { data.consumerDefaultNotice = input.consumerDefaultNotice; changedFields.push("consumerDefaultNotice"); }
+
     // Phase 16b: manueller Kurs nur im Entwurf (Statuspruefung oben); null loescht den Override.
     // Der Wert steht im UPDATE-Diff der Hash-Kette (Nachvollziehbarkeit der Kursuebersteuerung).
     let fxOverrideChange: { fxOverrideMicrosBefore: number | null; fxOverrideMicros: number | null } | null = null;

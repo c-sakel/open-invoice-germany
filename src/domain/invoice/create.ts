@@ -240,6 +240,8 @@ export async function createDraftInvoiceWithinTx(
       internalNotes: input.internalNotes,
       // § 14 Abs. 4 Nr. 9 / § 14b Abs. 1 S. 5 UStG — Aufbewahrungshinweis (Phase 12b, Task 5).
       consumerRetentionHint: input.consumerRetentionHint ?? false,
+      // § 286 Abs. 3 BGB: nur eine ausdrueckliche Vorgabe speichern, sonst automatisch (NULL).
+      consumerDefaultNotice: input.consumerDefaultNotice ?? null,
       // Phase 16b: manueller Kurs je Beleg (Quelle MANUAL beim Festschreiben).
       fxOverrideMicros: input.fxOverrideRate ?? null,
       headerText,

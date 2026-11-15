@@ -36,6 +36,7 @@ import { FinalizeError } from "./finalize-error";
 import { buildDirectDebitSnapshot } from "./direct-debit";
 import { DIRECT_DEBIT_CODE } from "@/lib/einvoice/payment-means";
 import { createPayLinkWithinTx, resolveForFinalizeWithinTx } from "@/domain/online-payment/pay-link";
+import { resolveConsumerDefaultNotice } from "./checks";
 import { resolveFxSnapshot, deductedTaxEurCents, type DeductionFxEntry } from "@/domain/fx/snapshot";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -368,6 +369,16 @@ export async function finalizeWithinTx(
   // dessen eigenem Kurs (Hash-Kette; PDF-Ausweis ueber loadDeductedTaxEurCents).
   const deductedTaxEur = invoice.type === "FINAL" && fx.fxRateMicros !== null ? deductedTaxEurCents(deductionFx, fx.fxRateMicros) : null;
 
+  // § 286 Abs. 3 BGB: Verzugshinweis fuer Verbraucher beim Festschreiben einfrieren (Vorgabe am Beleg,
+  // sonst Kundentyp und Einstellung); Gutschrift/Storno/Korrektur nie.
+  const consumerDefaultNotice = resolveConsumerDefaultNotice({
+    status: "DRAFT",
+    type: invoice.type,
+    stored: invoice.consumerDefaultNotice,
+    customerType: invoice.customer.type,
+    settingEnabled: (await loadDocumentSettings(invoice.orgId, tx)).consumerDefaultNotice,
+  });
+
   // 3) Atomarer Status-Claim: nur wenn noch DRAFT. Verhindert unter Nebenläufigkeit
   //    (Postgres READ COMMITTED) doppelte Festschreibung + doppelten Nummern-Verbrauch.
   const claim = await tx.invoice.updateMany({
@@ -389,6 +400,7 @@ export async function finalizeWithinTx(
       paymentMethodSnapshotJson,
       directDebitSnapshotJson,
       printOptionsJson: frozenPrintOptionsJson,
+      consumerDefaultNotice,
       fxRateMicros: fx.fxRateMicros,
       fxRateDate: fx.fxRateDate,
       fxRateSource: fx.fxRateSource,
