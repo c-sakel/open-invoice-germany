@@ -19,12 +19,16 @@ export function publicErrorText(raw: string | null): string | null {
   return GENERIC_ACTION_ERROR;
 }
 
-/** Schritte eines Laufs: das Feld error jedes Schritts wird auf einen festen Hinweis reduziert. */
+/**
+ * Schritte eines Laufs: das Feld error jedes Schritts wird auf einen festen Hinweis reduziert; bei fehlgeschlagenen
+ * Schritten entfaellt der Freitext note (kann Rohtext enthalten).
+ */
 export function publicSteps(steps: unknown): unknown {
   if (!Array.isArray(steps)) return steps;
   return steps.map((s: unknown) => {
     if (typeof s !== "object" || s === null || !("error" in s)) return s;
-    const { error, ...rest } = s as { error?: unknown } & Record<string, unknown>;
+    const { error, ...withNote } = s as { error?: unknown } & Record<string, unknown>;
+    const rest = withNote.status === "FAILED" ? (({ note: _n, ...r }) => r)(withNote) : withNote;
     return typeof error === "string" ? { ...rest, error: publicErrorText(error) } : rest;
   });
 }

@@ -60,7 +60,10 @@ export const sendConfirmationViaMail: ConfirmationSender = async ({ run, action,
   await release();
   if (out.kind === "ALREADY") return { status: "DONE", note: `bereits gesendet (E-Mail ${out.logId})` };
   if (out.kind === "SKIPPED") return { status: "SKIPPED", note: out.note };
-  return out.retryable ? { status: "FAILED", error: out.error } : { status: "SKIPPED", note: out.error };
+  if (out.retryable) return { status: "FAILED", error: out.error };
+  // Der Rohtext des Mailanbieters bleibt im Server-Log, im Schritt steht nur ein fester Hinweis.
+  console.error("Zahlungsbestaetigung nicht versendbar", { runId: run.id, reason: out.error });
+  return { status: "SKIPPED", note: "Versand nicht moeglich – Details im Server-Protokoll" };
 };
 
 export interface ProcessOptions {
