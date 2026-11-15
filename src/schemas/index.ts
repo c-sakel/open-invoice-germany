@@ -346,6 +346,8 @@ export const customerFieldsSchema = z.object({
   notes: z.string().optional(),
   // Phase 16d: bevorzugter Versandkanal fuer Mahnungen (Stufe "CUSTOMER" folgt diesem Wert); ohne Angabe unveraendert.
   deliveryChannel: z.enum(["EMAIL", "POST", "EMAIL_AND_POST"]).optional(),
+  // Online-Zahlung: NULL/fehlt = Voreinstellung der Organisation, NONE = nie ein Bezahllink.
+  onlinePaymentProvider: onlineProviderChoiceSchema.nullable().optional(),
   ...customerDirectDebitFields,
 });
 /** Paarpruefung Peppol-ID/Schema (Phase 17a); fuer create und gemergten PATCH-Zustand. */

@@ -57,6 +57,7 @@ function toCreateData(v: CustomerInput) {
     defaultPaymentMethodId: v.defaultPaymentMethodId ?? null,
     notes: v.notes ?? null,
     deliveryChannel: v.deliveryChannel ?? "EMAIL",
+    onlinePaymentProvider: v.onlinePaymentProvider ?? null,
     sepaMandateReference: v.sepaMandateReference || null,
     sepaMandateSignedAt: v.sepaMandateSignedAt ?? null,
     sepaDebitIban: v.sepaDebitIban || null,
@@ -101,7 +102,7 @@ export async function createCustomer(orgId: string, rawInput: unknown): Promise<
   return dbInternal.$transaction((tx) => createCustomerWithinTx(tx, orgId, v));
 }
 
-const NULLABLE_ON_EMPTY = new Set(["contactName", "addressLine2", "phone", "vatId", "leitwegId", "peppolId", "peppolScheme", "legalRegistrationId", "notes", "defaultPaymentMethodId", "defaultPaymentTermsDays", "sepaMandateReference", "sepaMandateSignedAt", "sepaDebitIban", "sepaDebitAccountName"]);
+const NULLABLE_ON_EMPTY = new Set(["contactName", "addressLine2", "phone", "vatId", "leitwegId", "peppolId", "peppolScheme", "legalRegistrationId", "notes", "defaultPaymentMethodId", "defaultPaymentTermsDays", "sepaMandateReference", "sepaMandateSignedAt", "sepaDebitIban", "sepaDebitAccountName", "onlinePaymentProvider"]);
 
 const DIRECT_DEBIT_KEYS = ["sepaMandateReference", "sepaMandateSignedAt", "sepaDebitIban", "sepaDebitAccountName"] as const;
 
