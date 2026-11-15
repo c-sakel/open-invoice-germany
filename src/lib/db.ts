@@ -110,6 +110,35 @@ async function guardLineWhere(where: unknown): Promise<void> {
   if (locked) throw new GobdImmutabilityError(locked.invoice.number ?? locked.invoice.id);
 }
 
+/** invoiceId aus einem Create-Payload (skalar oder `invoice.connect`); null, wenn nicht bestimmbar. */
+function lineCreateInvoiceId(data: unknown): string | null {
+  const d = (data ?? {}) as { invoiceId?: unknown; invoice?: { connect?: { id?: unknown } } };
+  if (typeof d.invoiceId === "string") return d.invoiceId;
+  const connected = d.invoice?.connect?.id;
+  return typeof connected === "string" ? connected : null;
+}
+
+/**
+ * Neue Positionen duerfen nur an Entwuerfe gehaengt werden (GoBD). Nicht bestimmbare
+ * Rechnung (z. B. `invoice.create` im Payload) wird abgelehnt, damit kein Pfad vorbeikommt.
+ */
+async function guardLineCreate(data: unknown): Promise<void> {
+  const items = Array.isArray(data) ? data : [data];
+  const ids = new Set<string>();
+  for (const item of items) {
+    const id = lineCreateInvoiceId(item);
+    if (!id) throw new GobdImmutabilityError("neue Position ohne bestimmbare Rechnung");
+    ids.add(id);
+  }
+  if (ids.size === 0) return;
+  const rows = await base.invoice.findMany({
+    where: { id: { in: [...ids] } },
+    select: { id: true, number: true, status: true },
+  });
+  const locked = rows.find((r) => r.status !== "DRAFT");
+  if (locked) throw new GobdImmutabilityError(locked.number ?? locked.id);
+}
+
 /**
  * Phase 6: `Dunning` ist ein Geschaeftsbrief (GoBD) — nach Erstellung unveraenderlich,
  * analog `FinalInvoiceDeduction`. Eine Ausnahme bleibt ueber den geschuetzten Client
@@ -332,6 +361,27 @@ export const prisma = base.$extends({
       },
     },
     invoiceLine: {
+      async create({ args, query }) {
+        await guardLineCreate(args.data);
+        return query(args);
+      },
+      async createMany({ args, query }) {
+        await guardLineCreate(args.data);
+        return query(args);
+      },
+      async createManyAndReturn({ args, query }) {
+        await guardLineCreate(args.data);
+        return query(args);
+      },
+      async upsert({ args, query }) {
+        await guardLineWhere(args.where);
+        await guardLineCreate(args.create);
+        return query(args);
+      },
+      async updateManyAndReturn({ args, query }) {
+        await guardLineWhere(args.where);
+        return query(args);
+      },
       async update({ args, query }) {
         await guardLineWhere(args.where);
         return query(args);
