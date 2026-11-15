@@ -8,6 +8,9 @@ import { NotFoundError } from "@/domain/errors";
 import { payableBaseCents } from "@/domain/invoice/amounts";
 import { paymentRuleInputSchema, type PaymentRuleInput } from "@/schemas/payment-rule";
 import { getPaymentRule } from "./rules";
+import { recurringCandidates, OTHER_OPEN_INVOICE_NOTE } from "./actions";
+import { sortMailLast } from "./steps";
+import { loadNotificationSettings } from "@/domain/notifications/settings";
 import { matchRules, paymentSource, triggerFor, type PaymentSource } from "./match";
 import { loadMailSettings } from "@/domain/email/settings";
 import {
@@ -109,7 +112,7 @@ export async function previewPaymentRule(orgId: string, ruleIdOrInput: string | 
   const steps: PaymentRulePreview["steps"] = [];
   const paidAt = latest ? latest.paidAt : new Date();
   const openAfter = assumed ? 0 : open;
-  for (const action of rule.actions) {
+  for (const action of sortMailLast(rule.actions)) {
     switch (action.type) {
       case "SEND_PAYMENT_CONFIRMATION": {
         const res = await buildPaymentConfirmation(
@@ -132,15 +135,28 @@ export async function previewPaymentRule(orgId: string, ruleIdOrInput: string | 
         steps.push({ type: action.type, outcome: !tag ? "wuerde uebersprungen: Tag geloescht" : set ? `Tag ${tag.name} bereits gesetzt` : `Tag ${tag.name} wuerde gesetzt` });
         break;
       }
-      case "NOTIFY":
-        steps.push({ type: action.type, outcome: "Benachrichtigung wuerde angelegt" });
+      case "NOTIFY": {
+        const enabled = (await loadNotificationSettings(orgId)).enabledTypes.includes("PAYMENT_RULE");
+        steps.push({ type: action.type, outcome: enabled ? "Benachrichtigung wuerde angelegt" : "wuerde uebersprungen: Benachrichtigungstyp abgeschaltet" });
         break;
+      }
       case "EMIT_WEBHOOK":
         steps.push({ type: action.type, outcome: "Webhook payment_rule.triggered wuerde eingereiht" });
         break;
-      case "RESUME_RECURRING":
-        steps.push({ type: action.type, outcome: action.missedPeriods === "BILL" ? "Pausierte Abos wuerden fortgesetzt (verpasste Perioden nachberechnet)" : "Pausierte Abos wuerden fortgesetzt (verpasste Perioden uebersprungen)" });
+      case "RESUME_RECURRING": {
+        const candidates = await recurringCandidates(dbInternal, orgId, invoiceId);
+        if (candidates.length === 0) {
+          steps.push({ type: action.type, outcome: "wuerde uebersprungen: Die Rechnung gehoert zu keinem Abo" });
+          break;
+        }
+        const paused = candidates.filter((c) => c.status === "PAUSED");
+        const resumable = paused.filter((c) => !c.otherOpenInvoice);
+        const mode = action.missedPeriods === "BILL" ? "verpasste Perioden nachberechnet" : "verpasste Perioden uebersprungen";
+        if (resumable.length > 0) steps.push({ type: action.type, outcome: `${resumable.length} pausierte(s) Abo(s) wuerden fortgesetzt (${mode})` });
+        else if (paused.length > 0) steps.push({ type: action.type, outcome: `wuerde uebersprungen: ${OTHER_OPEN_INVOICE_NOTE}` });
+        else steps.push({ type: action.type, outcome: "wuerde uebersprungen: kein pausiertes Abo (alle laufen oder sind beendet)" });
         break;
+      }
     }
   }
   return { matches, reasons, trigger, source: trigger === null ? null : source, steps };

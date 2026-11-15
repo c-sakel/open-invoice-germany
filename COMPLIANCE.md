@@ -1340,10 +1340,6 @@ Gegenkonto-Name und IBAN können Privatpersonen betreffen. Der Betreiber führt 
 
 ---
 
-*Ende COMPLIANCE.md — Stand 2026-11-11. Ohne Gewähr. Keine Steuer-/Rechtsberatung.*
-
----
-
 ## 23. Aktionen nach Zahlungseingang: Zahlungsbestätigung, Protokoll
 
 **Umsetzung dieser Software:**
@@ -1358,6 +1354,9 @@ Gegenkonto-Name und IBAN können Privatpersonen betreffen. Der Betreiber führt 
 | Grundsatz | Umsetzung | Norm |
 |-----------|-----------|------|
 | Zweck und Rechtsgrundlage | Information des Vertragspartners über den Zahlungseingang im Rahmen der Vertragsabwicklung | Art. 6 Abs. 1 lit. b |
-| Datenminimierung | Die Mail nennt nur Rechnungsnummer, Betrag, Datum, Zahlungsart und offenen Rest; es gibt keine Standardregel, versendet wird nur, wenn der Betreiber eine Regel mit dieser Aktion anlegt | Art. 5 Abs. 1 lit. c |
+| Datenminimierung | Der eingebaute Text nennt nur Rechnungsnummer, Betrag, Datum, Zahlungsart und offenen Rest (eigene Vorlagen legt der Betreiber fest); es gibt keine Standardregel, versendet wird nur, wenn der Betreiber eine Regel mit dieser Aktion anlegt | Art. 5 Abs. 1 lit. c |
 | Begrenzung | höchstens 5 Bestätigungen je Kunde und 100 je Firma und Stunde | Art. 5 Abs. 1 lit. f |
 
+---
+
+*Ende COMPLIANCE.md — Stand 2026-11-15. Ohne Gewähr. Keine Steuer-/Rechtsberatung.*

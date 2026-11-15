@@ -90,7 +90,7 @@ describe("Server-Actions", () => {
     const created = await createPaymentRuleAction({ name: "Retry UI", trigger: "PAID_FULL", actions: [{ type: "SEND_PAYMENT_CONFIRMATION", templateId: null }] });
     if (!created.ok) throw new Error("Regel nicht angelegt");
     const inv = await mkInvoice(org, ISSUE);
-    const runId = await mkRun(created.data.id, inv.id, "p-retry", [{ type: "SEND_PAYMENT_CONFIRMATION", status: "FAILED", error: "SMTP geheim.example.org:25 refused" }], "FAILED");
+    const runId = await mkRun(created.data.id, inv.id, "p-retry", [{ type: "SEND_PAYMENT_CONFIRMATION", status: "FAILED", error: "Versand unklar – E-Mail-Protokoll pruefen" }], "FAILED");
     const denied = await retryPaymentRuleRunAction({ runId, confirmFollowUp: false });
     expect(denied.ok).toBe(false);
     expect((await dbInternal.paymentRuleRun.findFirst({ where: { id: runId }, select: { status: true } }))?.status).toBe("FAILED");

@@ -2,7 +2,7 @@
 import { z } from "zod";
 
 export const PAYMENT_RULE_TRIGGERS = ["PAID_FULL", "PAID_PARTIAL"] as const;
-export const PAYMENT_SOURCES = ["MANUAL", "API", "MCP", "BANK", "MOLLIE", "STRIPE"] as const;
+export const PAYMENT_SOURCES = ["MANUAL", "API", "MCP", "BANK"] as const;
 export const PAYMENT_RULE_ACTION_TYPES = ["SEND_PAYMENT_CONFIRMATION", "ADD_TAG", "NOTIFY", "EMIT_WEBHOOK", "RESUME_RECURRING"] as const;
 export const PAYMENT_RULE_RUN_STATUSES = ["PENDING", "RUNNING", "DONE", "FAILED", "SKIPPED"] as const;
 

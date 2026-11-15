@@ -40,6 +40,7 @@ export type ConfirmationOutcome =
   /** `notSent`: sicher nichts an den Mailanbieter uebergeben (Claim darf freigegeben werden); sonst ist der Versand unklar. */
   | { kind: "FAILED"; error: string; retryable: boolean; notSent: boolean };
 
+export const NO_MAIL_SETTINGS_NOTE = "Keine Mail-Einstellungen hinterlegt";
 export const SEND_UNCLEAR_NOTE = "Versand unklar – E-Mail-Protokoll pruefen";
 
 export interface ConfirmationRun {
@@ -192,7 +193,7 @@ export async function sendPaymentConfirmation(
   if (early) return early;
 
   const settings = await loadMailSettings(run.orgId);
-  if (!settings) return { kind: "FAILED", error: "Keine Mail-Einstellungen hinterlegt.", retryable: true, notSent: true };
+  if (!settings) return { kind: "SKIPPED", note: NO_MAIL_SETTINGS_NOTE };
 
   const context = contextSchema.parse(JSON.parse(run.contextJson));
   const payment = await dbInternal.payment.findFirst({ where: { id: run.paymentId, invoice: { orgId: run.orgId } }, select: { method: true } });

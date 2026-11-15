@@ -17,6 +17,7 @@ import { previewPaymentRule, type PaymentRulePreview } from "@/domain/payment-ru
 import { retryPaymentRuleRun } from "@/domain/payment-rule/execute";
 import { getPaymentRuleRun } from "@/domain/payment-rule/runs";
 import { GENERIC_ACTION_ERROR } from "@/domain/payment-rule/public-error";
+import { kickPaymentRules } from "@/domain/payment-rule/kick";
 import { isMailFollowUp, ruleIssueText } from "@/components/payment-rules/rule-form-model";
 
 export type RuleActionResult<T = undefined> = ({ ok: true } & (T extends undefined ? Record<never, never> : { data: T })) | { ok: false; error: string };
@@ -101,6 +102,7 @@ export async function retryPaymentRuleRunAction(raw: unknown): Promise<RuleActio
       return { ok: false, error: "Der Folgeversand der Mail muss bestätigt werden." };
     }
     await retryPaymentRuleRun(c.orgId, input.runId, c.actor);
+    kickPaymentRules(c.orgId);
     refresh();
     return { ok: true };
   } catch (e) {

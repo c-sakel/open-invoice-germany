@@ -26,7 +26,7 @@ Webhooks** oder per REST-API (`/api/v1/Webhook`, Scope `admin`) bzw. MCP
 | `postal.cancelled` | Postauftrag storniert (auch: Testauftrag in der geleerten Postbox) |
 | `payment_rule.triggered` | Eine Regel nach Zahlungseingang hat die Aktion „Webhook senden“ ausgeführt (Daten: Regel, Zahlung, Rechnung) |
 
-`payment_rule.triggered` trägt `rule` (`id`, `name`), `trigger` (`PAID_FULL` oder `PAID_PARTIAL`), `source` (`MANUAL`, `API`, `MCP`, `BANK`, `MOLLIE`, `STRIPE`), `payment` und `invoice` (wie in `payment.recorded`) sowie die Id des Laufs.
+`payment_rule.triggered` trägt `rule` (`id`, `name`), `trigger` (`PAID_FULL` oder `PAID_PARTIAL`), `source` (`MANUAL`, `API`, `MCP`, `BANK`), `payment` und `invoice` (wie in `payment.recorded`) sowie die Id des Laufs.
 
 Ein Endpunkt abonniert eine oder mehrere dieser Ereignisse (`events`-Feld bei
 Anlage/Änderung). Eine **Test-Zustellung** (`webhook.test`, über „Testen"/

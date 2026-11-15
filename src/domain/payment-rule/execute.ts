@@ -14,6 +14,7 @@ import { lockRow } from "@/lib/db-lock";
 import { NotFoundError } from "@/domain/errors";
 import { loadNotificationSettings } from "@/domain/notifications/settings";
 import { onPaymentRuleFailed } from "@/domain/notifications/hooks";
+import { publicErrorText, GENERIC_ACTION_ERROR } from "./public-error";
 import type { MailProvider } from "@/lib/mail/provider";
 import { paymentRuleActionSchema, type PaymentRuleAction } from "@/schemas/payment-rule";
 import { PaymentRuleError } from "./errors";
@@ -22,6 +23,8 @@ import { performDbAction, actorOf, type ActionOutcome, type ActionRun, type RunC
 import { nextAttemptAfterFailure, nextOpenStep, type StepState } from "./steps";
 
 export const RUN_LOCK_MS = 5 * 60_000;
+/** Sperre waehrend des Mailversands: deutlich ueber den SMTP-Zeitlimits (Verbindung, Begruessung, Socket) plus Puffer. */
+export const MAIL_LOCK_MS = 15 * 60_000;
 const DEFAULT_LIMIT = 50;
 const ERROR_MAX = 500;
 
@@ -215,7 +218,7 @@ async function runClaimed(
       let stepMine: typeof mine = mine;
       if (action.type === "SEND_PAYMENT_CONFIRMATION") {
         // Vor dem Mailversand Sperre verlaengern: der Versand ausserhalb der Transaktion darf sie nicht ablaufen lassen.
-        const extended = new Date(Math.max(Date.now(), now.getTime()) + RUN_LOCK_MS);
+        const extended = new Date(Math.max(Date.now(), now.getTime()) + MAIL_LOCK_MS);
         const ext = await prisma.paymentRuleRun.updateMany({ where: mine, data: { lockedUntil: extended } });
         if (ext.count !== 1) return "lost";
         lockRef.value = extended;
@@ -262,7 +265,7 @@ async function runClaimed(
       const res = await prisma.paymentRuleRun.updateMany({ where: mine, data: { ...common, status: "FAILED", finishedAt: now } });
       if (res.count === 1) {
         await onPaymentRuleFailed(claimed.orgId, {
-          runId: claimed.id, ruleName: base.ruleName, invoiceId: claimed.invoiceId, invoiceNumber: context.invoiceNumber, message, at: now,
+          runId: claimed.id, ruleName: base.ruleName, invoiceId: claimed.invoiceId, invoiceNumber: context.invoiceNumber, message: publicErrorText(message) ?? GENERIC_ACTION_ERROR, at: now,
         });
         return "failed";
       }
@@ -362,7 +365,17 @@ export async function processPaymentRuleRuns(opts: ProcessOptions = {}): Promise
         where: { id: c.id, status: "RUNNING", lockedUntil: lockRef.value },
         data: { status: "FAILED", lastError: message, finishedAt: at, lockedUntil: null },
       });
-      if (res.count === 1) result.failed += 1;
+      if (res.count === 1) {
+        result.failed += 1;
+        try {
+          const rule = await dbInternal.paymentRuleRun.findFirst({ where: { id: c.id }, select: { rule: { select: { name: true } } } });
+          await onPaymentRuleFailed(c.orgId, {
+            runId: c.id, ruleName: rule?.rule.name ?? "", invoiceId: c.invoiceId, invoiceNumber: null, message: GENERIC_ACTION_ERROR, at: at,
+          });
+        } catch (notifyError) {
+          console.error("Regel-Lauf: Benachrichtigung fehlgeschlagen", describeError(notifyError));
+        }
+      }
     }
   }
   return result;

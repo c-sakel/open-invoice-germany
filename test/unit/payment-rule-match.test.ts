@@ -6,8 +6,8 @@ import { paymentRuleInputSchema, paymentRuleUpdateSchema } from "@/schemas/payme
 describe("paymentSource", () => {
   it("Anbieter schlaegt Erfasser", () => {
     expect(paymentSource("api", "BANK")).toBe("BANK");
-    expect(paymentSource("user", "MOLLIE")).toBe("MOLLIE");
-    expect(paymentSource("mcp", "STRIPE")).toBe("STRIPE");
+    expect(paymentSource("user", "BANK")).toBe("BANK");
+    expect(paymentSource("mcp", "MOLLIE")).toBe("MCP");
   });
   it("Erfasser ohne Anbieter", () => {
     expect(paymentSource("api", null)).toBe("API");

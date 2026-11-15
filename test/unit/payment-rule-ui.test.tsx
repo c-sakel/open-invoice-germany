@@ -81,9 +81,10 @@ describe("Laufliste", () => {
   });
 
   it("kennzeichnet den Retry eines Mail-Schritts als Folgeversand", () => {
-    const steps = [{ type: "SEND_PAYMENT_CONFIRMATION", status: "FAILED" }];
+    const steps = [{ type: "SEND_PAYMENT_CONFIRMATION", status: "FAILED", error: "Versand unklar – E-Mail-Protokoll pruefen" }];
     expect(isMailFollowUp(steps)).toBe(true);
     expect(isMailFollowUp([{ type: "NOTIFY", status: "FAILED" }])).toBe(false);
+    expect(isMailFollowUp([{ type: "SEND_PAYMENT_CONFIRMATION", status: "FAILED", error: "Aktion fehlgeschlagen" }])).toBe(false);
     const html = renderToStaticMarkup(<PaymentRuleRunsTable runs={[run({ status: "FAILED", steps })]} />);
     expect(html).toContain("Folgeversand erneut versuchen");
   });

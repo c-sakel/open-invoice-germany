@@ -4,7 +4,7 @@ import { paymentRuleInputSchema, PAYMENT_SOURCES, type PaymentRuleAction, type P
 export const PAYMENT_CONFIRMATION_TEMPLATE_TYPE = "PAYMENT_CONFIRMATION";
 
 export const SOURCE_LABELS: Record<(typeof PAYMENT_SOURCES)[number], string> = {
-  MANUAL: "Manuell erfasst", API: "REST-Schnittstelle", MCP: "MCP", BANK: "Bankabgleich", MOLLIE: "Mollie", STRIPE: "Stripe",
+  MANUAL: "Manuell erfasst", API: "REST-Schnittstelle", MCP: "MCP", BANK: "Bankabgleich",
 };
 export const TRIGGER_LABELS = { PAID_FULL: "Vollständig bezahlt", PAID_PARTIAL: "Teilweise bezahlt" } as const;
 export const ACTION_LABELS: Record<PaymentRuleAction["type"], string> = {
@@ -103,8 +103,8 @@ export function validateRuleForm(s: RuleFormState): { ok: true; input: PaymentRu
   return { ok: false, error: first ? ruleIssueText(first) : "Ungültige Eingabe." };
 }
 
-/** Ein manueller Retry wiederholt einen Mail-Schritt: Folgeversand, die erste Mail kann schon zugestellt sein. */
+/** Ein manueller Retry nach unklarem Versand ist ein Folgeversand: die erste Mail kann schon zugestellt sein. Scheiterte der Versand sicher vorher, gilt das nicht. */
 export function isMailFollowUp(steps: unknown): boolean {
   if (!Array.isArray(steps)) return false;
-  return steps.some((s: unknown) => typeof s === "object" && s !== null && "type" in s && "status" in s && s.type === "SEND_PAYMENT_CONFIRMATION" && s.status === "FAILED");
+  return steps.some((s: unknown) => typeof s === "object" && s !== null && "type" in s && "status" in s && s.type === "SEND_PAYMENT_CONFIRMATION" && s.status === "FAILED" && "error" in s && typeof s.error === "string" && s.error.includes("Versand unklar"));
 }

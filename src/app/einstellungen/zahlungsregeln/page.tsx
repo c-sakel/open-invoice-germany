@@ -39,7 +39,7 @@ export default async function PaymentRulesPage() {
       <PaymentRuleList
         rules={rules.map((r) => ({
           id: r.id, name: r.name, active: r.active, trigger: r.trigger, sources: r.sources, invoiceTagId: r.invoiceTagId,
-          delayMinutes: r.delayMinutes, actions: r.actions, sortOrder: r.sortOrder, tagMissing: r.tagMissing,
+          delayMinutes: r.delayMinutes, actions: r.actions, sortOrder: r.sortOrder, tagMissing: r.tagMissing, broken: r.broken,
         }))}
         tags={tags.map((t) => ({ id: t.id, name: t.name }))}
         templates={templates}

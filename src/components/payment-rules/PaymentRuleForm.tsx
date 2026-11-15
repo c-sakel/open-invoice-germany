@@ -169,6 +169,7 @@ export function PaymentRuleForm({ ruleId, initial, tags, templates, onDone }: Pa
               </select>
               <p className="text-xs text-ink-muted">
                 Überspringen: Das Abo läuft ab der nächsten Periode weiter. Nachberechnen: Für jede pausierte Periode wird eine Rechnung erzeugt.
+                Fortgesetzt werden alle pausierten Abos der Rechnung, auch ein von Hand pausiertes; hat das Abo noch eine weitere offene Rechnung, bleibt es pausiert.
               </p>
             </div>
           )}

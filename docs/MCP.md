@@ -331,6 +331,7 @@ Kontoauszüge (CAMT.053/.054) importieren und Umsätze Rechnungen zuordnen. Dies
 ### Regeln nach Zahlungseingang
 
 Dieselben Schemas und Domainfunktionen wie REST (`/api/v1/PaymentRule`, `/api/v1/PaymentRuleRun`). Der Trockenlauf ist rein lesend.
+Eine E-Mail-Vorlage vom Typ Zahlungsbestätigung lässt sich nur in der Oberfläche oder per REST anlegen; die Regel verweist über `templateId` darauf.
 
 | Tool | Zweck | Beispiel |
 |---|---|---|

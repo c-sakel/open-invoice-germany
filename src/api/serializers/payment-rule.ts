@@ -22,6 +22,7 @@ export function serializePaymentRule(r: PaymentRuleView) {
     createdAt: iso(r.createdAt),
     updatedAt: iso(r.updatedAt),
     tagMissing: r.tagMissing,
+    broken: r.broken,
   };
 }
 
@@ -64,6 +65,7 @@ export const paymentRuleSchema = z.object({
   createdAt: z.string().nullable(),
   updatedAt: z.string().nullable(),
   tagMissing: z.boolean(),
+  broken: z.boolean(),
 });
 
 export const paymentRuleRunSchema = z.object({

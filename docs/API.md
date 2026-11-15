@@ -718,7 +718,7 @@ Regeln, die nach einer Zahlung Aktionen auslösen (Zahlungsbestätigung per Mail
 | Endpunkt | Scope | Zweck |
 |---|---|---|
 | `GET /api/v1/PaymentRule` / `GET /api/v1/PaymentRule/{id}` | `read` | Regeln (`includeArchived=true` zeigt auch archivierte) |
-| `POST /api/v1/PaymentRule` | `admin` | Regel anlegen: `name`, `trigger` (`PAID_FULL`/`PAID_PARTIAL`), `sources` (optional, `MANUAL`/`API`/`MCP`/`BANK`/`MOLLIE`/`STRIPE`), `invoiceTagId` (optional), `delayMinutes` (0 bis 1440), `actions` (1 bis 5, je Art einmal) |
+| `POST /api/v1/PaymentRule` | `admin` | Regel anlegen: `name`, `trigger` (`PAID_FULL`/`PAID_PARTIAL`), `sources` (optional, `MANUAL`/`API`/`MCP`/`BANK`), `invoiceTagId` (optional), `delayMinutes` (0 bis 1440), `actions` (1 bis 5, je Art einmal) |
 | `PATCH /api/v1/PaymentRule/{id}` | `admin` | nur übergebene Felder ändern |
 | `DELETE /api/v1/PaymentRule/{id}` | `admin` | archivieren (nie hart gelöscht, Läufe bleiben) |
 | `POST /api/v1/PaymentRule/{id}/test` | `admin` | Trockenlauf gegen eine Rechnung (`invoiceId`) inkl. Mailvorschau; schreibt und sendet nichts |

@@ -1,4 +1,4 @@
--- Zahlungsaktionen — nur additiv: zwei neue Tabellen, Bestand unveraendert.
+-- Zahlungsaktionen — nur additiv: zwei neue Tabellen; ergaenzt bei Bestands-Organisationen zwei Benachrichtigungstypen.
 CREATE TABLE "PaymentRule" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "orgId" TEXT NOT NULL,

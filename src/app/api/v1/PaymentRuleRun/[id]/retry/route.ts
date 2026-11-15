@@ -4,6 +4,7 @@ import { apiData } from "@/api/response";
 import { apiDataResponseSchema, type RouteSpec } from "@/api/spec";
 import { paymentRuleRunSchema, serializePaymentRuleRun } from "@/api/serializers/payment-rule";
 import { retryPaymentRuleRun } from "@/domain/payment-rule/execute";
+import { kickPaymentRules } from "@/domain/payment-rule/kick";
 import { getPaymentRuleRun } from "@/domain/payment-rule/runs";
 
 export const runtime = "nodejs";
@@ -11,6 +12,7 @@ export const dynamic = "force-dynamic";
 
 export const POST = withApi<{ id: string }>(async (_req, ctx) => {
   await retryPaymentRuleRun(ctx.orgId, ctx.params.id, ctx.actor);
+  kickPaymentRules(ctx.orgId);
   return apiData(serializePaymentRuleRun(await getPaymentRuleRun(ctx.orgId, ctx.params.id)));
 }, { scope: "admin" });
 

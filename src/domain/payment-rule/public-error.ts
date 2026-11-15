@@ -2,19 +2,20 @@
  * Fehlertexte, die nach aussen (REST, MCP, Oberflaeche) gehen: nur feste Hinweise, nie rohe Fehlermeldungen
  * (Mailadressen, Hostnamen, Stacktraces). Die Rohtexte bleiben intern gespeichert und im Server-Log.
  */
-import { SEND_UNCLEAR_NOTE } from "./mail";
+import { NO_MAIL_SETTINGS_NOTE, SEND_UNCLEAR_NOTE } from "./mail";
 
 export const GENERIC_ACTION_ERROR = "Aktion fehlgeschlagen – Details im Server-Protokoll";
 
 const KNOWN_TEXTS = new Set<string>([
   SEND_UNCLEAR_NOTE,
-  "Keine Mail-Einstellungen hinterlegt.",
-  "Lauf wurde von einem anderen Ausfuehrer uebernommen.",
+  NO_MAIL_SETTINGS_NOTE,
 ]);
 
 export function publicErrorText(raw: string | null): string | null {
   if (raw === null) return null;
-  if (KNOWN_TEXTS.has(raw)) return raw;
+  // Gespeicherte Fehler tragen ggf. den Klassennamen als Praefix ("Error: ...").
+  const text = raw.replace(/^[A-Za-z]*Error: /, "");
+  if (KNOWN_TEXTS.has(text)) return text;
   if (raw.includes(SEND_UNCLEAR_NOTE)) return SEND_UNCLEAR_NOTE;
   return GENERIC_ACTION_ERROR;
 }

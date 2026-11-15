@@ -8,6 +8,7 @@ import { serializePaymentRule, serializePaymentRuleRun } from "@/api/serializers
 import { NotFoundError } from "@/domain/errors";
 import { retryPaymentRuleRun } from "@/domain/payment-rule/execute";
 import { PaymentRuleError } from "@/domain/payment-rule/errors";
+import { kickPaymentRules } from "@/domain/payment-rule/kick";
 import { previewPaymentRule } from "@/domain/payment-rule/preview";
 import { archivePaymentRule, createPaymentRule, getPaymentRule, listPaymentRules, updatePaymentRule } from "@/domain/payment-rule/rules";
 import { getPaymentRuleRun, listPaymentRuleRuns } from "@/domain/payment-rule/runs";
@@ -135,6 +136,7 @@ export function registerPaymentRuleTools(server: McpServer, ctx: McpToolsContext
       try {
         const org = await ctx.requireOrg();
         await retryPaymentRuleRun(org.id, id, "mcp");
+        kickPaymentRules(org.id);
         const run = await getPaymentRuleRun(org.id, id);
         return ctx.ok(`Lauf ${run.id} (${run.ruleName}) wird wiederholt, Status ${run.status}.`);
       } catch (e) {

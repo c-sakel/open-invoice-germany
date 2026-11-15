@@ -90,4 +90,15 @@ describe("Zahlungsregeln verwalten", () => {
     await expect(archivePaymentRule(other, r.id, "user")).rejects.toBeInstanceOf(NotFoundError);
     expect(await listPaymentRules(other)).toHaveLength(0);
   });
+
+  it("Mail-Aktion wird ans Ende sortiert; defekte gespeicherte Regel wird als defekt gemeldet statt abzustuerzen", async () => {
+    const orgId = await mkOrg("defekt");
+    const created = await createPaymentRule(orgId, { name: "Reihenfolge", trigger: "PAID_FULL", actions: [{ type: "SEND_PAYMENT_CONFIRMATION" }, { type: "EMIT_WEBHOOK" }] }, "user");
+    expect(created.actions.map((a) => a.type)).toEqual(["EMIT_WEBHOOK", "SEND_PAYMENT_CONFIRMATION"]);
+    expect(created.broken).toBe(false);
+    await dbInternal.paymentRule.update({ where: { id: created.id }, data: { actionsJson: "{kaputt" }, select: { id: true } });
+    expect((await getPaymentRule(orgId, created.id)).broken).toBe(true);
+    expect((await listPaymentRules(orgId)).find((r) => r.id === created.id)?.broken).toBe(true);
+    await expect(updatePaymentRule(orgId, created.id, { name: "Neu" }, "user")).rejects.toBeInstanceOf(PaymentRuleError);
+  });
 });

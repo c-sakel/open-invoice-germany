@@ -13,6 +13,7 @@ import type { PaymentRuleInput } from "@/schemas/payment-rule";
 export interface RuleRowView extends PaymentRuleInput {
   id: string;
   tagMissing: boolean;
+  broken?: boolean;
 }
 
 interface Props {
@@ -125,6 +126,7 @@ export function PaymentRuleList({ rules, tags, templates }: Props) {
                       {TRIGGER_LABELS[r.trigger]} · Quellen: {r.sources === null ? "alle" : r.sources.map((s) => SOURCE_LABELS[s]).join(", ")} · Wartezeit {r.delayMinutes} Min.
                     </p>
                     <p className="text-xs text-ink-soft">Aktionen: {r.actions.map((a) => ACTION_LABELS[a.type]).join(", ")}</p>
+                    {r.broken && <p className="text-xs font-medium text-stamp">Defekt: Die gespeicherte Regel ist nicht lesbar und wird nicht ausgeführt. Bitte neu anlegen.</p>}
                     {r.tagMissing && <p className="text-xs font-medium text-stamp">Ein verwendeter Tag existiert nicht mehr. Bitte die Regel anpassen.</p>}
                   </div>
                   <label className="flex items-center gap-2">
@@ -142,7 +144,7 @@ export function PaymentRuleList({ rules, tags, templates }: Props) {
                   <Button variant="secondary" size="sm" onClick={() => setTesting(testing === r.id ? null : r.id)}>Trockenlauf</Button>
                   <Button
                     variant="danger-quiet" size="sm" disabled={pending}
-                    onClick={() => { if (window.confirm(`Regel „${r.name}“ archivieren? Bereits geplante Läufe bleiben bestehen.`)) mutate(() => archivePaymentRuleAction(r.id)); }}
+                    onClick={() => { if (window.confirm(`Regel „${r.name}“ archivieren? Geplante, noch nicht ausgeführte Läufe werden übersprungen.`)) mutate(() => archivePaymentRuleAction(r.id)); }}
                   >
                     Archivieren
                   </Button>

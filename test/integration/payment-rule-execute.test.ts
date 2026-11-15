@@ -18,6 +18,8 @@ vi.mock("@/domain/webhook/emit", async (orig) => {
 
 import { dbInternal } from "@/lib/db";
 import { saveDocumentSettings } from "@/domain/document/settings";
+import { saveMailSettings } from "@/domain/email/settings";
+import { createMemoryProvider } from "@/lib/mail/memory";
 import { recordPayment } from "@/domain/invoice/payment";
 import { reversePayment } from "@/domain/invoice/payment-reversal";
 import { cancelInvoice } from "@/domain/invoice/cancel";
@@ -104,7 +106,7 @@ describe("Aktionen", () => {
     expect(deliveries).toHaveLength(1);
     expect(deliveries[0]!.event).toBe("payment_rule.triggered");
     expect(deliveries[0]!.dataJson).not.toContain("internalNotes");
-    expect(await dbInternal.activityLog.count({ where: { orgId: o.orgId, type: "PAYMENT_RULE_EXECUTED", entityId: inv.id } })).toBe(1);
+    expect(await dbInternal.activityLog.count({ where: { orgId: o.orgId, type: "PAYMENT_RULE_EXECUTED", entityId: inv.id } })).toBe(3);
 
     expect(await process(o.orgId)).toMatchObject({ claimed: 0 });
     expect(await dbInternal.webhookDelivery.count({ where: { orgId: o.orgId } })).toBe(1);
@@ -396,5 +398,106 @@ describe("Anstoss und Scheduler", () => {
     expect(results).toHaveLength(1);
     expect(results[0]).toMatchObject({ job: "payment-rules", ok: true });
     expect((await runsOf(o.orgId))[0]!.status).toBe("DONE");
+  });
+});
+
+describe("Mail-Schritt blockiert keine Datenbankaktionen", () => {
+  async function mkAboFor(o: BankTestOrg, invoiceId: string): Promise<string> {
+    const rec = await createRecurring(
+      o.orgId,
+      createRecurringSchema.parse({
+        customerId: o.customerId, title: "Wartung", startDate: new Date("2211-01-15T10:00:00.000Z"),
+        lines: [{ lineType: "ITEM", description: "Grundgebühr", quantityMilli: 1000, unitNetPriceCents: 2900, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 }],
+      }),
+    );
+    await dbInternal.recurringInvoice.update({ where: { id: rec.id }, data: { status: "PAUSED", nextRunDate: new Date(2211, 0, 15, 12) } });
+    await dbInternal.invoice.update({ where: { id: invoiceId }, data: { recurringInvoiceId: rec.id } });
+    return rec.id;
+  }
+  const mailFirst = (tagId: string): Action[] => [
+    { type: "SEND_PAYMENT_CONFIRMATION", templateId: null }, { type: "ADD_TAG", tagId }, { type: "RESUME_RECURRING", missedPeriods: "SKIP" },
+  ];
+
+  it("ohne Mail-Einstellungen: Tag und Abo sofort, Mail-Schritt uebersprungen, Lauf DONE", async () => {
+    const o = await mkOrg();
+    const tagId = await mkTag(o.orgId);
+    await mkRule(o.orgId, mailFirst(tagId));
+    const { inv } = await paidInvoice(o);
+    const abo = await mkAboFor(o, inv.id);
+    expect(await process(o.orgId)).toMatchObject({ claimed: 1, done: 1, retry: 0 });
+    expect(await dbInternal.documentTag.count({ where: { orgId: o.orgId, tagId, docId: inv.id } })).toBe(1);
+    expect((await dbInternal.recurringInvoice.findUniqueOrThrow({ where: { id: abo }, select: { status: true } })).status).toBe("ACTIVE");
+    const [run] = await runsOf(o.orgId);
+    expect(steps(run!.stepsJson).find((s) => s.type === "SEND_PAYMENT_CONFIRMATION")).toMatchObject({ status: "SKIPPED", note: "Keine Mail-Einstellungen hinterlegt" });
+  });
+
+  it("Versand unklar: Tag und Abo erledigt, Lauf FAILED, genau ein Versandversuch", async () => {
+    const o = await mkOrg();
+    await saveMailSettings(o.orgId, { host: "localhost", port: 2525, security: "NONE", fromName: "Regel GmbH", fromEmail: "rechnung@example.org", copyToSelf: false, defaultCc: "", defaultBcc: "" });
+    await dbInternal.customer.update({ where: { id: o.customerId }, data: { invoiceEmail: "rechnung@kunde.example.org" }, select: { id: true } });
+    const tagId = await mkTag(o.orgId);
+    await mkRule(o.orgId, mailFirst(tagId));
+    const { inv } = await paidInvoice(o);
+    const abo = await mkAboFor(o, inv.id);
+    const provider = createMemoryProvider();
+    provider.failNext("SMTP down");
+    expect(await processPaymentRuleRuns({ orgId: o.orgId, now: NOW, provider })).toMatchObject({ claimed: 1, failed: 1 });
+    expect(await dbInternal.documentTag.count({ where: { orgId: o.orgId, tagId, docId: inv.id } })).toBe(1);
+    expect((await dbInternal.recurringInvoice.findUniqueOrThrow({ where: { id: abo }, select: { status: true } })).status).toBe("ACTIVE");
+    const [run] = await runsOf(o.orgId);
+    expect(run).toMatchObject({ status: "FAILED" });
+    expect(run!.lastError).toContain("Versand unklar");
+    expect(await dbInternal.emailLog.count({ where: { orgId: o.orgId, docType: "PAYMENT_CONFIRMATION" } })).toBe(1);
+    expect(provider.sent).toHaveLength(0);
+  });
+
+  it("verschobener Mail-Schritt (Versandgrenze) haelt den Webhook nicht auf", async () => {
+    const o = await mkOrg();
+    await mkEndpoint(o.orgId);
+    await mkRule(o.orgId, [{ type: "SEND_PAYMENT_CONFIRMATION", templateId: null }, { type: "EMIT_WEBHOOK" }]);
+    await paidInvoice(o);
+    const defer: ConfirmationSender = async () => ({ status: "DEFER", until: at(30), note: "Versandgrenze je Kunde erreicht" });
+    expect(await process(o.orgId, NOW, { sendConfirmation: defer })).toMatchObject({ claimed: 1, deferred: 1 });
+    expect(await dbInternal.webhookDelivery.count({ where: { orgId: o.orgId, event: "payment_rule.triggered" } })).toBe(1);
+    const [run] = await runsOf(o.orgId);
+    expect(run!.status).toBe("PENDING");
+  });
+
+  it("Abo mit weiterer offener Rechnung bleibt pausiert, Schritt uebersprungen", async () => {
+    const o = await mkOrg();
+    await mkRule(o.orgId, [{ type: "RESUME_RECURRING", missedPeriods: "SKIP" }]);
+    const { inv } = await paidInvoice(o);
+    const abo = await mkAboFor(o, inv.id);
+    const other = await mkInvoice(o, ISSUE);
+    await dbInternal.invoice.update({ where: { id: other.id }, data: { recurringInvoiceId: abo } });
+    await process(o.orgId);
+    expect((await dbInternal.recurringInvoice.findUniqueOrThrow({ where: { id: abo }, select: { status: true } })).status).toBe("PAUSED");
+    const [run] = await runsOf(o.orgId);
+    expect(steps(run!.stepsJson)[0]).toMatchObject({ status: "SKIPPED", note: "Weitere offene Rechnung des Abos" });
+  });
+
+  it("Tag und Webhook schreiben je einen Aktivitaetseintrag, auch wenn ein spaeterer Schritt scheitert", async () => {
+    const o = await mkOrg();
+    await mkEndpoint(o.orgId);
+    await mkRule(o.orgId, [{ type: "NOTIFY" }, { type: "EMIT_WEBHOOK" }]);
+    const { inv } = await paidInvoice(o);
+    await process(o.orgId);
+    const logs = await dbInternal.activityLog.findMany({ where: { orgId: o.orgId, type: "PAYMENT_RULE_EXECUTED", entityId: inv.id }, select: { dataJson: true } });
+    const stepsLogged = logs.map((l) => (JSON.parse(l.dataJson ?? "{}") as { step?: string }).step).filter((x) => x !== undefined).sort();
+    expect(stepsLogged).toEqual(["EMIT_WEBHOOK", "NOTIFY"]);
+  });
+});
+
+describe("Unerwartete Fehler", () => {
+  it("defekte Aktionsdaten -> Lauf FAILED und Benachrichtigung mit festem Text", async () => {
+    const o = await mkOrg();
+    await mkRule(o.orgId, [{ type: "NOTIFY" }]);
+    await paidInvoice(o);
+    const [run] = await runsOf(o.orgId);
+    await dbInternal.paymentRuleRun.update({ where: { id: run!.id }, data: { actionsJson: "{kaputt" } });
+    expect(await process(o.orgId)).toMatchObject({ claimed: 1, failed: 1 });
+    const notes = await dbInternal.notification.findMany({ where: { orgId: o.orgId, type: "PAYMENT_RULE_FAILED" }, select: { body: true } });
+    expect(notes).toHaveLength(1);
+    expect(notes[0]!.body).toBe("Aktion fehlgeschlagen – Details im Server-Protokoll");
   });
 });

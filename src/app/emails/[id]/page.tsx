@@ -20,12 +20,12 @@ const STATUS_LABEL: Record<string, string> = {
   BOUNCED: "Unzustellbar",
 };
 
-async function backLink(docType: string, docId: string): Promise<string | null> {
+async function backLink(orgId: string, docType: string, docId: string): Promise<string | null> {
   if (docType === "INVOICE" || docType === "CREDIT_NOTE") return `/rechnungen/${docId}`;
   if (docType === "ANGEBOT" || docType === "AUFTRAGSBESTAETIGUNG" || docType === "PROFORMA") return `/dokumente/${docId}`;
   if (docType === "PAYMENT_CONFIRMATION") {
     // docId = Zahlung; Rechnung ueber die Zahlung (Protokoll liegt unter der Zahlung, nicht an der Rechnung).
-    const p = await dbInternal.payment.findUnique({ where: { id: docId }, select: { invoiceId: true } });
+    const p = await dbInternal.payment.findFirst({ where: { id: docId, invoice: { orgId } }, select: { invoiceId: true } });
     return p ? `/rechnungen/${p.invoiceId}` : null;
   }
   if (docType === "DUNNING") {
@@ -46,7 +46,7 @@ export default async function EmailDetailPage({ params }: { params: Promise<{ id
   const bcc = JSON.parse(log.bccJson) as string[];
   const attachments = JSON.parse(log.attachmentsJson) as { filename: string; size: number; sha256: string }[];
   const warnings = JSON.parse(log.warningsJson) as string[];
-  const back = await backLink(log.docType, log.docId);
+  const back = await backLink(org.id, log.docType, log.docId);
 
   return (
     <div className="space-y-6">

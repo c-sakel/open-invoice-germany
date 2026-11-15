@@ -4,6 +4,7 @@
  * keine DB-Aktion: sie wird ueber den atomaren Claim `mailSentAt` hoechstens einmal versendet.
  */
 import type { Payment, Prisma } from "@/generated/prisma/client";
+import type { dbInternal } from "@/lib/db";
 import { logActivity } from "@/domain/activity/log";
 import { emitEvent } from "@/domain/webhook/emit";
 import { serializeInvoice } from "@/api/serializers/invoice";
@@ -55,7 +56,7 @@ export const PAYMENT_SELECT = {
 export const actorOf = (ruleId: string): string => `payment-rule:${ruleId}`;
 
 /** Abos einer Rechnung: Herkunftsabo und Sammelrechnungs-Relationen, sortiert und ohne Duplikate. */
-async function recurringIdsOf(tx: Prisma.TransactionClient, orgId: string, invoiceId: string): Promise<string[]> {
+async function recurringIdsOf(tx: Prisma.TransactionClient | typeof dbInternal, orgId: string, invoiceId: string): Promise<string[]> {
   const inv = await tx.invoice.findFirst({ where: { id: invoiceId, orgId }, select: { recurringInvoiceId: true } });
   const rels = await tx.documentRelation.findMany({
     where: { orgId, fromType: "INVOICE", fromId: invoiceId, toType: "RECURRING", relationType: "GENERATED_BY" },
@@ -65,6 +66,42 @@ async function recurringIdsOf(tx: Prisma.TransactionClient, orgId: string, invoi
   if (inv?.recurringInvoiceId) ids.add(inv.recurringInvoiceId);
   return [...ids].sort();
 }
+
+const OPEN_INVOICE_STATUSES = ["FINALIZED", "SENT", "PARTIALLY_PAID"];
+
+export interface RecurringCandidate {
+  id: string;
+  status: string;
+  /** Eine weitere Rechnung des Abos ist noch offen (festgeschrieben, nicht bezahlt/storniert). */
+  otherOpenInvoice: boolean;
+}
+
+/** Abos der Rechnung mit Status und der Angabe, ob das Abo eine weitere offene Rechnung hat. Rein lesend. */
+export async function recurringCandidates(
+  db: Prisma.TransactionClient | typeof dbInternal, orgId: string, invoiceId: string,
+): Promise<RecurringCandidate[]> {
+  const ids = await recurringIdsOf(db, orgId, invoiceId);
+  const out: RecurringCandidate[] = [];
+  for (const id of ids) {
+    const rec = await db.recurringInvoice.findFirst({ where: { id, orgId }, select: { status: true } });
+    if (!rec) continue;
+    const rels = await db.documentRelation.findMany({
+      where: { orgId, fromType: "INVOICE", toType: "RECURRING", relationType: "GENERATED_BY", toId: id },
+      select: { fromId: true },
+    });
+    const related = rels.map((r) => r.fromId).filter((x) => x !== invoiceId);
+    const open = await db.invoice.count({
+      where: {
+        orgId, id: { not: invoiceId }, type: { not: "CREDIT_NOTE" }, status: { in: OPEN_INVOICE_STATUSES },
+        OR: [{ recurringInvoiceId: id }, ...(related.length > 0 ? [{ id: { in: related } }] : [])],
+      },
+    });
+    out.push({ id, status: rec.status, otherOpenInvoice: open > 0 });
+  }
+  return out;
+}
+
+export const OTHER_OPEN_INVOICE_NOTE = "Weitere offene Rechnung des Abos";
 
 export async function performDbAction(input: ActionInput): Promise<ActionOutcome> {
   const { tx, run, action, index, now } = input;
@@ -101,6 +138,10 @@ export async function performDbAction(input: ActionInput): Promise<ActionOutcome
         },
         select: { id: true },
       });
+      await logActivity(tx, {
+        orgId: run.orgId, entityType: "INVOICE", entityId: run.invoiceId, type: "PAYMENT_RULE_EXECUTED", actor: actorOf(run.ruleId), at: now,
+        data: { runId: run.id, step: action.type },
+      });
       return { status: "DONE" };
     }
     case "EMIT_WEBHOOK": {
@@ -123,16 +164,26 @@ export async function performDbAction(input: ActionInput): Promise<ActionOutcome
           invoice: serializeInvoice(invoice, new Set()),
         },
       });
+      await logActivity(tx, {
+        orgId: run.orgId, entityType: "INVOICE", entityId: run.invoiceId, type: "PAYMENT_RULE_EXECUTED", actor: actorOf(run.ruleId), at: now,
+        data: { runId: run.id, step: action.type },
+      });
       const queued = await tx.webhookDelivery.count({ where: { orgId: run.orgId, event: "payment_rule.triggered", objectId: run.id } });
       return queued === 0 ? { status: "DONE", note: "kein Endpunkt abonniert" } : { status: "DONE" };
     }
     case "RESUME_RECURRING": {
-      const ids = await recurringIdsOf(tx, run.orgId, run.invoiceId);
-      if (ids.length === 0) return { status: "SKIPPED", note: "keine Abos" };
+      const candidates = await recurringCandidates(tx, run.orgId, run.invoiceId);
+      if (candidates.length === 0) return { status: "SKIPPED", note: "keine Abos" };
       const notes: string[] = [];
       let resumedAny = false;
       let endedAny = false;
-      for (const id of ids) {
+      let blockedAny = false;
+      for (const { id, status, otherOpenInvoice } of candidates) {
+        if (otherOpenInvoice && status === "PAUSED") {
+          blockedAny = true;
+          notes.push(OTHER_OPEN_INVOICE_NOTE);
+          continue;
+        }
         const r = await resumePausedRecurringWithinTx(tx, run.orgId, id, {
           missedPeriods: action.missedPeriods, now, actor: actorOf(run.ruleId), invoiceId: run.invoiceId,
         });
@@ -141,7 +192,8 @@ export async function performDbAction(input: ActionInput): Promise<ActionOutcome
         if (r.ended) endedAny = true;
       }
       // Nichts fortgesetzt und mindestens ein Abo endet im uebersprungenen Zeitraum: Schritt uebersprungen statt erledigt.
-      return { status: !resumedAny && endedAny ? "SKIPPED" : "DONE", note: notes.join("; ").slice(0, 300) };
+      const skipped = !resumedAny && (endedAny || blockedAny);
+      return { status: skipped ? "SKIPPED" : "DONE", note: notes.join("; ").slice(0, 300) };
     }
     case "SEND_PAYMENT_CONFIRMATION":
       return { status: "SKIPPED", note: "nicht als Datenbankaktion ausfuehrbar" };

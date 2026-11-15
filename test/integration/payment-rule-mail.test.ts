@@ -147,7 +147,7 @@ describe("Versand", () => {
     const prov = createMemoryProvider();
     await processPaymentRuleRuns({ orgId: o.orgId, now: NOW, provider: prov });
     expect(prov.sent[0]!.text).toContain("Zahlung über 119,00");
-    expect(prov.sent[0]!.text).toContain("Offener Betrag: 0,00");
+    expect(prov.sent[0]!.text).not.toContain("Offener Betrag");
   });
 
   it("eigene Vorlage mit Zahlungsplatzhaltern und Portal-Link: Mail traegt den Link, Protokoll ist geschwaerzt; geloeschte Vorlage -> Standard", async () => {
@@ -238,22 +238,18 @@ describe("Versand", () => {
     expect(await logsOf(o.orgId)).toHaveLength(1);
   });
 
-  it("Fehler vor dem Senden (keine Mail-Einstellungen) -> Claim frei, Folgeversuch sendet genau einmal", async () => {
+  it("keine Mail-Einstellungen -> Mail-Schritt uebersprungen mit festem Hinweis, kein Versand, kein Wiederholen", async () => {
     const o = await mkOrg({ mail: false });
     await mkRule(o.orgId);
     await paid(o);
     const prov = createMemoryProvider();
     const r1 = await processPaymentRuleRuns({ orgId: o.orgId, now: NOW, provider: prov });
-    expect(r1).toMatchObject({ claimed: 1, retry: 1 });
-    const [pending] = await runs(o.orgId);
-    expect(pending!.status).toBe("PENDING");
-    expect(pending!.mailSentAt).toBeNull();
+    expect(r1).toMatchObject({ claimed: 1, done: 1, retry: 0 });
+    const [run] = await runs(o.orgId);
+    expect(run!.mailSentAt).toBeNull();
+    expect(steps(run!.stepsJson)[0]).toMatchObject({ status: "SKIPPED", note: "Keine Mail-Einstellungen hinterlegt" });
     expect(prov.sent).toHaveLength(0);
-    await saveMailSettings(o.orgId, { host: "localhost", port: 2525, security: "NONE", fromName: "Zahlungsmail GmbH", fromEmail: "rechnung@example.org", copyToSelf: false, defaultCc: "", defaultBcc: "" });
-    const r2 = await processPaymentRuleRuns({ orgId: o.orgId, now: at(10), provider: prov });
-    expect(r2).toMatchObject({ claimed: 1, done: 1 });
-    expect(prov.sent).toHaveLength(1);
-    expect((await logsOf(o.orgId)).map((l) => l.status)).toEqual(["SENT"]);
+    expect(await logsOf(o.orgId)).toHaveLength(0);
   });
 
   it("manueller Retry nach unklarem Versand gibt den Claim frei (Folgeversand)", async () => {
