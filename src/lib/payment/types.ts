@@ -40,6 +40,8 @@ export interface PaymentProviderAdapter {
   payoutPattern: RegExp;
   /** Hosts, die der Transport fuer diesen Anbieter erreichen darf (exakter Hostname, nur https). */
   allowedHosts: readonly string[];
+  /** Hosts, auf die der Zahler zur Bezahlung weitergeleitet werden darf (exakter Hostname, nur https). */
+  checkoutHosts: readonly string[];
   modeFromKey(key: string): "TEST" | "LIVE" | null;
   supportsCurrency(currency: string): boolean;
   createCheckout(

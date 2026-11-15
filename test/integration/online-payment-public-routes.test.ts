@@ -38,6 +38,7 @@ import { saveDocumentSettings } from "@/domain/document/settings";
 import { createDraftInvoice } from "@/domain/invoice/create";
 import { finalizeInvoice } from "@/domain/invoice/finalize";
 import { revealPayLinkUrl } from "@/domain/online-payment/pay-link";
+import { hashToken } from "@/domain/quote-share/token";
 import { resetRateLimits } from "@/lib/rate-limit";
 import { createInvoiceSchema } from "@/schemas";
 import PayPage from "@/app/zahlen/[token]/page";
@@ -126,6 +127,19 @@ describe("Route bezahlen", () => {
     expect(transport.calls).toHaveLength(1);
   });
 
+  it("BUSY und Anbieterfehler: Weiterleitung auf die Seite mit festem Hinweis", async () => {
+    const link = await dbInternal.invoicePayLink.findFirstOrThrow({ where: { tokenHash: hashToken(token) }, select: { id: true, orgId: true } });
+    await dbInternal.paymentProviderAttempt.updateMany({ where: { payLinkId: link.id, status: "OPEN" }, data: { status: "CANCELED" } });
+    const busy = await dbInternal.paymentProviderAttempt.create({
+      data: { orgId: link.orgId, payLinkId: link.id, provider: "MOLLIE", amountCents: 11900, currency: "EUR", status: "CREATING", createdAt: new Date() },
+      select: { id: true },
+    });
+    const res = await post(token, { "sec-fetch-site": "same-origin" });
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe(`/zahlen/${token}?hinweis=busy`);
+    await dbInternal.paymentProviderAttempt.update({ where: { id: busy.id }, data: { status: "FAILED", error: "x" } });
+  });
+
   it("ungueltiges Token -> 404; 6. Aufruf je Token -> 429", async () => {
     expect((await post("z".repeat(43))).status).toBe(404);
     expect((await post("kurz")).status).toBe(404);
@@ -141,6 +155,20 @@ describe("Seite", () => {
     expect(html).toContain(`action="/zahlen/${token}/bezahlen"`);
     expect(html).not.toContain("Kunde AG");
     expect(transport.calls).toHaveLength(0);
+  });
+
+  it("Testmodus-Kennzeichnung; ?hinweis=unavailable ersetzt den Knopf; ?hinweis=busy zeigt Wartehinweis", async () => {
+    const page = async (sp: { hinweis?: string }) => renderToStaticMarkup(await PayPage({ params: Promise.resolve({ token }), searchParams: Promise.resolve(sp) }));
+    const normal = await page({});
+    expect(normal).toContain("Testmodus");
+    expect(normal).toContain("bezahlen");
+    const unavailable = await page({ hinweis: "unavailable" });
+    expect(unavailable).toContain("nicht verfügbar");
+    expect(unavailable).not.toContain(`action="/zahlen/${token}/bezahlen"`);
+    const busy = await page({ hinweis: "busy" });
+    expect(busy).toContain("vorbereitet");
+    expect(busy).toContain(`action="/zahlen/${token}/bezahlen"`);
+    expect(await page({ hinweis: "<script>" })).not.toContain("<script>");
   });
 
   it("Rueckkehr (?zurueck=1) zeigt den Hinweis; unbekanntes Token -> notFound", async () => {

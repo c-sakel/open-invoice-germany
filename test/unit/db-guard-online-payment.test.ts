@@ -141,4 +141,21 @@ describe("InvoicePayLink", () => {
     await expect(prisma.invoicePayLink.upsert({ where: { id: payLinkId }, create, update: { tokenHash: "neu" } })).rejects.toBeInstanceOf(e);
     await expect(prisma.invoicePayLink.upsert({ where: { id: payLinkId }, create, update: { status: "ACTIVE", disabledAt: null, disabledReason: null } })).rejects.toBeInstanceOf(e);
   });
+
+  it("Vollzahlung: DISABLED mit INVOICE_PAID erlaubt, Reaktivierung nur bei wieder offener Rechnung", async () => {
+    const e = InvoicePayLinkImmutableError;
+    const customerId = (await dbInternal.customer.create({ data: { orgId, name: "Guard-Kunde 2", addressLine1: "Weg 2", postalCode: "12345", city: "Teststadt" }, select: { id: true } })).id;
+    const invoice = await dbInternal.invoice.create({
+      data: { orgId, customerId, status: "PAID", grossTotalCents: 1000, paidAmountCents: 1000 },
+      select: { id: true },
+    });
+    const link = await dbInternal.invoicePayLink.create({ data: { orgId, invoiceId: invoice.id, provider: "MOLLIE", tokenHash: "hash-guard-paid", tokenEnc: "enc", createdBy: "test" }, select: { id: true } });
+    await prisma.invoicePayLink.update({ where: { id: link.id }, data: { status: "DISABLED", disabledAt: new Date(), disabledReason: "INVOICE_PAID" } });
+    const reactivate = { status: "ACTIVE", disabledAt: null, disabledReason: null };
+    await expect(prisma.invoicePayLink.update({ where: { id: link.id }, data: reactivate })).rejects.toBeInstanceOf(e);
+    await dbInternal.invoice.update({ where: { id: invoice.id }, data: { status: "FINALIZED", paidAmountCents: 0 } });
+    await prisma.invoicePayLink.update({ where: { id: link.id }, data: reactivate });
+    const row = await dbInternal.invoicePayLink.findUniqueOrThrow({ where: { id: link.id }, select: { status: true } });
+    expect(row.status).toBe("ACTIVE");
+  });
 });

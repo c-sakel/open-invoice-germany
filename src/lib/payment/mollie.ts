@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isTrustedCheckoutUrl } from "./checkout-url";
 import { TWO_DECIMAL_CURRENCIES, centsToDecimal, decimalToCents } from "./amount";
 import {
   PaymentProviderError,
@@ -135,6 +136,7 @@ export const mollieAdapter: PaymentProviderAdapter = {
   provider: "MOLLIE",
   payoutPattern: /\bmollie\b/i,
   allowedHosts: ["api.mollie.com"],
+  checkoutHosts: ["checkout.mollie.com", "www.mollie.com"],
 
   modeFromKey(key) {
     const m = /^(test|live)_[A-Za-z0-9]{26,}$/.exec(key);
@@ -180,13 +182,7 @@ export const mollieAdapter: PaymentProviderAdapter = {
     }
     const href = p._links?.checkout?.href;
     if (!href) throw new PaymentProviderError("invalid", "Antwort des Zahlungsanbieters ohne Bezahladresse.");
-    let ok = false;
-    try {
-      ok = new URL(href).protocol === "https:";
-    } catch {
-      ok = false;
-    }
-    if (!ok) throw new PaymentProviderError("invalid", "Antwort des Zahlungsanbieters mit ungueltiger Bezahladresse.");
+    if (!isTrustedCheckoutUrl(href, mollieAdapter.checkoutHosts)) throw new PaymentProviderError("invalid", "Antwort des Zahlungsanbieters mit ungueltiger Bezahladresse.");
     return { objectId: p.id, checkoutUrl: href, expiresAt: parseDate(p.expiresAt) };
   },
 

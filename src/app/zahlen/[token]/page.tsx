@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { notFound } from "next/navigation";
 import { headers } from "next/headers";
 import { loadPayPage } from "@/domain/online-payment/checkout";
@@ -20,6 +21,8 @@ const TEXTS = {
     PAID: "Diese Rechnung ist bereits bezahlt. Vielen Dank.",
     CANCELLED: "Diese Rechnung kann nicht mehr online bezahlt werden.",
     UNAVAILABLE: "Die Online-Zahlung ist derzeit nicht verfügbar. Bitte nutzen Sie die Zahlungsangaben auf der Rechnung.",
+    testMode: "Testmodus – es wird nichts gebucht.",
+    busy: "Ihre Zahlung wird gerade vorbereitet. Bitte warten Sie einen Moment und versuchen Sie es dann erneut.",
     rateLimit: "Zu viele Anfragen. Bitte versuchen Sie es in Kürze erneut.",
   },
   en: {
@@ -33,6 +36,8 @@ const TEXTS = {
     PAID: "This invoice has already been paid. Thank you.",
     CANCELLED: "This invoice can no longer be paid online.",
     UNAVAILABLE: "Online payment is currently unavailable. Please use the payment details on the invoice.",
+    testMode: "Test mode – nothing will be booked.",
+    busy: "Your payment is being prepared. Please wait a moment and try again.",
     rateLimit: "Too many requests. Please try again shortly.",
   },
 } as const;
@@ -41,9 +46,10 @@ const TEXTS = {
  * Oeffentliche Bezahlseite (kein Login). Zeigt nur Rechnungsnummer, Datum, offenen Betrag und Aussteller;
  * keine Kundendaten, keine Positionen. Der Seitenaufruf ruft den Zahlungsanbieter nie auf.
  */
-export default async function PayPage({ params, searchParams }: { params: Promise<{ token: string }>; searchParams: Promise<{ zurueck?: string }> }) {
+export default async function PayPage({ params, searchParams }: { params: Promise<{ token: string }>; searchParams: Promise<{ zurueck?: string; hinweis?: string }> }) {
   const { token } = await params;
-  const { zurueck } = await searchParams;
+  const { zurueck, hinweis: hinweisRaw } = await searchParams;
+  const hinweis = z.enum(["busy", "unavailable"]).safeParse(hinweisRaw);
   const h = await headers();
   try {
     enforcePayRateLimit({ ip: clientIpFromHeaders(h), token, scope: "page" });
@@ -61,6 +67,7 @@ export default async function PayPage({ params, searchParams }: { params: Promis
   const state = await loadPayPage(token);
   if (!state) notFound();
   const t = TEXTS[state.language];
+  const shown = state.kind === "PAYABLE" && hinweis.success && hinweis.data === "unavailable" ? { ...state, kind: "UNAVAILABLE" as const } : state;
 
   return (
     <div lang={state.language} className="space-y-6">
@@ -77,13 +84,24 @@ export default async function PayPage({ params, searchParams }: { params: Promis
         </p>
       )}
 
-      {state.kind === "PAYABLE" ? (
+      {shown.kind === "PAYABLE" && hinweis.success && hinweis.data === "busy" && (
+        <p role="status" className="rounded-[var(--radius-card)] border border-rule bg-sheet p-4 text-sm text-ink-soft">
+          {t.busy}
+        </p>
+      )}
+
+      {shown.kind === "PAYABLE" ? (
         <section className="space-y-4 rounded-[var(--radius-card)] border border-rule bg-sheet p-5 text-sm">
+          {shown.testMode && (
+            <p role="note" className="rounded-md border border-seal/30 bg-seal/10 p-2 text-center font-medium text-seal">
+              {t.testMode}
+            </p>
+          )}
           <dl className="grid grid-cols-[1fr_auto] gap-y-1 text-ink-soft">
             <dt>{t.date}</dt>
-            <dd className="text-right tabular-nums text-ink">{formatDocDate(new Date(state.issueDate), state.language)}</dd>
+            <dd className="text-right tabular-nums text-ink">{formatDocDate(new Date(shown.issueDate), shown.language)}</dd>
             <dt>{t.open}</dt>
-            <dd className="text-right text-base font-medium tabular-nums text-ink">{formatDocMoney(state.openCents, state.currency, state.language)}</dd>
+            <dd className="text-right text-base font-medium tabular-nums text-ink">{formatDocMoney(shown.openCents, shown.currency, shown.language)}</dd>
           </dl>
           <form method="post" action={`/zahlen/${token}/bezahlen`}>
             <button type="submit" className="w-full rounded-md bg-ink px-4 py-2 text-sm font-medium text-sheet">
@@ -92,7 +110,7 @@ export default async function PayPage({ params, searchParams }: { params: Promis
           </form>
         </section>
       ) : (
-        <p className="rounded-[var(--radius-card)] border border-rule bg-sheet p-5 text-sm text-ink-soft">{t[state.kind]}</p>
+        <p className="rounded-[var(--radius-card)] border border-rule bg-sheet p-5 text-sm text-ink-soft">{t[shown.kind]}</p>
       )}
     </div>
   );

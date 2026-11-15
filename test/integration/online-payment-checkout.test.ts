@@ -134,6 +134,13 @@ describe("loadPayPage", () => {
     expect(await loadPayPage("kurz")).toBeNull();
   });
 
+  it("Testmodus-Konto wird als testMode gemeldet", async () => {
+    const s = await setup("Pay Testmodus GmbH");
+    expect(await loadPayPage(s.token)).toMatchObject({ kind: "PAYABLE", testMode: true });
+    await dbInternal.paymentProviderAccount.updateMany({ where: { orgId: s.orgId }, data: { mode: "LIVE" } });
+    expect(await loadPayPage(s.token)).toMatchObject({ kind: "PAYABLE", testMode: false });
+  });
+
   it("Bezahlt, storniert, deaktiviert, Konto aus -> ohne Netz", async () => {
     const paid = await setup("Pay Bezahlt GmbH");
     await recordPayment(paid.invoiceId, { amountCents: 11900, method: "TRANSFER", isSkonto: false, applySkonto: false }, { orgId: paid.orgId, now: NOW });
@@ -178,16 +185,69 @@ describe("startCheckout", () => {
     const short = fakeProvider({ expiresInMs: 9 * 60_000 });
     await startCheckout(s.token, { transport: short.transport, now: NOW });
     await startCheckout(s.token, { transport: short.transport, now: NOW });
-    expect(short.calls).toHaveLength(2);
+    expect(short.calls.filter((c) => c.method === "POST")).toHaveLength(2);
     const long = fakeProvider();
     await startCheckout(s.token, { transport: long.transport, now: NOW });
     await startCheckout(s.token, { transport: long.transport, now: NOW });
-    expect(long.calls).toHaveLength(1);
+    expect(long.calls.filter((c) => c.method === "POST")).toHaveLength(1);
     await recordPayment(s.invoiceId, { amountCents: 1000, method: "TRANSFER", isSkonto: false, applySkonto: false }, { orgId: s.orgId, now: NOW });
     await startCheckout(s.token, { transport: long.transport, now: NOW });
-    expect(long.calls).toHaveLength(2);
+    expect(long.calls.filter((c) => c.method === "POST")).toHaveLength(2);
     const rows = await attemptsOf(s.orgId);
     expect(rows.at(-1)?.amountCents).toBe(10900);
+  });
+
+  it("Bezahladresse mit fremdem Host: Attempt FAILED, UNAVAILABLE; gespeicherte fremde Adresse wird nicht weitergegeben", async () => {
+    const s = await setup("Pay Host GmbH");
+    const evil = createMollieFake({
+      "POST /payments": (req) => {
+        const body = JSON.parse(req.body ?? "{}") as { amount: unknown; metadata: unknown };
+        return {
+          status: 201,
+          text: JSON.stringify({
+            id: "tr_EvilHost001",
+            mode: "test",
+            status: "open",
+            amount: body.amount,
+            metadata: body.metadata,
+            expiresAt: new Date(NOW.getTime() + 3_600_000).toISOString(),
+            _links: { checkout: { href: "https://evil.example.org/pay" } },
+          }),
+        };
+      },
+    });
+    expect(await startCheckout(s.token, { transport: evil.transport, now: NOW })).toMatchObject({ kind: "PAGE", state: { kind: "UNAVAILABLE" } });
+    expect((await attemptsOf(s.orgId)).map((x) => x.status)).toEqual(["FAILED"]);
+
+    const link = await dbInternal.invoicePayLink.findUniqueOrThrow({ where: { invoiceId: s.invoiceId }, select: { id: true } });
+    await dbInternal.paymentProviderAttempt.create({
+      data: {
+        orgId: s.orgId, payLinkId: link.id, provider: "MOLLIE", amountCents: 11900, currency: "EUR", status: "OPEN",
+        providerObjectId: "tr_EvilDb0001", checkoutUrl: "https://evil.example.org/stored", expiresAt: new Date(NOW.getTime() + 3_600_000), createdAt: NOW,
+      },
+    });
+    const fake = fakeProvider();
+    expect(await startCheckout(s.token, { transport: fake.transport, now: NOW })).toMatchObject({ kind: "PAGE", state: { kind: "UNAVAILABLE" } });
+    expect(fake.calls).toHaveLength(0);
+  });
+
+  it("neuer Vorgang beendet den alten offenen Vorgang beim Anbieter und fuehrt ihn als CANCELED; Fehler blockieren nicht", async () => {
+    const s = await setup("Pay Abbruch GmbH");
+    const fake = fakeProvider();
+    fake.routes["DELETE /payments/tr_Fake" + String(objectCounter + 1).padStart(6, "0")] = { status: 200, text: "{}" };
+    await startCheckout(s.token, { transport: fake.transport, now: NOW });
+    await recordPayment(s.invoiceId, { amountCents: 1000, method: "TRANSFER", isSkonto: false, applySkonto: false }, { orgId: s.orgId, now: NOW });
+    await startCheckout(s.token, { transport: fake.transport, now: NOW });
+    const rows = await attemptsOf(s.orgId);
+    expect(rows.map((x) => x.status)).toEqual(["CANCELED", "OPEN"]);
+    expect(fake.calls.filter((c) => c.method === "DELETE")).toHaveLength(1);
+
+    // Anbieter lehnt den Abbruch ab (z. B. schon bezahlt): bleibt OPEN, neuer Vorgang entsteht trotzdem.
+    await recordPayment(s.invoiceId, { amountCents: 1000, method: "TRANSFER", isSkonto: false, applySkonto: false }, { orgId: s.orgId, now: NOW });
+    const open = rows[1]!;
+    fake.routes[`DELETE /payments/${open.providerObjectId}`] = { status: 422, text: "{}" };
+    await startCheckout(s.token, { transport: fake.transport, now: NOW });
+    expect((await attemptsOf(s.orgId)).map((x) => x.status)).toEqual(["CANCELED", "OPEN", "OPEN"]);
   });
 
   it("Anbieterfehler: Attempt FAILED mit festem Text, Seite UNAVAILABLE, kein Anbietertext", async () => {

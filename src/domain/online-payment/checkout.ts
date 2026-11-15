@@ -6,7 +6,7 @@
 import { dbInternal } from "@/lib/db";
 import { lockRow } from "@/lib/db-lock";
 import { appBaseUrlFromEnv } from "@/lib/http/base-url";
-import { adapterFor } from "@/lib/payment/registry";
+import { adapterFor, isTrustedPaymentCheckoutUrl } from "@/lib/payment/registry";
 import { defaultPaymentTransport } from "@/lib/payment/transport";
 import type { OnlineProvider, PaymentTransport } from "@/lib/payment/types";
 import { describeError } from "@/lib/safe-error";
@@ -22,7 +22,7 @@ const DAY_MS = 24 * 60 * 60_000;
 const CREATE_FAILED_TEXT = "Anlage beim Zahlungsanbieter fehlgeschlagen.";
 
 export type PayPageState =
-  | { kind: "PAYABLE"; sellerName: string; invoiceNumber: string; issueDate: string; openCents: number; currency: string; provider: OnlineProvider; language: "de" | "en" }
+  | { kind: "PAYABLE"; sellerName: string; invoiceNumber: string; issueDate: string; openCents: number; currency: string; provider: OnlineProvider; language: "de" | "en"; testMode: boolean }
   | { kind: "PAID" | "CANCELLED" | "UNAVAILABLE"; sellerName: string; invoiceNumber: string; language: "de" | "en" };
 
 type Unpayable = Exclude<PayPageState["kind"], "PAYABLE">;
@@ -33,6 +33,7 @@ interface Evaluated {
   link: ResolvedPayLink;
   invoice: { id: string; currency: string; openCents: number; language: "de" | "en"; number: string; issueDate: Date; sellerName: string };
   verdict: { ok: true } | { ok: false; kind: Unpayable };
+  testMode: boolean;
 }
 
 function sellerNameOf(snapshotJson: string | null, fallback: string): string {
@@ -78,13 +79,14 @@ async function evaluate(token: string): Promise<Evaluated | null> {
     sellerName: sellerNameOf(inv.sellerSnapshotJson, inv.org.legalName),
   };
   let verdict: Evaluated["verdict"];
+  let testMode = false;
   if (link.status === "DISABLED" || inv.status === "CANCELLED") verdict = { ok: false, kind: "CANCELLED" };
   else if (inv.status === "PAID" || openCents <= 0) verdict = { ok: false, kind: "PAID" };
   else if (inv.type === "CREDIT_NOTE" || !PAYABLE_STATES.has(inv.status)) verdict = { ok: false, kind: "UNAVAILABLE" };
   else {
     const account = await dbInternal.paymentProviderAccount.findUnique({
       where: { orgId_provider: { orgId: link.orgId, provider: link.provider } },
-      select: { enabled: true, apiKeyEnc: true, currenciesJson: true },
+      select: { enabled: true, mode: true, apiKeyEnc: true, currenciesJson: true },
     });
     const usable =
       account !== null &&
@@ -93,8 +95,9 @@ async function evaluate(token: string): Promise<Evaluated | null> {
       accountCurrencies(account.currenciesJson).includes(inv.currency) &&
       appBaseUrlFromEnv() !== null;
     verdict = usable ? { ok: true } : { ok: false, kind: "UNAVAILABLE" };
+    testMode = account?.mode === "TEST";
   }
-  return { link, invoice, verdict };
+  return { link, invoice, verdict, testMode };
 }
 
 function toState(e: Evaluated, kindOverride?: Unpayable): PayPageState {
@@ -108,6 +111,7 @@ function toState(e: Evaluated, kindOverride?: Unpayable): PayPageState {
     openCents: e.invoice.openCents,
     currency: e.invoice.currency,
     provider: e.link.provider,
+    testMode: e.testMode,
   };
 }
 
@@ -132,7 +136,7 @@ type Reserved =
   | { kind: "REUSE"; url: string }
   | { kind: "BUSY" }
   | { kind: "LIMIT" }
-  | { kind: "NEW"; attemptId: string; amountCents: number; currency: string };
+  | { kind: "NEW"; attemptId: string; amountCents: number; currency: string; superseded: { id: string; objectId: string }[] };
 
 export async function startCheckout(
   token: string,
@@ -164,18 +168,19 @@ export async function startCheckout(
     await lockRow(tx, "Invoice", link.invoiceId, link.orgId);
     const inv = await tx.invoice.findFirst({
       where: { id: link.invoiceId, orgId: link.orgId },
-      select: { status: true, currency: true, grossTotalCents: true, payableCents: true, paidAmountCents: true },
+      select: { status: true, type: true, currency: true, grossTotalCents: true, payableCents: true, paidAmountCents: true },
     });
     if (!inv) throw new OnlinePaymentError("Rechnung nicht gefunden.", "NOT_FOUND");
     const currentLink = await tx.invoicePayLink.findFirst({ where: { id: link.id, orgId: link.orgId }, select: { status: true } });
     if (!currentLink || currentLink.status !== "ACTIVE" || inv.status === "CANCELLED") return { kind: "STATE", state: "CANCELLED" };
     const openCents = (inv.payableCents ?? inv.grossTotalCents) - inv.paidAmountCents;
     if (inv.status === "PAID" || openCents <= 0) return { kind: "STATE", state: "PAID" };
+    if (inv.type === "CREDIT_NOTE" || !PAYABLE_STATES.has(inv.status)) return { kind: "STATE", state: "UNAVAILABLE" };
 
     const since = new Date(now.getTime() - DAY_MS);
     const attempts = await tx.paymentProviderAttempt.findMany({
       where: { payLinkId: link.id, orgId: link.orgId, createdAt: { gte: since } },
-      select: { status: true, amountCents: true, currency: true, expiresAt: true, checkoutUrl: true, createdAt: true },
+      select: { id: true, status: true, amountCents: true, currency: true, expiresAt: true, checkoutUrl: true, providerObjectId: true, createdAt: true },
       orderBy: { createdAt: "desc" },
     });
     const reusable = attempts.find(
@@ -194,15 +199,40 @@ export async function startCheckout(
       data: { orgId: link.orgId, payLinkId: link.id, provider: link.provider, amountCents: openCents, currency: inv.currency, status: "CREATING", createdAt: now },
       select: { id: true },
     });
-    return { kind: "NEW", attemptId: row.id, amountCents: openCents, currency: inv.currency };
+    // Alte offene Vorgaenge (anderer Betrag, zu kurze Restlaufzeit, ohne Ablauf) werden nach dem Anlegen beim Anbieter beendet.
+    const superseded = attempts
+      .filter((a) => a.status === "OPEN" && a.providerObjectId !== null)
+      .map((a) => ({ id: a.id, objectId: a.providerObjectId ?? "" }));
+    return { kind: "NEW", attemptId: row.id, amountCents: openCents, currency: inv.currency, superseded };
   });
 
   if (reserved.kind === "STATE") return { kind: "PAGE", state: toState(e, reserved.state) };
-  if (reserved.kind === "REUSE") return { kind: "REDIRECT", url: reserved.url };
+  if (reserved.kind === "REUSE") {
+    if (!isTrustedPaymentCheckoutUrl(reserved.url)) {
+      console.error("startCheckout: Bezahladresse nicht in der Allowlist");
+      return unavailable();
+    }
+    return { kind: "REDIRECT", url: reserved.url };
+  }
   if (reserved.kind === "BUSY") return { kind: "BUSY" };
   if (reserved.kind === "LIMIT") return unavailable();
 
   const de = e.invoice.language === "de";
+  const transport = deps.transport ?? defaultPaymentTransport();
+  // Ausserhalb der Transaktion; Fehler werden protokolliert und blockieren nicht. Ein Wettlauf (Zahlung vor dem
+  // Abbruch) bleibt moeglich und wird ueber die Ueberzahlungsbehandlung abgefangen.
+  for (const old of reserved.superseded) {
+    try {
+      if (await adapterFor(link.provider).cancelCheckout(secret.key, old.objectId, transport)) {
+        await dbInternal.paymentProviderAttempt.updateMany({
+          where: { id: old.id, orgId: link.orgId, status: "OPEN" },
+          data: { status: "CANCELED" },
+        });
+      }
+    } catch (err) {
+      console.error("startCheckout: alter Vorgang nicht beendet:", describeError(err));
+    }
+  }
   try {
     const created = await adapterFor(link.provider).createCheckout(
       secret.key,
@@ -217,8 +247,9 @@ export async function startCheckout(
         locale: e.invoice.language,
         methods: parseMethods(account?.allowedMethodsJson ?? null),
       },
-      deps.transport ?? defaultPaymentTransport(),
+      transport,
     );
+    if (!isTrustedPaymentCheckoutUrl(created.checkoutUrl)) throw new Error("Bezahladresse nicht in der Allowlist");
     const upd = await dbInternal.paymentProviderAttempt.updateMany({
       where: { id: reserved.attemptId, orgId: link.orgId, status: "CREATING", providerObjectId: null },
       data: { status: "OPEN", providerObjectId: created.objectId, checkoutUrl: created.checkoutUrl, expiresAt: created.expiresAt },

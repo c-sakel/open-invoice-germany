@@ -419,7 +419,7 @@ const PAYMENT_ATTEMPT_TRANSITIONS: Readonly<Record<string, readonly string[]>> =
   FAILED: ["FAILED"],
 };
 
-const PAY_LINK_DISABLE_REASONS: ReadonlySet<string> = new Set(["MANUAL", "INVOICE_CANCELLED"]);
+const PAY_LINK_DISABLE_REASONS: ReadonlySet<string> = new Set(["MANUAL", "INVOICE_CANCELLED", "INVOICE_PAID"]);
 
 /**
  * Bezahlvorgang: `providerObjectId` (Schluessel der Zuordnung Webhook -> Zahlung) und `checkoutUrl`
@@ -450,7 +450,7 @@ async function guardPaymentAttemptUpdate(where: unknown, data: unknown): Promise
 
 /**
  * Bezahllink: ACTIVE -> DISABLED nur mit Zeit und Grund; DISABLED -> ACTIVE (Reaktivierung) nur nach
- * manueller Deaktivierung und nur mit geleerten Feldern. Nach Storno (INVOICE_CANCELLED) ist der Link endgueltig aus.
+ * manueller Deaktivierung (oder Vollzahlung bei wieder offener Rechnung) und nur mit geleerten Feldern. Nach Storno (INVOICE_CANCELLED) ist der Link endgueltig aus.
  * Zeit und Grund werden nie ohne Statuswechsel geaendert.
  */
 async function guardPayLinkUpdate(where: unknown, data: unknown): Promise<void> {
@@ -465,7 +465,7 @@ async function guardPayLinkUpdate(where: unknown, data: unknown): Promise<void> 
   const reason = unwrapSet(record.disabledReason);
   const rows = await base.invoicePayLink.findMany({
     where: where as Prisma.InvoicePayLinkWhereInput,
-    select: { status: true, disabledReason: true },
+    select: { status: true, disabledReason: true, invoiceId: true },
   });
   if (next === "DISABLED") {
     if (!(at instanceof Date) || typeof reason !== "string" || !PAY_LINK_DISABLE_REASONS.has(reason)) {
@@ -476,8 +476,19 @@ async function guardPayLinkUpdate(where: unknown, data: unknown): Promise<void> 
   }
   if (next === "ACTIVE") {
     if (at !== null || reason !== null) throw payLinkErr("ACTIVE nur mit disabledAt und disabledReason NULL");
-    if (rows.some((r) => r.status === "DISABLED" && r.disabledReason !== "MANUAL")) {
-      throw payLinkErr("Reaktivierung nur nach manueller Deaktivierung");
+    if (rows.some((r) => r.status === "DISABLED" && r.disabledReason !== "MANUAL" && r.disabledReason !== "INVOICE_PAID")) {
+      throw payLinkErr("Reaktivierung nur nach manueller Deaktivierung oder Vollzahlung");
+    }
+    // Nach Vollzahlung nur, wenn die Rechnung durch Gegenbuchung wieder offen ist.
+    const paidIds = rows.filter((r) => r.status === "DISABLED" && r.disabledReason === "INVOICE_PAID").map((r) => r.invoiceId);
+    if (paidIds.length > 0) {
+      const invs = await base.invoice.findMany({
+        where: { id: { in: paidIds } },
+        select: { status: true, grossTotalCents: true, payableCents: true, paidAmountCents: true },
+      });
+      const reopened = (i: (typeof invs)[number]): boolean =>
+        i.status !== "PAID" && i.status !== "CANCELLED" && i.status !== "DRAFT" && (i.payableCents ?? i.grossTotalCents) - i.paidAmountCents > 0;
+      if (invs.length !== paidIds.length || !invs.every(reopened)) throw payLinkErr("Reaktivierung nach Vollzahlung nur bei wieder offener Rechnung");
     }
     return;
   }

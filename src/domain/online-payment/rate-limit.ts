@@ -15,8 +15,8 @@ const CHECKOUT_TOKEN_LIMIT = 5;
 const CHECKOUT_TOKEN_WINDOW_MS = 10 * 60_000;
 
 export function enforcePayRateLimit(opts: { ip: string | null; token: string; scope: "page" | "checkout" }): void {
-  if (opts.ip) rateLimit(`public:ip:${opts.ip}`, { limit: IP_LIMIT, windowMs: IP_WINDOW_MS });
-  else rateLimit("public:ip:unknown", { limit: UNKNOWN_IP_LIMIT, windowMs: IP_WINDOW_MS });
+  if (opts.ip) rateLimit(`pay:ip:${opts.ip}`, { limit: IP_LIMIT, windowMs: IP_WINDOW_MS });
+  else rateLimit("pay:ip:unknown", { limit: UNKNOWN_IP_LIMIT, windowMs: IP_WINDOW_MS });
   if (!payLinkTokenSchema.safeParse(opts.token).success) return;
   const hash = hashToken(opts.token);
   if (opts.scope === "page") rateLimit(`pay-page:${hash}`, { limit: PAGE_TOKEN_LIMIT, windowMs: PAGE_TOKEN_WINDOW_MS });

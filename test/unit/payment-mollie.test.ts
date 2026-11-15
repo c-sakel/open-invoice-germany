@@ -56,6 +56,18 @@ describe("Mollie-Adapter", () => {
     const f2 = createMollieFake({ "POST /payments": { status: 200, text: mollieFixture("payment-open") } });
     await expect(mollieAdapter.createCheckout(FAKE_TEST_KEY, req, f2.transport)).rejects.toBeInstanceOf(PaymentProviderError);
   });
+  it("lehnt Bezahladressen mit fremdem Host, Benutzerinfo oder Port ab", async () => {
+    for (const href of [
+      "https://evil.example.org/checkout",
+      "https://checkout.mollie.com.evil.example.org/x",
+      "https://user:pw@checkout.mollie.com/x",
+      "https://checkout.mollie.com:8443/x",
+    ]) {
+      const bad = JSON.stringify({ ...JSON.parse(mollieFixture("payment-open")), _links: { checkout: { href } } });
+      const f = createMollieFake({ "POST /payments": { status: 201, text: bad } });
+      await expect(mollieAdapter.createCheckout(FAKE_TEST_KEY, req, f.transport)).rejects.toMatchObject({ kind: "invalid" });
+    }
+  });
   it("lehnt eine http-Bezahladresse ab", async () => {
     const bad = JSON.stringify({ ...JSON.parse(mollieFixture("payment-open")), _links: { checkout: { href: "http://x.example.org/" } } });
     const f = createMollieFake({ "POST /payments": { status: 201, text: bad } });
