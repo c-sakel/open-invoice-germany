@@ -114,6 +114,8 @@ describe("DATEV-Actions", () => {
   it("benötigte Schlüssel kommen aus den festgeschriebenen Belegen", async () => {
     const used = await listUsedMappingKeys(org.orgId);
     expect(used).toContainEqual({ kind: "REVENUE", key: "REGULAR|S|19", count: 1 });
+    // Kasse und Ueberweisung brauchen keine Zuordnungszeile.
+    expect(used.some((u) => u.key === "METHOD:CASH" || u.key === "METHOD:TRANSFER")).toBe(false);
   });
 
   it("Vorschau schreibt nichts, Export erzeugt Protokoll und Datei, Wiederholung braucht Freigabe", async () => {

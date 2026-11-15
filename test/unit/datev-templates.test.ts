@@ -49,7 +49,6 @@ describe("Kontenvorlagen", () => {
           "DOWNPAYMENT:REGULAR|S|7",
           "MONEY:PROVIDER:MOLLIE",
           "MONEY:PROVIDER:STRIPE",
-          "MONEY:METHOD:CASH",
         ]),
       );
       const { sachMax, debtorMin } = accountRules(4);

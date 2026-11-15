@@ -229,6 +229,13 @@ describe("bookDocument", () => {
     expect(cell(r.lines[0], 49)).toBe("USD 1.190,01; Kurs 1,083400; EZB 2096-04-30");
   });
 
+  it("Fremdwaehrung: Gruppensumme in Belegwaehrung weicht vom Belegbrutto ab -> MANUAL", () => {
+    const breakdown = [{ taxCategory: "S", taxRate: 19, netCents: 100000, taxCents: 19000 }];
+    const r = bookDocument(doc({ currency: "USD", fxRateMicros: 1_100_000, netTotalEurCents: 90909, taxTotalEurCents: 17273, grossTotalCents: 120000, breakdown }), ctx());
+    expect(r).toMatchObject({ status: "MANUAL" });
+    expect(bookDocument(doc({ currency: "USD", fxRateMicros: 1_100_000, netTotalEurCents: 90909, taxTotalEurCents: 17273, grossTotalCents: 119000, breakdown }), ctx())).toMatchObject({ status: "EXPORTED" });
+  });
+
   it("Fremdwaehrung ohne EUR-Werte -> MANUAL", () => {
     expect(bookDocument(doc({ currency: "USD" }), ctx())).toMatchObject({ status: "MANUAL", reason: "Fremdwaehrungsbeleg ohne EUR-Werte" });
   });

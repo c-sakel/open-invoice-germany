@@ -36,7 +36,6 @@ const PAIRS: readonly Pair[] = [
   { kind: "DOWNPAYMENT", key: "REGULAR|S|7", skr03: 1711, skr04: 3260, label: "Erhaltene, versteuerte Anzahlungen 7 % USt (AM)" },
   { kind: "MONEY", key: "PROVIDER:MOLLIE", skr03: 1360, skr04: 1460, label: "Geldtransit" },
   { kind: "MONEY", key: "PROVIDER:STRIPE", skr03: 1360, skr04: 1460, label: "Geldtransit" },
-  { kind: "MONEY", key: "METHOD:CASH", skr03: 1000, skr04: 1600, label: "Kasse" },
 ];
 
 /** Bank (Einstellung `bankAccount`) und Kasse laut Kontenrahmen. */

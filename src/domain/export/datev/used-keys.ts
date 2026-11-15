@@ -70,11 +70,12 @@ export async function listUsedMappingKeys(orgId: string): Promise<UsedMappingKey
       const cur = counts.get(id);
       if (cur) cur.count += p._count._all;
       else counts.set(id, { kind: "MONEY", key: `PROVIDER:${provider}`, count: p._count._all });
-    } else if (p.method === "CASH") {
-      const id = "MONEY\u0000METHOD:CASH";
+    } else if (provider !== "BANK" && /^[A-Z0-9_]{1,32}$/.test(p.method) && !["CASH", "TRANSFER", "SEPA", "CREDIT_NOTE"].includes(p.method)) {
+      // Kasse (Einstellung Kassenkonto) und Ueberweisung/Lastschrift (Einstellung Bankkonto) brauchen keine Zuordnungszeile.
+      const id = `MONEY\u0000METHOD:${p.method}`;
       const cur = counts.get(id);
       if (cur) cur.count += p._count._all;
-      else counts.set(id, { kind: "MONEY", key: "METHOD:CASH", count: p._count._all });
+      else counts.set(id, { kind: "MONEY", key: `METHOD:${p.method}`, count: p._count._all });
     }
   }
   return [...counts.values()];

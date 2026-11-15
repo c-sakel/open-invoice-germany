@@ -256,6 +256,12 @@ export function bookDocument(doc: DocInput, ctx: BookingContext): ItemResult | D
   }
   const totalEur = groups.reduce((s, g) => s + g.grossEur, 0);
   // Summenabgleich: die gebuchten Gruppen muessen centgenau dem Belegbetrag entsprechen, sonst nie teilweise buchen.
+  if (doc.currency !== "EUR" && doc.grossTotalCents != null) {
+    const totalDoc = groups.reduce((s, g) => s + g.grossDoc, 0);
+    if (totalDoc !== doc.grossTotalCents) {
+      return manual(doc, `Summe der Steuergruppen in ${doc.currency} (${formatAmountDe(totalDoc)}) weicht vom Belegbetrag (${formatAmountDe(doc.grossTotalCents)}) ab, von Hand buchen`, totalEur, "EUR");
+    }
+  }
   const expectedEur = doc.currency === "EUR" ? (doc.grossTotalCents ?? null) : doc.netTotalEurCents !== null && doc.taxTotalEurCents !== null ? doc.netTotalEurCents + doc.taxTotalEurCents : null;
   if (expectedEur !== null && expectedEur !== totalEur) {
     return manual(doc, `Summe der Steuergruppen (${formatAmountDe(totalEur)}) weicht vom Belegbetrag (${formatAmountDe(expectedEur)}) ab, von Hand buchen`, totalEur, "EUR");
@@ -432,7 +438,7 @@ function moneyAccount(p: PaymentInput, ctx: BookingContext): MoneyResult {
   }
   const row = /^[A-Z0-9_]{1,32}$/.test(p.method) ? ctx.mapping.get("MONEY", `METHOD:${p.method}`) : undefined;
   if (p.method === "CASH") {
-    // Das Kassenkonto der Einstellungen gilt vor der Zuordnungszeile; ohne beides nie auf die Bank buchen.
+    // Quelle ist das Kassenkonto der Einstellungen (Vorrang); eine alte Zuordnungszeile METHOD:CASH gilt nur als Rueckfall; ohne beides nie auf die Bank buchen.
     if (ctx.settings.cashAccount !== null) return { account: ctx.settings.cashAccount, buKey: null };
     if (row) return { account: row.account, buKey: row.buKey };
     return { manual: "Barzahlung ohne Kassenkonto von Hand buchen" };

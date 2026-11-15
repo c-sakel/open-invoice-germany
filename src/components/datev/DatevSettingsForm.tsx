@@ -170,6 +170,7 @@ export function DatevSettingsForm({ initial }: { initial: DatevSettingsFormValue
         </Field>
         <Field label="Kassenkonto">
           <input className={inputCls} inputMode="numeric" value={cash} onChange={(e) => setCash(e.target.value)} />
+          <span className="mt-1 block text-xs text-ink-muted">Einzige Quelle fuer Barzahlungen; ohne Kassenkonto werden sie von Hand gebucht. Ueberweisungen und Lastschriften nutzen das Bankkonto.</span>
         </Field>
       </div>
 
