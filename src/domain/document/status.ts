@@ -21,6 +21,7 @@ import { assertSourceQuantitiesWithinTx } from "@/domain/delivery-note/quantitie
 import { buildDeliveryNoteSnapshots } from "@/domain/delivery-note/parties";
 import { serializeDeliveryNote } from "@/api/serializers/delivery-note";
 import { QuoteStatus, DeliveryNoteStatus, type SnapshotSource } from "@/schemas";
+import { QUOTE_TRANSITIONS, DELIVERY_TRANSITIONS } from "@/domain/document/status-transitions";
 import type { Quote, DeliveryNote, Prisma } from "@/generated/prisma/client";
 
 export class StatusTransitionError extends Error {
@@ -30,28 +31,7 @@ export class StatusTransitionError extends Error {
   }
 }
 
-// DRAFT->ACCEPTED/REJECTED erlaubt: Annahme/Ablehnung ohne vorherigen digitalen Versand
-// (Postversand, telefonische Zusage) — Ruling des Betreibers.
-// EXPIRED ist kein Ziel, das aktiv gesetzt werden kann — es ergibt sich rein abgeleitet
-// aus validUntil (effectiveQuoteStatus). SENT->EXPIRED bleibt daher ausgeschlossen; EXPIRED
-// bleibt aber als QUELLZUSTAND in der Tabelle (ein Angebot, dessen validUntil verstrichen
-// ist, kann weiterhin erneut versendet oder angenommen werden — W4, Fix-Runde 2).
-export const QUOTE_TRANSITIONS: Record<QuoteStatus, readonly QuoteStatus[]> = {
-  DRAFT: ["SENT", "ACCEPTED", "REJECTED", "CANCELLED"],
-  SENT: ["ACCEPTED", "REJECTED", "CANCELLED"],
-  ACCEPTED: ["CANCELLED"],
-  REJECTED: [],
-  EXPIRED: ["SENT", "ACCEPTED"],
-  CANCELLED: [],
-};
-
-export const DELIVERY_TRANSITIONS: Record<DeliveryNoteStatus, readonly DeliveryNoteStatus[]> = {
-  DRAFT: ["CREATED", "CANCELLED"],
-  CREATED: ["SENT", "DELIVERED", "CANCELLED"],
-  SENT: ["DELIVERED", "CANCELLED"],
-  DELIVERED: ["CANCELLED"],
-  CANCELLED: [],
-};
+export { QUOTE_TRANSITIONS, DELIVERY_TRANSITIONS };
 
 /** Prueft anhand einer Uebergangstabelle, ob von `from` nach `to` gewechselt werden darf. */
 export function assertTransition<S extends string>(table: Record<S, readonly S[]>, from: S, to: S): void {
@@ -90,6 +70,8 @@ export async function setQuoteStatusWithinTx(
     throw new StatusTransitionError("EXPIRED wird nur abgeleitet (effectiveQuoteStatus) und kann nicht aktiv gesetzt werden.");
   }
 
+  // Zeilensperre vor dem Lesen des Status (reentrant, falls der Aufrufer dieselbe Zeile schon sperrt).
+  await lockRow(tx, "Quote", quoteId, orgId);
   const quote = await tx.quote.findFirst({ where: { id: quoteId, orgId } });
   if (!quote) throw new NotFoundError(`Angebot ${quoteId} nicht gefunden.`);
 
