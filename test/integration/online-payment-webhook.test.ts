@@ -498,7 +498,7 @@ describe("Storno, Vollzahlung aus anderer Quelle, Scheduler", () => {
     const fake = fakeFor(new Map());
     await processOnlinePaymentPolls({ now: NOW, transport: fake.transport });
     await processOnlinePaymentPolls({ now: NOW, transport: fake.transport });
-    const notes = (await notesOf(s.orgId)).filter((n) => n.body.includes("Anlage") || n.body.includes("nicht sicher angelegt"));
+    const notes = (await notesOf(s.orgId)).filter((n) => (n.body ?? "").includes("nicht sicher angelegt"));
     expect(notes).toHaveLength(1);
   });
 
