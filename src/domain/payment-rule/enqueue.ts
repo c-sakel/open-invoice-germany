@@ -14,6 +14,24 @@ export const RUNS_PER_RULE_AND_INVOICE_MAX = 20;
 const CAP_REASON = "Obergrenze je Rechnung erreicht";
 
 const actionsSchema = z.array(paymentRuleActionSchema);
+const stepsSchema = z.array(z.object({ type: z.string(), status: z.string() }).passthrough());
+
+/** Defekte Regeln werden je Prozess nur einmal gemeldet (nur die Id, keine Werte). */
+const reportedBrokenRules = new Set<string>();
+function reportBrokenRule(ruleId: string): void {
+  if (reportedBrokenRules.has(ruleId)) return;
+  reportedBrokenRules.add(ruleId);
+  console.error("Regel nach Zahlungseingang ist defekt und wird uebersprungen", { ruleId });
+}
+
+/** JSON-Text ohne Ausnahme parsen; Fehler ergeben null. */
+function parseJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
 
 export interface EnqueueInput {
   orgId: string;
@@ -40,10 +58,13 @@ export async function enqueuePaymentRuleRuns(tx: Prisma.TransactionClient, input
   });
   if (rules.length === 0) return { created: 0 };
 
-  const tags = await tx.documentTag.findMany({
-    where: { orgId: input.orgId, docType: "INVOICE", docId: input.invoiceId },
-    select: { tagId: true },
-  });
+  const needsTags = rules.some((r) => r.invoiceTagId !== null);
+  const tags = needsTags
+    ? await tx.documentTag.findMany({
+        where: { orgId: input.orgId, docType: "INVOICE", docId: input.invoiceId },
+        select: { tagId: true },
+      })
+    : [];
   const source = paymentSource(input.payment.createdBy, input.payment.provider);
   const matched = matchRules(rules, { trigger, source, invoiceTagIds: new Set(tags.map((t) => t.tagId)) });
 
@@ -57,8 +78,11 @@ export async function enqueuePaymentRuleRuns(tx: Prisma.TransactionClient, input
 
   let created = 0;
   for (const rule of matched) {
-    const parsed = actionsSchema.safeParse(JSON.parse(rule.actionsJson));
-    if (!parsed.success) continue; // kaputte Regel wird nie ausgefuehrt
+    const parsed = actionsSchema.safeParse(parseJson(rule.actionsJson));
+    if (!parsed.success) {
+      reportBrokenRule(rule.id); // kaputte Regel wird nie ausgefuehrt, die Zahlung bleibt unberuehrt
+      continue;
+    }
     const previous = await tx.paymentRuleRun.count({ where: { orgId: input.orgId, ruleId: rule.id, invoiceId: input.invoiceId } });
     const capped = previous >= RUNS_PER_RULE_AND_INVOICE_MAX;
     const steps = initialSteps(parsed.data).map((s) => (capped ? { ...s, status: "SKIPPED" as const, note: CAP_REASON } : s));
@@ -93,13 +117,14 @@ export async function skipOpenRunsForPayment(tx: Prisma.TransactionClient, orgId
   });
   let n = 0;
   for (const run of open) {
-    const steps = z
-      .array(z.object({ type: z.string(), status: z.string() }).passthrough())
-      .parse(JSON.parse(run.stepsJson))
-      .map((s) => (s.status === "PENDING" || s.status === "FAILED" ? { ...s, status: "SKIPPED", note: reason } : s));
+    const parsedSteps = stepsSchema.safeParse(parseJson(run.stepsJson));
+    // Defekte Schritte: Lauf trotzdem anhalten, Schritte unveraendert lassen.
+    const steps = parsedSteps.success
+      ? parsedSteps.data.map((s) => (s.status === "PENDING" || s.status === "FAILED" ? { ...s, status: "SKIPPED", note: reason } : s))
+      : null;
     const res = await tx.paymentRuleRun.updateMany({
       where: { id: run.id, status: "PENDING" },
-      data: { status: "SKIPPED", skipReason: reason, finishedAt: new Date(), stepsJson: JSON.stringify(steps) },
+      data: { status: "SKIPPED", skipReason: reason, finishedAt: new Date(), ...(steps ? { stepsJson: JSON.stringify(steps) } : {}) },
     });
     n += res.count;
   }

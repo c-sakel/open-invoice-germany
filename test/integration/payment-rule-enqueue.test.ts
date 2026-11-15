@@ -223,6 +223,61 @@ describe("Gegenbuchung", () => {
   });
 });
 
+describe("defekte Daten und weitere Pfade", () => {
+  it("Regel mit kaputtem actionsJson: Zahlung wird gebucht, kein Lauf fuer diese Regel, intakte Regel laeuft", async () => {
+    const o = await mkOrg();
+    const broken = await mkRule(o.orgId, "PAID_FULL");
+    await dbInternal.paymentRule.update({ where: { id: broken }, data: { actionsJson: "{kaputt" }, select: { id: true } });
+    const good = await mkRule(o.orgId, "PAID_FULL");
+    const inv = await mkInvoice(o, ISSUE);
+    const res = await recordPayment(inv.id, pay(GROSS), { orgId: o.orgId, now: NOW });
+    expect(await dbInternal.payment.count({ where: { id: res.recorded.id } })).toBe(1);
+    const all = await runs(o.orgId);
+    expect(all.map((r) => r.ruleId)).toEqual([good]);
+  });
+
+  it("Lauf mit kaputtem stepsJson: Gegenbuchung klappt, Lauf wird angehalten", async () => {
+    const o = await mkOrg();
+    await mkRule(o.orgId, "PAID_PARTIAL");
+    const inv = await mkInvoice(o, ISSUE);
+    const p = await recordPayment(inv.id, pay(3000), { orgId: o.orgId, now: NOW });
+    await dbInternal.paymentRuleRun.updateMany({ where: { paymentId: p.recorded.id }, data: { stepsJson: "nicht-json" } });
+    await reversePayment(p.recorded.id, { reason: "Fehlbuchung" }, { actor: "t", orgId: o.orgId, now: NOW });
+    const [run] = await runs(o.orgId);
+    expect(run).toMatchObject({ status: "SKIPPED", skipReason: "Zahlung gegengebucht" });
+    expect(await dbInternal.payment.count({ where: { invoiceId: inv.id } })).toBeGreaterThan(0);
+  });
+
+  it("Anlegen und Festschreiben ohne Zahlung: kein Lauf, kein Anstoss", async () => {
+    const o = await mkOrg();
+    await mkRule(o.orgId, "PAID_FULL");
+    process.env.PAYMENT_RULES_AFTER_COMMIT = "1";
+    const input = createInvoiceSchema.parse({
+      customerId: o.customerId,
+      issueDate: ISSUE,
+      deliveryDate: ISSUE,
+      lines: [{ description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S" }],
+    });
+    const noNet = (): Promise<Response> => Promise.reject(new Error("kein Netz im Test"));
+    const res = await createInvoiceComplete(o.orgId, input, { actor: "api", createdBy: "api", now: ISSUE, fetchImpl: noNet });
+    expect(res.paymentId).toBeNull();
+    await paymentRuleKickIdle();
+    expect(processSpy).not.toHaveBeenCalled();
+    expect(await runs(o.orgId)).toHaveLength(0);
+  });
+
+  it("Bankabgleich mit Teilzahlung -> Lauf PAID_PARTIAL", async () => {
+    const o = await mkOrg();
+    await mkRule(o.orgId, "PAID_PARTIAL");
+    const inv = await mkInvoice(o, ISSUE);
+    const txId = await mkBankTx(o, { amountCents: 5000, bookingDate: NOW, remittance: `Rechnung ${inv.number}` });
+    await confirmBankMatch(o.orgId, txId, { allocations: [{ invoiceId: inv.id, amountCents: 5000 }], expectedAllocatedCents: 0 }, { actor: "tester", createdBy: "user", now: NOW });
+    const all = await runs(o.orgId);
+    expect(all).toHaveLength(1);
+    expect(all[0]).toMatchObject({ source: "BANK", trigger: "PAID_PARTIAL" });
+  });
+});
+
 describe("Schleifenbremse", () => {
   it("der 21. Lauf je Regel und Rechnung wird nur protokolliert (SKIPPED)", async () => {
     const o = await mkOrg();
