@@ -16,6 +16,7 @@ describe("PUBLIC_PREFIXES", () => {
       "/api/cron",
       "/angebot/",
       "/portal/",
+      "/zahlen/",
       "/api/public/",
       "/api/v1/",
       "/api/docs",

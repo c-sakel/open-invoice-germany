@@ -188,6 +188,18 @@ describe("proxy", () => {
     }
   });
 
+  it("Bezahlseite: /zahlen/x und /api/public/payments/x ohne Sitzung durchgelassen, mit Sicherheitsheadern", async () => {
+    for (const path of ["/zahlen/abc", "/zahlen/abc/bezahlen", "/api/public/payments/mollie/abc"]) {
+      const res = await proxy(new NextRequest(`http://localhost${path}`));
+      expect(res.status).toBe(200);
+      expect(res.headers.get("x-middleware-request-" + PUBLIC_NO_NAV_HEADER)).toBe("1");
+      expect(res.headers.get("referrer-policy")).toBe("no-referrer");
+      expect(res.headers.get("x-robots-tag")).toBe("noindex, nofollow");
+      expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+      expect(res.headers.get("cache-control")).toBe("private, no-store");
+    }
+  });
+
   it("Portal: /portalx und /api/public/portalx sind nicht als Portal gekennzeichnet", async () => {
     const page = await proxy(new NextRequest("http://localhost/portalx"));
     expect(page.status).toBe(307);

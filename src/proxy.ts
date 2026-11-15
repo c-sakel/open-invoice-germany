@@ -25,7 +25,7 @@ const PUBLIC_EXACT = new Set(["/", "/api/health"]);
 // auch einen hypothetischen Pfad wie "/api/docsomething" mit durchgelassen haette.
 // /api/branding (Phase 12c, Task 2): liefert nur Favicon/Logo der Instanz — keine
 // personenbezogenen Daten, wird aber vor der Session gebraucht (Login-/Setup-Seite).
-const PUBLIC_PREFIXES = ["/login", "/setup", "/api/auth", "/api/cron", "/angebot/", "/portal/", "/api/public/", "/api/v1/", "/api/docs", "/api/branding"];
+const PUBLIC_PREFIXES = ["/login", "/setup", "/api/auth", "/api/cron", "/angebot/", "/portal/", "/zahlen/", "/api/public/", "/api/v1/", "/api/docs", "/api/branding"];
 
 /** true, wenn `pathname` GENAU `prefix` ist ODER mit `prefix + "/"` beginnt — verhindert,
  *  dass ein Praefix ohne trailing slash (z. B. "/api/docs") auch einen unverwandten
@@ -39,7 +39,7 @@ function matchesPublicPrefix(pathname: string, prefix: string): boolean {
 // Präfixe, deren Seiten ohne interne Navigation/Layout ausgeliefert werden (Root-Layout
 // liest diesen Request-Header und rendert dann nur eine schlanke Hülle — kein Route-Group-
 // Umbau nötig, siehe Task-3-Addendum).
-const NO_NAV_PREFIXES = ["/angebot/", "/portal/", "/api/public/"];
+const NO_NAV_PREFIXES = ["/angebot/", "/portal/", "/zahlen/", "/api/public/"];
 export const PUBLIC_NO_NAV_HEADER = "x-oig-public";
 
 // Task 9 (R12): das Root-Layout (`src/app/layout.tsx`) braucht den Pfad, um eine
@@ -71,7 +71,8 @@ export async function proxy(req: NextRequest) {
       // — CDN/Browser duerfen sie nicht zwischenspeichern.
       res.headers.set("cache-control", "private, no-store");
       // Kundenportal: zusaetzlich kein Referer (Token in der URL) und keine Indexierung.
-      if (pathname.startsWith("/portal/") || pathname.startsWith("/api/public/portal/")) {
+      // Bezahlseite (Token in der URL): dieselben Header.
+      if (pathname.startsWith("/portal/") || pathname.startsWith("/api/public/portal/") || pathname.startsWith("/zahlen/") || pathname.startsWith("/api/public/payments/")) {
         for (const [k, v] of Object.entries(portalSecurityHeaders())) res.headers.set(k, v);
       }
       return res;
