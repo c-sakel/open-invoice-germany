@@ -288,6 +288,7 @@ Datumsangaben zu Altbelegen beziehen sich auf den Programmstand; maßgeblich ist
 - **Ausführung mit dem nächsten Scheduler-Lauf.** Nach Ablauf der Wartezeit läuft eine Regel nicht sekundengenau; ohne laufenden Scheduler greift nur der Anstoß nach der Zahlung.
 - **Eine Mail im Zustand „unklar" wird nie automatisch wiederholt**, damit kein Kunde zwei Bestätigungen erhält. Der Betreiber prüft das E-Mail-Protokoll und wiederholt bei Bedarf von Hand.
 - **Versandgrenzen:** 5 Bestätigungen je Kunde und 100 je Firma und Stunde; darüber wird der Lauf verschoben.
+- **Abo-Fortsetzung nur bei Zahlungseingang.** Bleibt ein Abo wegen einer weiteren offenen Rechnung pausiert und wird diese Rechnung storniert statt bezahlt, wird das Abo nicht automatisch fortgesetzt.
 - **Nichts wird rückgängig gemacht.** Eine Gegenbuchung oder ein Storno nach der Ausführung nimmt versendete Mails, Tags, Benachrichtigungen und fortgesetzte Abos nicht zurück; davor überspringt es den Lauf.
 - **Höchstens 5 Aktionen je Regel**, jede Art einmal; höchstens 20 Läufe je Regel und Rechnung.
 
