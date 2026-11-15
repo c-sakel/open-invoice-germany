@@ -49,6 +49,7 @@ import { registerPostalTools } from "./tools/postal";
 import { registerCsvTools } from "./tools/csv";
 import { registerBankTools } from "./tools/bank";
 import { registerPaymentRuleTools } from "./tools/payment-rules";
+import { registerDatevTools } from "./tools/datev";
 
 // Exportiert fuer Integrationstests (test/integration/mcp-*.test.ts): erlaubt,
 // registrierte Tool-Handler direkt aufzurufen, ohne einen Stdio-Transport zu starten.
@@ -89,6 +90,7 @@ registerOnlinePaymentTools(server, mcpContext);
 registerCsvTools(server, mcpContext);
 registerBankTools(server, mcpContext);
 registerPaymentRuleTools(server, mcpContext);
+registerDatevTools(server, mcpContext);
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 async function main() {

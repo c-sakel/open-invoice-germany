@@ -1355,3 +1355,6 @@ export * from "./payment-rule";
 
 // ── Online-Zahlung ───────────────────────────────────────────────────────────
 export * from "./online-payment";
+
+// ── DATEV-Export ─────────────────────────────────────────────────────────────
+export * from "./datev";

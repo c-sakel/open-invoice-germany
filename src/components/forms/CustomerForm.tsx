@@ -37,6 +37,10 @@ export interface CustomerFormData {
   sepaMandateSignedAt?: string | null;
   sepaDebitIban?: string | null;
   sepaDebitAccountName?: string | null;
+  /** DATEV-Debitorennummer (nur beim Bearbeiten). */
+  datevAccount?: number | null;
+  /** Nach dem ersten Export gesperrt. */
+  datevAccountLocked?: boolean;
 }
 
 /** Auswahl "Wie Voreinstellung / Keine / Mollie / Stripe" (leer = NULL = Voreinstellung der Organisation). */
@@ -136,6 +140,21 @@ export function CustomerForm({
           ]}
           hint="Maßgeblich, wenn die Mahnstufe „Kundenvorgabe“ verwendet. Der Postversand muss unter Einstellungen eingeschaltet sein."
         />
+        {customer && customer.datevAccount !== undefined && (
+          <TextField
+            label="DATEV-Debitorennummer"
+            name="datevAccount"
+            type="number"
+            defaultValue={customer.datevAccount != null ? String(customer.datevAccount) : ""}
+            disabled={customer.datevAccountLocked === true}
+            placeholder="wird beim DATEV-Export vergeben"
+            hint={
+              customer.datevAccountLocked
+                ? "Nach dem ersten DATEV-Export gesperrt und nicht mehr änderbar."
+                : "Optional. Leer lassen für automatische Vergabe beim ersten Export."
+            }
+          />
+        )}
         <TextAreaField label="Notiz" name="notes" defaultValue={customer?.notes} className="sm:col-span-2" />
       </div>
 

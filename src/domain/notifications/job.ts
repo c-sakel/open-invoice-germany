@@ -22,6 +22,8 @@ import type { MailProvider } from "@/lib/mail/provider";
 import { loadBrand } from "@/domain/settings/brand";
 import { withHtmlPart } from "@/domain/email/html-part";
 import { checkOssNotifications } from "@/domain/reporting/oss-notify";
+import { datevStatus } from "@/domain/export/datev/late";
+import { berlinDateKey } from "@/lib/berlin-time";
 
 const DUNNABLE_STATUSES = new Set(["FINALIZED", "SENT", "PARTIALLY_PAID"]);
 const QUOTE_EXPIRING_WINDOW_DAYS = 3;
@@ -173,6 +175,25 @@ async function processOssThreshold(orgId: string, now: Date, enabled: Set<Notifi
   if (created > 0) byType.OSS_THRESHOLD = (byType.OSS_THRESHOLD ?? 0) + created;
 }
 
+/** Nachtraege in bereits exportierten DATEV-Monaten: eine Meldung je Berliner Tag, solange welche offen sind. */
+export async function processDatevLateItems(orgId: string, now: Date, enabled: Set<NotificationType>, byType: Record<string, number>): Promise<void> {
+  if (!enabled.has("DATEV_LATE_ITEMS")) return;
+  const status = await datevStatus(orgId, now);
+  const total = status.pendingLate.reduce((s, p) => s + p.count, 0);
+  if (total === 0) return;
+  const res = await createNotification({
+    orgId,
+    type: "DATEV_LATE_ITEMS",
+    title: `${total} Buchungen in bereits exportierten Monaten (${status.pendingLate.map((p) => p.month).join(", ")}) — Nachtrag exportieren`,
+    link: "/einstellungen/datev",
+    entityType: "DATEV",
+    entityId: orgId,
+    dedupeKey: `datev:late:${berlinDateKey(now)}`,
+    at: now,
+  });
+  if (res) bump(byType, "DATEV_LATE_ITEMS");
+}
+
 async function sendDigestIfDue(orgId: string, now: Date, provider: MailProvider | undefined, result: RunNotificationsJobResult): Promise<void> {
   const settings = await loadNotificationSettings(orgId);
   if (!settings.emailDigest) return;
@@ -229,6 +250,11 @@ export async function runNotificationsJob(now: Date = new Date(), opts: RunNotif
       await processDunningStages(org.id, now, enabled, result.byType);
       await processQuoteExpiring(org.id, now, enabled, result.byType);
       await processOssThreshold(org.id, now, enabled, result.byType);
+      try {
+        await processDatevLateItems(org.id, now, enabled, result.byType);
+      } catch (e) {
+        result.errors.push({ orgId: org.id, message: `DATEV-Nachtraege: ${e instanceof Error ? e.message : String(e)}` });
+      }
       await sendDigestIfDue(org.id, now, opts.provider, result);
     } catch (e) {
       result.errors.push({ orgId: org.id, message: e instanceof Error ? e.message : String(e) });

@@ -59,5 +59,11 @@ describe("SETTINGS_GROUPS", () => {
     const grouped = SETTINGS_GROUPS.flatMap((g) => g.keys);
     expect([...grouped].sort()).toEqual(SETTINGS_ITEMS.map((i) => i.key).sort());
     expect(grouped).toContain("pruefung");
+    expect(grouped).toContain("datev");
+  });
+  it("Reiter DATEV steht direkt nach Prüfung", () => {
+    const keys = SETTINGS_ITEMS.map((i) => i.key);
+    expect(keys.indexOf("datev")).toBe(keys.indexOf("pruefung") + 1);
+    expect(SETTINGS_ITEMS.find((i) => i.key === "datev")?.href).toBe("/einstellungen/datev");
   });
 });

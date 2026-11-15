@@ -499,6 +499,41 @@ async function guardPayLinkUpdate(where: unknown, data: unknown): Promise<void> 
 }
 
 /**
+ * DATEV-Export: `DatevExport` und `DatevExportItem` sind Nachweise und append-only (nur `create`).
+ * Die Einstellungen sind je Organisation genau eine Zeile und werden nie geloescht.
+ */
+export class DatevExportImmutableError extends Error {
+  constructor() {
+    super("DATEV-Exportprotokolle sind unveraenderlich (append-only).");
+    this.name = "DatevExportImmutableError";
+  }
+}
+
+/**
+ * Debitorennummer (`Customer.datevAccount`): nach dem ersten Export unveraenderlich. Die einzige Schreibstelle ist
+ * `setCustomerDatevAccount` (src/domain/export/datev/debtors.ts) ueber `dbInternal`; ueber den geschuetzten
+ * Client darf das Feld nie geschrieben werden.
+ */
+export class DatevAccountWriteError extends Error {
+  constructor() {
+    super("Die DATEV-Debitorennummer wird nur ueber den Domain-Service gesetzt.");
+    this.name = "DatevAccountWriteError";
+  }
+}
+
+function writesDatevAccount(data: unknown): boolean {
+  const rows = Array.isArray(data) ? data : [data];
+  return rows.some((d) => typeof d === "object" && d !== null && "datevAccount" in d && (d as { datevAccount?: unknown }).datevAccount !== undefined);
+}
+
+export class DatevSettingsDeleteError extends Error {
+  constructor() {
+    super("DATEV-Einstellungen duerfen nicht geloescht werden.");
+    this.name = "DatevSettingsDeleteError";
+  }
+}
+
+/**
  * Bankabgleich: `BankStatementImport` und `BankMatch` sind Nachweise und append-only (nur `create`).
  * `BankTransaction` wird nie geloescht; nach dem Anlegen sind nur Status- und Zuordnungsfelder
  * fortschreibbar — Betrag, Fingerabdruck und Gegenkonto bleiben unveraenderlich.
@@ -914,6 +949,76 @@ export const prisma = base.$extends({
       },
       async deleteMany() {
         throw new CustomerPortalEventImmutableError();
+      },
+    },
+    datevExport: {
+      async update() {
+        throw new DatevExportImmutableError();
+      },
+      async updateMany() {
+        throw new DatevExportImmutableError();
+      },
+      async updateManyAndReturn() {
+        throw new DatevExportImmutableError();
+      },
+      async upsert() {
+        throw new DatevExportImmutableError();
+      },
+      async delete() {
+        throw new DatevExportImmutableError();
+      },
+      async deleteMany() {
+        throw new DatevExportImmutableError();
+      },
+    },
+    datevExportItem: {
+      async update() {
+        throw new DatevExportImmutableError();
+      },
+      async updateMany() {
+        throw new DatevExportImmutableError();
+      },
+      async updateManyAndReturn() {
+        throw new DatevExportImmutableError();
+      },
+      async upsert() {
+        throw new DatevExportImmutableError();
+      },
+      async delete() {
+        throw new DatevExportImmutableError();
+      },
+      async deleteMany() {
+        throw new DatevExportImmutableError();
+      },
+    },
+    customer: {
+      async create({ args, query }) {
+        if (writesDatevAccount(args.data)) throw new DatevAccountWriteError();
+        return query(args);
+      },
+      async createMany({ args, query }) {
+        if (writesDatevAccount(args.data)) throw new DatevAccountWriteError();
+        return query(args);
+      },
+      async update({ args, query }) {
+        if (writesDatevAccount(args.data)) throw new DatevAccountWriteError();
+        return query(args);
+      },
+      async updateMany({ args, query }) {
+        if (writesDatevAccount(args.data)) throw new DatevAccountWriteError();
+        return query(args);
+      },
+      async upsert({ args, query }) {
+        if (writesDatevAccount(args.create) || writesDatevAccount(args.update)) throw new DatevAccountWriteError();
+        return query(args);
+      },
+    },
+    datevSettings: {
+      async delete() {
+        throw new DatevSettingsDeleteError();
+      },
+      async deleteMany() {
+        throw new DatevSettingsDeleteError();
       },
     },
     bankStatementImport: {

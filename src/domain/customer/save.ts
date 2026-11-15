@@ -68,9 +68,11 @@ function toCreateData(v: CustomerInput) {
 /** G (Fix-Welle Phase 8a/Task 1): defaultPaymentMethodId ungeprueft haette eine
  *  Zahlungsmethode einer FREMDEN Organisation eintragen lassen (Prisma prueft nur
  *  Existenz der ID, nicht orgId). */
-async function assertPaymentMethodBelongsToOrg(orgId: string, defaultPaymentMethodId: string | null | undefined): Promise<void> {
+type CustomerDb = Prisma.TransactionClient | typeof dbInternal;
+
+async function assertPaymentMethodBelongsToOrg(orgId: string, defaultPaymentMethodId: string | null | undefined, db: CustomerDb = dbInternal): Promise<void> {
   if (!defaultPaymentMethodId) return;
-  const method = await dbInternal.paymentMethod.findFirst({ where: { id: defaultPaymentMethodId, orgId }, select: { id: true } });
+  const method = await db.paymentMethod.findFirst({ where: { id: defaultPaymentMethodId, orgId }, select: { id: true } });
   if (!method) throw new CustomerValidationError("Zahlungsmethode nicht gefunden.");
 }
 
@@ -106,15 +108,15 @@ const NULLABLE_ON_EMPTY = new Set(["contactName", "addressLine2", "phone", "vatI
 
 const DIRECT_DEBIT_KEYS = ["sepaMandateReference", "sepaMandateSignedAt", "sepaDebitIban", "sepaDebitAccountName"] as const;
 
-export async function updateCustomer(orgId: string, id: string, rawInput: unknown): Promise<Customer> {
+export async function updateCustomer(orgId: string, id: string, rawInput: unknown, db: CustomerDb = dbInternal): Promise<Customer> {
   const raw = rawInput && typeof rawInput === "object" ? (rawInput as Record<string, unknown>) : {};
   const v = customerFieldsSchema.partial().parse(raw);
 
-  const existing = await dbInternal.customer.findFirst({ where: { id, orgId } });
+  const existing = await db.customer.findFirst({ where: { id, orgId } });
   if (!existing) throw new NotFoundError("Kunde nicht gefunden.");
 
   if ("defaultPaymentMethodId" in raw) {
-    await assertPaymentMethodBelongsToOrg(orgId, v.defaultPaymentMethodId);
+    await assertPaymentMethodBelongsToOrg(orgId, v.defaultPaymentMethodId, db);
   }
 
   if ("leitwegId" in raw) assertLeitwegId(v.leitwegId, existing.leitwegId);
@@ -171,5 +173,5 @@ export async function updateCustomer(orgId: string, id: string, rawInput: unknow
     const norm = (x: string | null | undefined) => (x ? normalizeVatId(x) : null);
     if (norm(patch.vatId as string | null) !== norm(existing.vatId)) patch.vatIdValidatedAt = null;
   }
-  return dbInternal.customer.update({ where: { id: existing.id }, data: patch });
+  return db.customer.update({ where: { id: existing.id }, data: patch });
 }

@@ -743,6 +743,22 @@ Einstellungen und Bezahllinks. Der API-Schlüssel des Anbieters und der Einschal
 
 Ein `Idempotency-Key` wird bei diesen schreibenden Aufrufen ignoriert. Fehler `422` tragen einen `reason` (z. B. `INVOICE_STATE`, `LINK_CANCELLED`, `NONE`, `ACCOUNT_OFF`, `CURRENCY`, `DIRECT_DEBIT`, `PREPAID`, `NOT_PAYABLE`). Die Adresse steht nur im Feld `url`, nie im Anfrageprotokoll oder in Idempotenz-Antworten. Der Zahlungseingang selbst läuft über den Webhook des Anbieters (`/api/public/payments/...`, kein Teil der API; bei Stripe mit Signaturprüfung über den Rohbody); gebuchte Zahlungen erscheinen als `Payment` mit `provider` `MOLLIE` oder `STRIPE`. In den Einstellungen steht je Anbieter `hasApiKey`; bei Stripe zusätzlich `hasWebhookSecret` (der Signaturschlüssel ist nur in der Oberfläche änderbar). Der Anbieter `{provider}` im Testpfad ist `MOLLIE` oder `STRIPE`.
 
+## DATEV-Export
+
+Datei-Export für den Steuerberater (kein Netzaufruf). Alle Endpunkte brauchen den Scope `admin`. Die **Bestätigung der Kontenzuordnung gibt es nur in der Oberfläche**; Bestätigungsfelder (`confirmed`, `confirmedNote`, ...) werden mit `400` abgelehnt, und jede Änderung über die API macht eine bestehende Bestätigung hinfällig. Ohne Bestätigung ist der Export gesperrt (`NOT_CONFIRMED`).
+
+| Endpunkt | Zweck |
+|---|---|
+| `GET` / `PUT /api/v1/Settings/datev` | Einstellungen (Berater-/Mandantennummer, Sachkontenlänge, Debitoren, Bank/Kasse, `exportPayments`, ...) lesen bzw. im Teil-Update setzen |
+| `GET` / `PUT /api/v1/Settings/datev/mapping` | Kontenzuordnung lesen bzw. als gesamten Satz atomar ersetzen (`kind` `REVENUE`/`DOWNPAYMENT`/`MONEY`, `key`, `account`, `buKey`) |
+| `POST /api/v1/Settings/datev/template` | Vorlage `SKR03`/`SKR04` als Vorschlag übernehmen (keine Bestätigung) |
+| `GET /api/v1/DatevExport/status` | Bestätigungsstand, exportierte Monate, Nachträge in bereits exportierten Monaten |
+| `POST /api/v1/DatevExport` | Export erzeugen: `from`, `to` (`JJJJ-MM`, ohne den laufenden Monat), `mode` (`PERIOD`/`SUPPLEMENT`), `repeat` (Wiederholung bereits exportierter Monate), `dryRun` (nur Vorschau, schreibt nichts) |
+| `GET /api/v1/DatevExport` / `GET /api/v1/DatevExport/{id}` | Protokoll der Läufe (neueste zuerst) bzw. ein Lauf mit Posten (`limit` bis 1000, `offset`) |
+| `GET /api/v1/DatevExport/{id}/file` | ZIP herunterladen; die Prüfsumme wird gegen das Protokoll geprüft (`FILE_TAMPERED`, wenn die Archivdatei abweicht) |
+
+Das Protokoll ist unveränderlich. Fälle ohne sichere Abbildung stehen als Handbuchungen im Lauf (`manual`).
+
 ## Fehlende Endpunkte / Grenzen (siehe auch [LIMITATIONEN.md](LIMITATIONEN.md))
 
 - Die meisten Aktions-Endpunkte (`/finalize`, `/cancel`, `/credit`, `/convert`,

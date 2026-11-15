@@ -9,7 +9,9 @@ import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { organizationSchema, customerSchema, productSchema, type CustomerInput } from "@/schemas";
 import { parseEuroToCents } from "@/lib/money";
 import { archiveCustomer as archiveCustomerDomain } from "@/domain/customer/archive";
-import { createCustomer, updateCustomer, CustomerValidationError } from "@/domain/customer/save";
+import { createCustomer, CustomerValidationError } from "@/domain/customer/save";
+import { updateCustomerWithDatev } from "@/domain/customer/update-with-datev";
+import { DatevError } from "@/domain/export/datev/errors";
 import { archiveProduct as archiveProductDomain } from "@/domain/product/archive";
 import { createProduct, updateProduct } from "@/domain/product/save";
 import { TaxRateNotAllowedError } from "@/domain/settings/tax-rates";
@@ -138,6 +140,14 @@ export async function saveCustomer(_prev: ActionResult, fd: FormData): Promise<A
   });
   if (!parsed.success) return { ok: false, error: firstError(parsed.error.issues) };
   const v = parsed.data;
+  // Debitorennummer: nur wenn das Feld im Formular steht (gesperrte Felder werden nicht gesendet).
+  let datevAccount: number | null | undefined;
+  if (fd.has("datevAccount")) {
+    const raw = str(fd, "datevAccount");
+    if (raw === undefined) datevAccount = null;
+    else if (/^\d{1,9}$/.test(raw)) datevAccount = Number(raw);
+    else return { ok: false, error: "DATEV-Debitorennummer: bitte nur Ziffern eingeben." };
+  }
 
   try {
     const org = await getActiveOrg();
@@ -148,12 +158,12 @@ export async function saveCustomer(_prev: ActionResult, fd: FormData): Promise<A
       const res = await dbInternal.customer.findFirst({ where: { id, orgId: org.id }, select: { id: true } });
       if (!res) return { ok: false, error: "Kunde nicht gefunden." };
       // Alle Formularfelder sind Schluessel des Formulars; leere Felder loeschen den Wert (PATCH-Semantik der Domain).
-      await updateCustomer(org.id, id, v);
+      await updateCustomerWithDatev(org.id, id, datevAccount === undefined ? v : { ...v, datevAccount }, datevAccount === undefined ? "system" : ((await getCurrentUserId()) ?? "system"));
     } else {
       await createCustomer(org.id, v);
     }
   } catch (e) {
-    if (e instanceof CustomerValidationError) return { ok: false, error: e.message };
+    if (e instanceof CustomerValidationError || e instanceof DatevError) return { ok: false, error: e.message };
     console.error("saveCustomer:", describeError(e));
     return { ok: false, error: "Speichern fehlgeschlagen." };
   }
