@@ -41,7 +41,7 @@ export const paymentMethodSchema = z.object({
   bankBic: z.string().nullable(),
   bankName: z.string().nullable(),
   untdidCode: z.string(),
-  onlineProvider: z.string().nullable().describe("Vorgabe fuer Bezahllinks: MOLLIE, NONE (nie) oder null (keine Vorgabe)."),
+  onlineProvider: z.string().nullable().describe("Vorgabe fuer Bezahllinks: MOLLIE, STRIPE, NONE (nie) oder null (keine Vorgabe)."),
   isSystem: z.boolean(),
   isActive: z.boolean(),
   sortOrder: z.number().int(),

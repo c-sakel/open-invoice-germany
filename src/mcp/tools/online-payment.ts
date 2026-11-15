@@ -37,7 +37,7 @@ export function registerOnlinePaymentTools(server: McpServer, ctx: McpToolsConte
     "get_online_payment_settings",
     {
       title: "Einstellungen der Online-Zahlung lesen",
-      description: "Liefert Standardanbieter, Anzeigeoptionen und je Anbieter Einschalter, Modus, ob ein Schluessel hinterlegt ist und das letzte Testergebnis. Nie den Schluessel.",
+      description: "Liefert Standardanbieter, Anzeigeoptionen und je Anbieter Einschalter, Modus, ob Schluessel und Signaturschluessel hinterlegt sind (hasApiKey, hasWebhookSecret) und das letzte Testergebnis. Nie einen Schluessel.",
       inputSchema: {},
     },
     async (): Promise<Result> => {
@@ -55,7 +55,7 @@ export function registerOnlinePaymentTools(server: McpServer, ctx: McpToolsConte
     {
       title: "Anzeigeoptionen der Online-Zahlung setzen",
       description:
-        "Teil-Update von defaultProvider (NONE|MOLLIE), showOnPdf, showInMail, showInPortal. Schluessel, Einschalter, Methoden und Waehrungen lassen sich nur in der Oberflaeche aendern.",
+        "Teil-Update von defaultProvider (NONE|MOLLIE|STRIPE), showOnPdf, showInMail, showInPortal. Schluessel, Signaturschluessel, Einschalter, Methoden und Waehrungen lassen sich nur in der Oberflaeche aendern.",
       // Verbotene Felder muessen im Schema stehen, sonst entfernt das SDK sie vor dem Handler still.
       inputSchema: {
         ...onlinePaymentSettingsInputSchema.shape,
@@ -78,7 +78,7 @@ export function registerOnlinePaymentTools(server: McpServer, ctx: McpToolsConte
     {
       title: "Verbindung zum Zahlungsanbieter pruefen",
       description: "Baut mit dem hinterlegten Schluessel eine echte Verbindung zum Anbieter auf und speichert das Ergebnis. Ohne hinterlegten Schluessel Fehler (NO_KEY).",
-      inputSchema: { provider: onlineProviderSchema.describe("Anbieter, z. B. MOLLIE") },
+      inputSchema: { provider: onlineProviderSchema.describe("Anbieter, MOLLIE oder STRIPE") },
     },
     async ({ provider }): Promise<Result> => {
       try {
