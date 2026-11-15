@@ -34,7 +34,6 @@ export interface ProviderAccountView {
   mode: "TEST" | "LIVE" | null;
   hasApiKey: boolean;
   apiKeyLast4: string | null;
-  webhookConfigured: boolean;
   allowedMethods: string[] | null;
   currencies: string[];
   lastTestAt: Date | null;
@@ -111,7 +110,6 @@ function emptyAccount(provider: OnlineProvider): ProviderAccountView {
     mode: null,
     hasApiKey: false,
     apiKeyLast4: null,
-    webhookConfigured: false,
     allowedMethods: null,
     currencies: ["EUR"],
     lastTestAt: null,
@@ -128,7 +126,6 @@ function accountView(provider: OnlineProvider, row: AccountRow | undefined): Pro
     mode: asMode(row.mode),
     hasApiKey: row.apiKeyEnc !== null,
     apiKeyLast4: row.apiKeyEnc ? last4(row.apiKeyEnc) : null,
-    webhookConfigured: row.apiKeyEnc !== null,
     allowedMethods: parseStringList(row.allowedMethodsJson),
     currencies: accountCurrencies(row.currenciesJson),
     lastTestAt: row.lastTestAt,
@@ -228,7 +225,8 @@ export async function setProviderApiKey(orgId: string, providerRaw: unknown, raw
         lastTestAt: null,
         lastTestOk: null,
         lastTestError: null,
-        ...(keyEnc === null ? { enabled: false } : {}),
+        // Jeder Schluesselwechsel schaltet aus: neuer Schluessel erst testen, dann bewusst einschalten.
+        enabled: false,
       },
     });
     await logProvider(tx, orgId, acc.id, actor, { provider, changed: [keyEnc === null ? "apiKeyRemoved" : "apiKey"], mode });
@@ -308,6 +306,9 @@ export async function testProviderConnection(
   const provider = onlineProviderSchema.parse(providerRaw);
   const secret = await loadProviderSecret(orgId, provider);
   if (!secret) throw new OnlinePaymentError("Kein API-Schluessel hinterlegt.", "NO_KEY");
+  const testedRow = await dbInternal.paymentProviderAccount.findUnique({ where: { orgId_provider: { orgId, provider } }, select: { apiKeyEnc: true } });
+  const testedKeyEnc = testedRow?.apiKeyEnc ?? null;
+  let discarded = false;
   let ok = false;
   let methods: string[] = [];
   let error: string | null = null;
@@ -321,11 +322,18 @@ export async function testProviderConnection(
   await dbInternal.$transaction(async (tx) => {
     await lockOrganization(tx, orgId);
     const acc = await ensureAccount(tx, orgId, provider);
+    // Schluessel zwischenzeitlich gewechselt: Ergebnis gehoert zum alten Schluessel, verwerfen.
+    const current = await tx.paymentProviderAccount.findUnique({ where: { id: acc.id }, select: { apiKeyEnc: true } });
+    if (!current || current.apiKeyEnc !== testedKeyEnc) {
+      discarded = true;
+      return;
+    }
     await tx.paymentProviderAccount.update({
       where: { id: acc.id },
       data: { lastTestAt: new Date(), lastTestOk: ok, lastTestError: error },
     });
     await logProvider(tx, orgId, acc.id, actor, { provider, changed: ["connectionTest"], mode: secret.mode });
   });
+  if (discarded) return { ok: false, methods: [], error: "Der Schluessel wurde waehrend des Tests geaendert; bitte erneut testen." };
   return { ok, methods, error };
 }

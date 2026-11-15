@@ -34,6 +34,7 @@ interface Setup {
   accountEnabled?: boolean;
   customerChoice?: string | null;
   showOnPdf?: boolean;
+  mode?: "TEST" | "LIVE";
 }
 
 async function makeOrg(name: string, s: Setup = {}) {
@@ -64,7 +65,7 @@ async function makeOrg(name: string, s: Setup = {}) {
       orgId,
       provider: "MOLLIE",
       enabled: s.accountEnabled ?? true,
-      mode: "TEST",
+      mode: s.mode ?? "LIVE",
       apiKeyEnc: encryptSecret(KEY, PAYMENT_PROVIDER_KEY_PURPOSE),
       webhookPathId: `wh-${orgId}`,
       lastTestOk: true,
@@ -122,6 +123,13 @@ describe("Festschreiben mit Voreinstellung", () => {
     expect((await verifyOrgChain(orgId, "UI")).valid).toBe(true);
   });
 
+  it("Testmodus-Konto: Link nur intern, nie auf dem Beleg (onDocument false)", async () => {
+    const { orgId, customerId } = await makeOrg("Link T GmbH", { mode: "TEST" });
+    const inv = await finalized(orgId, customerId);
+    expect(await linkOf(inv.id)).toMatchObject({ status: "ACTIVE", onDocument: false });
+    expect(await revealPayLinkUrl(orgId, inv.id, "https://rechnung.example.org")).toMatch(/\/zahlen\//);
+  });
+
   it("showOnPdf aus: Link ohne onDocument", async () => {
     const { orgId, customerId } = await makeOrg("Link B GmbH", { showOnPdf: false });
     const inv = await finalized(orgId, customerId);
@@ -155,11 +163,12 @@ describe("Festschreiben mit Voreinstellung", () => {
     expect((await verifyOrgChain(orgId, "UI")).valid).toBe(true);
   });
 
-  it("Anlegen+Festschreiben+Vollzahlung (createInvoiceComplete) erzeugt den Link", async () => {
+  it("Anlegen+Festschreiben+Vollzahlung (createInvoiceComplete) deaktiviert den Link nach Vollzahlung", async () => {
     const { orgId, customerId } = await makeOrg("Link G GmbH");
     const r = await createInvoiceComplete(orgId, input(customerId), { actor: "test", createdBy: "api", now: NOW, payment: { method: "TRANSFER" } });
     expect(r.invoice.status).toBe("PAID");
-    expect(await linkOf(r.invoice.id)).toMatchObject({ status: "ACTIVE" });
+    expect(await linkOf(r.invoice.id)).toMatchObject({ status: "DISABLED", disabledReason: "INVOICE_PAID" });
+    expect(await revealPayLinkUrl(orgId, r.invoice.id, "https://rechnung.example.org")).toBeNull();
   });
 
   it("Abo-Lauf mit Auto-Festschreiben erzeugt den Link", async () => {

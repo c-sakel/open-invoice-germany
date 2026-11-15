@@ -90,9 +90,23 @@ describe("Zugang", () => {
     const on = await setProviderEnabled(orgId, "MOLLIE", true, "tester");
     expect(on.accounts[0]).toMatchObject({ enabled: true, lastTestOk: true });
     const changed = await setProviderApiKey(orgId, "MOLLIE", FAKE_LIVE_KEY, "tester");
-    expect(changed.accounts[0]).toMatchObject({ mode: "LIVE", lastTestOk: null, lastTestAt: null });
-    await setProviderEnabled(orgId, "MOLLIE", false, "tester");
+    expect(changed.accounts[0]).toMatchObject({ mode: "LIVE", enabled: false, lastTestOk: null, lastTestAt: null });
     await expect(setProviderEnabled(orgId, "MOLLIE", true, "tester")).rejects.toMatchObject({ code: "NOT_TESTED" });
+  });
+
+  it("Schluesselwechsel waehrend des Verbindungstests: Ergebnis wird verworfen", async () => {
+    const fake = okFake();
+    const slow = {
+      ...fake,
+      transport: async (...args: Parameters<typeof fake.transport>) => {
+        await setProviderApiKey(orgId, "MOLLIE", FAKE_LIVE_KEY, "tester");
+        return fake.transport(...args);
+      },
+    };
+    const res = await testProviderConnection(orgId, "MOLLIE", "tester", { transport: slow.transport });
+    expect(res.ok).toBe(false);
+    const row = await dbInternal.paymentProviderAccount.findFirstOrThrow({ where: { orgId, provider: "MOLLIE" }, select: { lastTestOk: true, enabled: true } });
+    expect(row).toMatchObject({ lastTestOk: null, enabled: false });
   });
 
   it("Einschalten ohne APP_BASE_URL und ohne Schluessel schlaegt fehl", async () => {

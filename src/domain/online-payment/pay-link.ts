@@ -77,7 +77,7 @@ export async function resolveProviderWithinTx(
     tx.paymentProviderSettings.findUnique({ where: { orgId: input.orgId }, select: { defaultProvider: true, showOnPdf: true } }),
     tx.paymentProviderAccount.findMany({
       where: { orgId: input.orgId },
-      select: { provider: true, enabled: true, apiKeyEnc: true, currenciesJson: true },
+      select: { provider: true, enabled: true, apiKeyEnc: true, currenciesJson: true, mode: true },
     }),
   ]);
   const map = new Map<OnlineProvider, { enabled: boolean; hasKey: boolean; currencies: readonly string[] }>();
@@ -98,7 +98,9 @@ export async function resolveProviderWithinTx(
     accounts: map,
   });
   if (res.provider === null) return res;
-  return { provider: res.provider, onDocument: settings?.showOnPdf ?? true };
+  // Testmodus-Links erscheinen nie auf Beleg/E-Rechnung/Mail; nur intern in der Belegansicht.
+  const mode = accounts.find((a) => a.provider === res.provider)?.mode ?? null;
+  return { provider: res.provider, onDocument: mode === "LIVE" && (settings?.showOnPdf ?? true) };
 }
 
 /** Beim Festschreiben: Anbieter aufloesen; null = kein Link. */
@@ -240,7 +242,7 @@ export async function disablePayLinkWithinTx(
   tx: Prisma.TransactionClient,
   orgId: string,
   invoiceId: string,
-  reason: "INVOICE_CANCELLED",
+  reason: "INVOICE_CANCELLED" | "INVOICE_PAID",
   actor: string,
   now: Date,
 ): Promise<void> {
