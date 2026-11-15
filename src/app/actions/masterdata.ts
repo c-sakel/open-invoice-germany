@@ -130,6 +130,7 @@ export async function saveCustomer(_prev: ActionResult, fd: FormData): Promise<A
     customerNumber: str(fd, "customerNumber"),
     notes: str(fd, "notes"),
     deliveryChannel: str(fd, "deliveryChannel"),
+    onlinePaymentProvider: str(fd, "onlinePaymentProvider"),
     sepaMandateReference: str(fd, "sepaMandateReference"),
     sepaMandateSignedAt: str(fd, "sepaMandateSignedAt"),
     sepaDebitIban: str(fd, "sepaDebitIban"),

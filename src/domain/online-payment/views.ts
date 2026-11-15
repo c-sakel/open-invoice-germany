@@ -20,6 +20,10 @@ export interface PayLinkAttemptView {
   currency: string;
   createdAt: Date;
   expiresAt: Date | null;
+  /** Fester Hinweistext des Vorgangs (z. B. "Anlage unklar"); nie Anbietertext. */
+  error: string | null;
+  /** Vom Anbieter gemeldeter Mehrbetrag, der nicht gebucht wurde (von Hand zu erstatten). */
+  overpaidCents: number | null;
 }
 
 export interface InvoicePayLinkView {
@@ -48,6 +52,22 @@ export function parseOnlinePaymentSettingsInput(raw: unknown): OnlinePaymentSett
   return input;
 }
 
+/** Ueberzahlung je Vorgang aus dem Ereignisprotokoll (Text "Ueberzahlung N Cent"). */
+async function overpaidByAttempt(orgId: string, attemptIds: string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (attemptIds.length === 0) return out;
+  const events = await dbInternal.paymentProviderEvent.findMany({
+    where: { orgId, attemptId: { in: attemptIds }, detail: { contains: "Ueberzahlung" } },
+    orderBy: { receivedAt: "asc" },
+    select: { attemptId: true, detail: true },
+  });
+  for (const e of events) {
+    const m = /Ueberzahlung (\d+) Cent/.exec(e.detail ?? "");
+    if (e.attemptId && m) out.set(e.attemptId, Number(m[1]));
+  }
+  return out;
+}
+
 /** Link-Ansicht; fremde oder unbekannte Rechnung -> NOT_FOUND. */
 export async function loadInvoicePayLink(orgId: string, invoiceId: string, opts: { withUrl: boolean }): Promise<InvoicePayLinkView> {
   const inv = await dbInternal.invoice.findFirst({
@@ -67,7 +87,7 @@ export async function loadInvoicePayLink(orgId: string, invoiceId: string, opts:
           attempts: {
             orderBy: { createdAt: "desc" },
             take: ATTEMPT_LIMIT,
-            select: { id: true, status: true, amountCents: true, currency: true, createdAt: true, expiresAt: true },
+            select: { id: true, status: true, amountCents: true, currency: true, createdAt: true, expiresAt: true, error: true },
           },
         },
       },
@@ -88,7 +108,8 @@ export async function loadInvoicePayLink(orgId: string, invoiceId: string, opts:
   };
   const base = appBaseUrlFromEnv();
   const url = opts.withUrl && base && link.status === "ACTIVE" ? await revealPayLinkUrl(orgId, inv.id, base) : null;
-  return { invoiceId: inv.id, link, url, attempts: l.attempts };
+  const overpaid = await overpaidByAttempt(orgId, l.attempts.map((a) => a.id));
+  return { invoiceId: inv.id, link, url, attempts: l.attempts.map((a) => ({ ...a, overpaidCents: overpaid.get(a.id) ?? null })) };
 }
 
 /** Legt den Link an oder reaktiviert ihn; `created` = vorher gab es keinen. */
@@ -114,7 +135,7 @@ export interface RefreshSummary {
 export async function refreshInvoicePayLink(
   orgId: string,
   invoiceId: string,
-  opts: { createdBy: "api" | "mcp"; actor: string; transport?: PaymentTransport },
+  opts: { createdBy: "api" | "mcp" | "user"; actor: string; transport?: PaymentTransport },
 ): Promise<RefreshSummary> {
   await loadInvoicePayLink(orgId, invoiceId, { withUrl: false });
   const open = await dbInternal.paymentProviderAttempt.findMany({
