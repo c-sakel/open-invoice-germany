@@ -83,6 +83,11 @@ export async function saveDocumentSettingsAction(_prev: ActionResult, fd: FormDa
     viesCheckOnFinalize: fd.has("viesCheckSent") ? fd.get("viesCheckOnFinalize") === "on" : current.viesCheckOnFinalize,
     ossCountMode: fd.get("ossCountMode") ?? current.ossCountMode,
     ossWarnPercent: fd.has("ossWarnPercent") ? Number(fd.get("ossWarnPercent")) : current.ossWarnPercent,
+    // Felder ohne Eingabe im Formular bleiben unveraendert.
+    kuWarnPercent: current.kuWarnPercent,
+    kuBusinessStartYear: current.kuBusinessStartYear,
+    kuExternalRevenue: current.kuExternalRevenue,
+    consumerDefaultNotice: current.consumerDefaultNotice,
   };
 
   try {

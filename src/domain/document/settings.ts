@@ -8,7 +8,7 @@
 import { z } from "zod";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
-import { documentSettingsInputSchema, taxRatesSchema, normalizeTaxRates, type DocumentSettingsInput } from "@/schemas/quote-share";
+import { documentSettingsInputSchema, kuExternalRevenueSchema, taxRatesSchema, normalizeTaxRates, type DocumentSettingsInput } from "@/schemas/quote-share";
 
 export const DEFAULT_DOCUMENT_SETTINGS: DocumentSettingsInput = documentSettingsInputSchema.parse({});
 
@@ -21,6 +21,17 @@ function parseTaxRates(json: string | null | undefined): number[] {
     return parsed.success ? parsed.data : [19, 7, 0];
   } catch {
     return [19, 7, 0];
+  }
+}
+
+/** Liest `DocumentSettings.kuExternalRevenueJson`; kaputtes JSON oder ungueltige Werte => {} (Selbstheilung). */
+function parseKuExternalRevenue(json: string | null | undefined): Record<string, number> {
+  if (!json) return {};
+  try {
+    const parsed = kuExternalRevenueSchema.safeParse(JSON.parse(json));
+    return parsed.success ? parsed.data : {};
+  } catch {
+    return {};
   }
 }
 
@@ -60,6 +71,10 @@ export async function loadDocumentSettings(
     ossWarnPercent: row.ossWarnPercent,
     viesCheckEnabled: row.viesCheckEnabled,
     viesCheckOnFinalize: row.viesCheckOnFinalize,
+    kuWarnPercent: row.kuWarnPercent,
+    kuBusinessStartYear: row.kuBusinessStartYear,
+    kuExternalRevenue: parseKuExternalRevenue(row.kuExternalRevenueJson),
+    consumerDefaultNotice: row.consumerDefaultNotice,
   });
 }
 
@@ -77,9 +92,9 @@ export async function saveDocumentSettings(orgId: string, rawInput: unknown): Pr
       ]);
     }
   }
-  const { taxRates, ...rest } = input;
+  const { taxRates, kuExternalRevenue, ...rest } = input;
   const normalized = normalizeTaxRates(taxRates);
-  const data = { ...rest, taxRatesJson: JSON.stringify(normalized) };
+  const data = { ...rest, taxRatesJson: JSON.stringify(normalized), kuExternalRevenueJson: JSON.stringify(kuExternalRevenue) };
   await dbInternal.documentSettings.upsert({
     where: { orgId },
     create: { orgId, ...data },

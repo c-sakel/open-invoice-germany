@@ -21,6 +21,11 @@ const currencyCode = z
 // (src/mcp/tools/partial-input.ts, unwrappt nur ZodDefault) und zod-to-openapi nur
 // unsauber abgebildet. Sortierung/Deduplizierung uebernimmt normalizeTaxRates,
 // aufgerufen in saveDocumentSettings.
+/** § 19 UStG: Umsatz ausserhalb des Programms je Kalenderjahr (Cent, hoechstens 10 Jahre). */
+export const kuExternalRevenueSchema = z
+  .record(z.string().regex(/^20\d\d$/, "Jahr im Format 20JJ"), z.number().int().min(0).max(2_147_483_647))
+  .refine((r) => Object.keys(r).length <= 10, "Hoechstens 10 Jahre");
+
 export const taxRatesSchema = z.array(z.number().int().min(0).max(100)).min(1).max(10);
 
 /** Dedupliziert und sortiert aufsteigend — reine Funktion, kein Zod-Transform (s. o.). */
@@ -90,6 +95,14 @@ export const documentSettingsInputSchema = z.object({
   viesCheckEnabled: z.boolean().default(true),
   /** Phase 17a: USt-IdNr. beim Festschreiben einer innergemeinschaftlichen Rechnung automatisch pruefen. */
   viesCheckOnFinalize: z.boolean().default(false),
+  /** § 19 UStG: Warnschwelle in Prozent der jeweiligen Umsatzgrenze. */
+  kuWarnPercent: z.number().int().min(1).max(99).default(80),
+  /** § 19 UStG: Jahr der Aufnahme der Taetigkeit; im selben Jahr gilt die Grenze von 25.000 EUR. */
+  kuBusinessStartYear: z.number().int().min(2000).max(2100).nullable().default(null),
+  /** § 19 UStG: Umsatz ausserhalb des Programms je Kalenderjahr in Cent. */
+  kuExternalRevenue: kuExternalRevenueSchema.default({}),
+  /** § 286 Abs. 3 BGB: Verzugshinweis auf Rechnungen an Verbraucher (Voreinstellung fuer neue Belege). */
+  consumerDefaultNotice: z.boolean().default(false),
 });
 export type DocumentSettingsInput = z.infer<typeof documentSettingsInputSchema>;
 

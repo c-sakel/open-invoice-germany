@@ -327,6 +327,8 @@ model Invoice {
   customerId                String
   customer                  Customer          @relation(fields: [customerId], references: [id])
   number                    String?           @unique // NULL bis Festschreibung
+  /// § 286 Abs. 3 BGB: NULL = automatisch (Entwurf), sonst Vorgabe am Beleg; beim Festschreiben eingefroren.
+  consumerDefaultNotice     Boolean?
   status                    String            @default("DRAFT") // DRAFT | FINALIZED | SENT | PAID | PARTIALLY_PAID | CANCELLED
   type                      String            @default("INVOICE") // INVOICE | CREDIT_NOTE | CORRECTION
   taxScheme                 String            @default("REGULAR") // REGULAR | KLEINUNTERNEHMER | DIFFERENZ | REVERSE_CHARGE | IG_LIEFERUNG | IG_LEISTUNG | AUSFUHR
@@ -1238,6 +1240,14 @@ model DocumentSettings {
   // Phase 17a: USt-IdNr.-Pruefung (VIES) freigeschaltet / beim Festschreiben automatisch.
   viesCheckEnabled             Boolean      @default(true)
   viesCheckOnFinalize          Boolean      @default(false)
+  /// § 19 UStG: Warnschwelle in Prozent der jeweiligen Umsatzgrenze (1..99).
+  kuWarnPercent                Int          @default(80)
+  /// § 19 UStG: Jahr der Aufnahme der Taetigkeit (dann gilt im selben Jahr die Grenze von 25.000 EUR).
+  kuBusinessStartYear          Int?
+  /// § 19 UStG: Umsatz ausserhalb des Programms je Jahr in Cent, z. B. {"2025":1234500}.
+  kuExternalRevenueJson        String       @default("{}")
+  /// § 286 Abs. 3 BGB: Verzugshinweis auf Rechnungen an Verbraucher.
+  consumerDefaultNotice        Boolean      @default(false)
   updatedAt                    DateTime     @updatedAt
 }
 

@@ -23,6 +23,10 @@ export async function PUT(req: Request) {
       ...sent,
       viesCheckEnabled: "viesCheckEnabled" in sent ? sent.viesCheckEnabled : current.viesCheckEnabled,
       viesCheckOnFinalize: "viesCheckOnFinalize" in sent ? sent.viesCheckOnFinalize : current.viesCheckOnFinalize,
+      kuWarnPercent: "kuWarnPercent" in sent ? sent.kuWarnPercent : current.kuWarnPercent,
+      kuBusinessStartYear: "kuBusinessStartYear" in sent ? sent.kuBusinessStartYear : current.kuBusinessStartYear,
+      kuExternalRevenue: "kuExternalRevenue" in sent ? sent.kuExternalRevenue : current.kuExternalRevenue,
+      consumerDefaultNotice: "consumerDefaultNotice" in sent ? sent.consumerDefaultNotice : current.consumerDefaultNotice,
     });
     return NextResponse.json({ settings });
   } catch (e) {
