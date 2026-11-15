@@ -817,6 +817,18 @@ Kontoauszüge (CAMT.053/.054) werden gelesen, Umsätze Rechnungen vorgeschlagen 
 
 ---
 
+## 3i. Aktionen nach Zahlungseingang
+
+Regeln (`PaymentRule`) und Läufe (`PaymentRuleRun`) liegen in `src/domain/payment-rule/`. Es gibt keine Skripte, nur die Aktionsarten des Zod-Schemas `src/schemas/payment-rule.ts`.
+
+- **Outbox:** `recordPaymentWithinTx` ruft `enqueuePaymentRuleRuns` in derselben Transaktion auf (`enqueue.ts`, importiert keine Zahlungsfunktionen). Schlägt die Zahlung fehl, entsteht kein Lauf. `@@unique([ruleId, paymentId])` macht den Lauf je Regel und Zahlung einmalig; je Regel und Rechnung gilt eine Obergrenze von 20 Läufen. Die Regelauswahl (`match.ts`) ist rein.
+- **Ausführung** (`execute.ts`): nach dem Commit per Anstoß (`kick.ts`, abschaltbar mit `PAYMENT_RULES_AFTER_COMMIT=0`) und durch den Scheduler-Job `payment-rules` (nach `webhooks` in `JOB_ORDER`). Ein Lauf wird per bedingtem `updateMany` auf `RUNNING` gesetzt und mit `lockedUntil` (5 Minuten) markiert; nur der Gewinner führt aus, alle weiteren Schreibzugriffe sind an Status und eigenes `lockedUntil` gebunden. Der Status wandert nur vorwärts (Guard in `src/lib/db.ts`).
+- **Datenbankaktionen** (Tag, Benachrichtigung, Webhook, Abo fortsetzen) entstehen zusammen mit dem Schrittzustand in einer Transaktion, also genau einmal. Webhook und Abo-Fortsetzung laufen über die bestehenden Pfade (`emitEvent`, `resumePausedRecurringWithinTx`).
+- **Mail höchstens einmal** (`mail.ts`): Der Claim `mailSentAt` wird vor dem Versand gesetzt. Fehler vor dem Anlegen des Protokolls geben ihn frei; ein unklarer Versand (Ergebnis nicht verbucht) bleibt gesetzt und wird nie automatisch wiederholt. Verschobene Läufe (Versandgrenzen) geben den Claim mit der Verschiebung frei. Die Limits werden unter der Kundensperre geprüft, der Versand läuft außerhalb jeder Transaktion.
+- **Wiederholen:** Backoff 1, 5, 30, 120 Minuten, höchstens 5 Versuche; danach `FAILED` und eine Benachrichtigung. Nach außen gehen nur feste Fehlertexte (`public-error.ts`).
+
+---
+
 ## 4. Lizenz-Empfehlung
 
 Ziel: (a) niemand zahlt mehr für Rechnungssoftware, (b) keine proprietäre Closed-Source-SaaS-Abzweigung, (c) maximale Community-Beiträge.

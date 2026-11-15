@@ -1032,6 +1032,7 @@ Siehe `docs/LIMITATIONEN.md` — insbesondere: kein Mischen von Teil- und Abschl
 | GoBD-Verfahrensdokumentation | Export/Vorlage zur Anwender-Verfahrensdoku bereitstellen (Software liefert sie nicht automatisch) | **Bewusst nicht umgesetzt** (liefert die Software nicht; Hinweise in COMPLIANCE § 6) |
 | DSGVO Löschung vs. Aufbewahrung | **Soft-Delete/Archiv-Flag** bei rechnungsrelevanten Daten; Hard-Delete blockieren bis Fristablauf; AVV-Hinweis bei Hosting | **Teilweise:** Archiv-Flag am Kunden, Löschschutz festgeschriebener Belege; kein AVV-Hinweis in der Software |
 | Kontoauszug und Zahlungseingang (§ 146 Abs. 4, § 147 AO) | Kontoauszug bleibt Buchungsbeleg der Buchhaltung; Zahlungen append-only mit Gegenbuchung; keine automatische Buchung; Gegenkonto-Daten nur soweit nötig | **Umgesetzt** (CAMT.053/.054, Zuordnung nur nach Bestätigung, Rücklastschrift per Gegenbuchung, Guard in `src/lib/db.ts`; siehe § 22) |
+| Zahlungsbestätigung per Mail (§ 14 UStG, § 368 BGB, § 257 HGB, § 147 AO) | keine Rechnung und keine Quittung; Wiedergabe im E-Mail-Protokoll, Zahlung unverändert, Protokoll + ChangeLog EMAIL | **Umgesetzt** (Regeln nach Zahlungseingang, § 23) |
 | Übermittlung per Kundenportal | Download über ein Internetportal ist ein zulässiger Übermittlungsweg (UStAE 14.1 Abs. 4 S. 6, BMF 15.10.2025); Einigung mit dem Kunden zivilrechtlich; Abrufprotokoll datensparsam | **Umgesetzt** (Portal standardmäßig aus; Dateien aus dem Belegarchiv; Abrufprotokoll ohne IP, 24 Monate; Widerruf/Ablauf; siehe § 13) |
 | Mahnwesen Verzug/Zinsen | **Verbraucher-Flag** pro Schuldner steuert: 5/9 Pp, 40-€-Pauschale (nur B2B), Pflicht-30-Tage-Hinweis (B2C); Basiszins halbjahresgenau (1,27 % H1 2026) | **Teilweise:** Kundentyp Verbraucher steuert 5/9 Pp und 40-€-Pauschale (nur B2B, einmal je Rechnung), Basiszins halbjahresgenau; der B2C-30-Tage-Hinweis ist nicht umgesetzt |
 | Mahngebühren | erste Mahnung **kostenfrei** (Zahlungserinnerung), Mahnkosten erst ab 2. Mahnung; nur konkrete Porto-/Materialkosten | **Umgesetzt** (Gebühren erst ab Mahnstufe 2, erste Stufe kostenfrei) |
@@ -1340,3 +1341,23 @@ Gegenkonto-Name und IBAN können Privatpersonen betreffen. Der Betreiber führt 
 ---
 
 *Ende COMPLIANCE.md — Stand 2026-11-11. Ohne Gewähr. Keine Steuer-/Rechtsberatung.*
+
+---
+
+## 23. Aktionen nach Zahlungseingang: Zahlungsbestätigung, Protokoll
+
+**Umsetzung dieser Software:**
+
+- **Zahlungsbestätigung = abgesandter Geschäftsbrief.** Die Mail ist eine Mitteilung über den Zahlungseingang, **keine Rechnung** im Sinne des § 14 UStG und kein Beleg mit Steuerausweis. Eine Quittung nach § 368 BGB schuldet der Betreiber nur auf Verlangen des Kunden; die Zahlungsbestätigung ersetzt sie nicht.
+- **Aufbewahrung:** Die abgesandte Mail wird mit Wiedergabe (Betreff, Text, Empfänger, Zeitpunkt, Ergebnis) im E-Mail-Protokoll aufbewahrt (§ 257 Abs. 1 Nr. 3 und Abs. 4 HGB, § 147 Abs. 1 Nr. 3 AO, Handels- und Geschäftsbriefe).
+- **GoBD:** Die Zahlung bleibt unverändert; die Regeln buchen nie Zahlungen und ändern keine festgeschriebene Rechnung. Der Mailversand steht im Protokoll der Zahlung und als EMAIL-Eintrag in der Hash-Kette (ChangeLog). Jeder Lauf ist in `PaymentRuleRun` und im Aktivitätsprotokoll nachvollziehbar. Eine spätere Gegenbuchung oder ein Storno nimmt Ausgeführtes nicht zurück.
+- **Interne Notizen** gelangen nie in die Mail (der Mailkontext enthält sie nicht).
+
+**DSGVO:**
+
+| Grundsatz | Umsetzung | Norm |
+|-----------|-----------|------|
+| Zweck und Rechtsgrundlage | Information des Vertragspartners über den Zahlungseingang im Rahmen der Vertragsabwicklung | Art. 6 Abs. 1 lit. b |
+| Datenminimierung | Die Mail nennt nur Rechnungsnummer, Betrag, Datum, Zahlungsart und offenen Rest; es gibt keine Standardregel, versendet wird nur, wenn der Betreiber eine Regel mit dieser Aktion anlegt | Art. 5 Abs. 1 lit. c |
+| Begrenzung | höchstens 5 Bestätigungen je Kunde und 100 je Firma und Stunde | Art. 5 Abs. 1 lit. f |
+

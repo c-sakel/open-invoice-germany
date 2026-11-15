@@ -711,6 +711,22 @@ Kontoauszüge (CAMT.053/.054, XML, UTF-8) importieren und Umsätze Rechnungen zu
 
 Lesen braucht `read`; alles, was importiert oder bucht, `write` — wie `POST /api/v1/Invoice/{id}/payment` und der CSV-Import. Die Oberfläche lädt über `POST /api/bank-statements` (Session, `multipart/form-data`, nur same-origin).
 
+## Regeln nach Zahlungseingang
+
+Regeln, die nach einer Zahlung Aktionen auslösen (Zahlungsbestätigung per Mail, Tag, Benachrichtigung, Webhook, Abo fortsetzen). Lesen braucht `read`; Anlegen, Ändern, Archivieren, Trockenlauf und Wiederholen `admin`, weil eine Regel Mails, Webhooks und Abo-Fortsetzungen auslösen kann.
+
+| Endpunkt | Scope | Zweck |
+|---|---|---|
+| `GET /api/v1/PaymentRule` / `GET /api/v1/PaymentRule/{id}` | `read` | Regeln (`includeArchived=true` zeigt auch archivierte) |
+| `POST /api/v1/PaymentRule` | `admin` | Regel anlegen: `name`, `trigger` (`PAID_FULL`/`PAID_PARTIAL`), `sources` (optional, `MANUAL`/`API`/`MCP`/`BANK`), `invoiceTagId` (optional), `delayMinutes` (0 bis 1440), `actions` (1 bis 5, je Art einmal) |
+| `PATCH /api/v1/PaymentRule/{id}` | `admin` | nur übergebene Felder ändern |
+| `DELETE /api/v1/PaymentRule/{id}` | `admin` | archivieren (nie hart gelöscht, Läufe bleiben) |
+| `POST /api/v1/PaymentRule/{id}/test` | `admin` | Trockenlauf gegen eine Rechnung (`invoiceId`) inkl. Mailvorschau; schreibt und sendet nichts |
+| `GET /api/v1/PaymentRuleRun` | `read` | Läufe (`status`, `ruleId`, `invoiceId`, `paymentId`, `limit`, `offset`) |
+| `POST /api/v1/PaymentRuleRun/{id}/retry` | `admin` | fehlgeschlagenen Lauf wiederholen |
+
+Aktionen: `SEND_PAYMENT_CONFIRMATION` (`templateId` oder `null` für den eingebauten Text), `ADD_TAG` (`tagId`), `NOTIFY` (`note` optional), `EMIT_WEBHOOK`, `RESUME_RECURRING` (`missedPeriods` `SKIP` oder `BILL`). Fehlertexte in Läufen und Schritten sind feste Hinweise, nie rohe Fehlermeldungen. Das Webhook-Ereignis `payment_rule.triggered` steht in [WEBHOOKS.md](WEBHOOKS.md).
+
 ## Fehlende Endpunkte / Grenzen (siehe auch [LIMITATIONEN.md](LIMITATIONEN.md))
 
 - Die meisten Aktions-Endpunkte (`/finalize`, `/cancel`, `/credit`, `/convert`,
