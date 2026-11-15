@@ -5,7 +5,8 @@
  */
 import { z } from "zod";
 
-const optInt = (min: number, max: number) => z.number().int().min(min).max(max).nullable();
+const optInt = (min: number, max: number, message: string) =>
+  z.number(message).int(message).min(min, message).max(max, message).nullable();
 
 export const DATEV_CHARTS = ["SKR03", "SKR04"] as const;
 export const DATEV_DEBTOR_MODES = ["PERSONAL", "COLLECTIVE"] as const;
@@ -15,15 +16,16 @@ export type DatevChart = (typeof DATEV_CHARTS)[number];
 export type DatevMappingKind = (typeof DATEV_MAPPING_KINDS)[number];
 
 /** Sachkonto/Personenkonto grob (1..99999999); die genaue Grenze folgt aus der Kontenlaenge. */
-const accountNumber = z.number().int().min(1).max(99_999_999);
+const ACCOUNT_MESSAGE = "Konto: ganze Zahl von 1 bis 99999999";
+const accountNumber = z.number(ACCOUNT_MESSAGE).int(ACCOUNT_MESSAGE).min(1, ACCOUNT_MESSAGE).max(99_999_999, ACCOUNT_MESSAGE);
 
 export const datevSettingsInputSchema = z
   .object({
-    consultantNumber: optInt(1001, 9_999_999),
-    clientNumber: optInt(1, 99_999),
-    accountLength: z.number().int().min(4).max(8),
+    consultantNumber: optInt(1001, 9_999_999, "Beraternummer: ganze Zahl von 1001 bis 9999999"),
+    clientNumber: optInt(1, 99_999, "Mandantennummer: ganze Zahl von 1 bis 99999"),
+    accountLength: z.number("Sachkontenlänge: 4 bis 8").int("Sachkontenlänge: 4 bis 8").min(4, "Sachkontenlänge: 4 bis 8").max(8, "Sachkontenlänge: 4 bis 8"),
     chartOfAccounts: z.enum(DATEV_CHARTS).nullable(),
-    fiscalYearStartMonth: z.number().int().min(1).max(12),
+    fiscalYearStartMonth: z.number("Wirtschaftsjahr: Monat 1 bis 12").int("Wirtschaftsjahr: Monat 1 bis 12").min(1, "Wirtschaftsjahr: Monat 1 bis 12").max(12, "Wirtschaftsjahr: Monat 1 bis 12"),
     debtorMode: z.enum(DATEV_DEBTOR_MODES),
     collectiveDebtorAccount: accountNumber.nullable(),
     debtorRangeStart: accountNumber.nullable(),
@@ -75,8 +77,8 @@ export const datevMappingInputSchema = z.array(datevMappingRowSchema).max(500);
 export const datevConfirmNoteSchema = z
   .string()
   .trim()
-  .min(3)
-  .max(200)
+  .min(3, "Notiz: 3 bis 200 Zeichen")
+  .max(200, "Notiz: 3 bis 200 Zeichen")
   .refine((s) => !/[\u0000-\u001f\u007f]/.test(s), "Keine Steuerzeichen");
 
 const monthKey = z

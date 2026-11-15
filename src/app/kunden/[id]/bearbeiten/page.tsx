@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { prisma } from "@/lib/db";
+import { prisma, dbInternal } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
 import { PageContainer } from "@/components/PageContainer";
 import { CustomerForm } from "@/components/forms/CustomerForm";
@@ -32,6 +32,7 @@ export default async function KundeBearbeitenPage({ params }: { params: Promise<
     customerDefaultsFor(org.id, id),
     listCustomFieldDefinitions(org.id, { activeOnly: true }),
   ]);
+  const datevLocked = (await dbInternal.datevExportItem.findFirst({ where: { orgId: org.id, customerId: id }, select: { id: true } })) !== null;
   const customFieldValues = await parseCustomerCustomFields(org.id, customer.customFieldsJson);
 
   return (
@@ -46,7 +47,7 @@ export default async function KundeBearbeitenPage({ params }: { params: Promise<
 
         <CustomerTabs
           tabs={[
-            { key: "stammdaten", label: "Stammdaten", content: <CustomerForm customer={{ ...customer, sepaMandateSignedAt: customer.sepaMandateSignedAt ? berlinDateKey(customer.sepaMandateSignedAt) : null }} paymentMethods={paymentMethods} /> },
+            { key: "stammdaten", label: "Stammdaten", content: <CustomerForm customer={{ ...customer, sepaMandateSignedAt: customer.sepaMandateSignedAt ? berlinDateKey(customer.sepaMandateSignedAt) : null, datevAccount: customer.datevAccount, datevAccountLocked: datevLocked }} paymentMethods={paymentMethods} /> },
             {
               key: "adressen",
               label: "Adressen",
