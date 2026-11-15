@@ -397,6 +397,92 @@ async function guardPrintOptions(model: "quote" | "deliveryNote", where: unknown
   if (row) throw new FrozenPrintOptionsError(row.number ?? row.id);
 }
 
+/**
+ * Angebote/Auftragsbestaetigungen/Proforma und Lieferscheine sind nach Ausgabe (Status ungleich
+ * DRAFT) abgesandte Handelsbriefe (§ 257 Abs. 1 Nr. 3 HGB) und inhaltlich unveraenderlich. Ueber den
+ * geschuetzten Client sind dann Positionen komplett gesperrt; am Kopf bleiben nur Status,
+ * Statuszeitpunkte, Entscheidungsnotiz, Verknuepfung zur Folgerechnung und Archivmarker aenderbar.
+ * Die Domain-Services schreiben ueber `dbInternal` bzw. dessen Transaktions-Client.
+ */
+export class HandelsbriefImmutabilityError extends GobdImmutabilityError {
+  constructor(ref: string) {
+    super(ref);
+    this.message =
+      `GoBD: Der ausgegebene Beleg "${ref}" ist ein abgesandter Handelsbrief und inhaltlich unveränderbar (§ 257 HGB).`;
+    this.name = "HandelsbriefImmutabilityError";
+  }
+}
+
+const QUOTE_MUTABLE_AFTER_ISSUE: ReadonlySet<string> = new Set([
+  "status",
+  "sentAt",
+  "decidedAt",
+  "decisionNote",
+  "convertedToInvoiceId",
+  "archivedAt",
+  "updatedAt",
+]);
+const DELIVERY_NOTE_MUTABLE_AFTER_ISSUE: ReadonlySet<string> = new Set([
+  "status",
+  "sentAt",
+  "deliveredAt",
+  "archivedAt",
+  "updatedAt",
+]);
+
+type HandelsbriefModel = "quote" | "deliveryNote";
+
+function touchesOnlyKeys(data: unknown, allowed: ReadonlySet<string>): boolean {
+  if (typeof data !== "object" || data === null) return false;
+  return Object.keys(data).every((k) => allowed.has(k));
+}
+
+async function findIssuedHead(model: HandelsbriefModel, where: unknown): Promise<string | null> {
+  const filter = { AND: [(where ?? {}) as never, { status: { not: "DRAFT" } }] } as never;
+  const select = { id: true, number: true } as const;
+  const row =
+    model === "quote"
+      ? await base.quote.findFirst({ where: filter, select })
+      : await base.deliveryNote.findFirst({ where: filter, select });
+  return row ? (row.number ?? row.id) : null;
+}
+
+/** Kopf: bei ausgegebenen Belegen nur Positivliste an Feldern; `data` null = Loeschen. */
+async function guardHeadWrite(model: HandelsbriefModel, where: unknown, data: unknown | null): Promise<void> {
+  const allowed = model === "quote" ? QUOTE_MUTABLE_AFTER_ISSUE : DELIVERY_NOTE_MUTABLE_AFTER_ISSUE;
+  if (data !== null && touchesOnlyKeys(data, allowed)) return;
+  const ref = await findIssuedHead(model, where);
+  if (ref) throw new HandelsbriefImmutabilityError(ref);
+}
+
+async function guardLineWrite(model: HandelsbriefModel, where: unknown): Promise<void> {
+  const filter = { AND: [(where ?? {}) as never, { [model]: { status: { not: "DRAFT" } } }] } as never;
+  const row =
+    model === "quote"
+      ? await base.quoteLine.findFirst({ where: filter, select: { quote: { select: { id: true, number: true } } } })
+      : await base.deliveryNoteLine.findFirst({ where: filter, select: { deliveryNote: { select: { id: true, number: true } } } });
+  if (!row) return;
+  const head = "quote" in row ? row.quote : row.deliveryNote;
+  throw new HandelsbriefImmutabilityError(head.number ?? head.id);
+}
+
+async function guardLineCreateFor(model: HandelsbriefModel, data: unknown): Promise<void> {
+  const idKey = model === "quote" ? "quoteId" : "deliveryNoteId";
+  const items = Array.isArray(data) ? data : [data];
+  const ids = new Set<string>();
+  for (const item of items) {
+    const d = (item ?? {}) as Record<string, unknown>;
+    const connected = (d[model] as { connect?: { id?: unknown } } | undefined)?.connect?.id;
+    const id = typeof d[idKey] === "string" ? d[idKey] : connected;
+    if (typeof id !== "string") throw new HandelsbriefImmutabilityError("neue Position ohne bestimmbaren Beleg");
+    ids.add(id);
+  }
+  if (ids.size === 0) return;
+  const where = { id: { in: [...ids] } };
+  const ref = await findIssuedHead(model, where);
+  if (ref) throw new HandelsbriefImmutabilityError(ref);
+}
+
 export class LayoutDesignDeleteError extends Error {
   constructor() {
     super("Layout-Designs werden nie geloescht (eingefrorene Belege verweisen auf Versionen), nur archiviert.");
@@ -709,36 +795,138 @@ export const prisma = base.$extends({
     quote: {
       async update({ args, query }) {
         await guardPrintOptions("quote", args.where, args.data);
+        await guardHeadWrite("quote", args.where, args.data);
         return query(args);
       },
       async updateMany({ args, query }) {
         await guardPrintOptions("quote", args.where, args.data);
+        await guardHeadWrite("quote", args.where, args.data);
         return query(args);
       },
       async updateManyAndReturn({ args, query }) {
         await guardPrintOptions("quote", args.where, args.data);
+        await guardHeadWrite("quote", args.where, args.data);
         return query(args);
       },
       async upsert({ args, query }) {
         await guardPrintOptions("quote", args.where, args.update);
+        await guardHeadWrite("quote", args.where, args.update);
+        return query(args);
+      },
+      async delete({ args, query }) {
+        await guardHeadWrite("quote", args.where, null);
+        return query(args);
+      },
+      async deleteMany({ args, query }) {
+        await guardHeadWrite("quote", args.where, null);
+        return query(args);
+      },
+    },
+    quoteLine: {
+      async create({ args, query }) {
+        await guardLineCreateFor("quote", args.data);
+        return query(args);
+      },
+      async createMany({ args, query }) {
+        await guardLineCreateFor("quote", args.data);
+        return query(args);
+      },
+      async createManyAndReturn({ args, query }) {
+        await guardLineCreateFor("quote", args.data);
+        return query(args);
+      },
+      async upsert({ args, query }) {
+        await guardLineWrite("quote", args.where);
+        await guardLineCreateFor("quote", args.create);
+        return query(args);
+      },
+      async update({ args, query }) {
+        await guardLineWrite("quote", args.where);
+        return query(args);
+      },
+      async updateMany({ args, query }) {
+        await guardLineWrite("quote", args.where);
+        return query(args);
+      },
+      async updateManyAndReturn({ args, query }) {
+        await guardLineWrite("quote", args.where);
+        return query(args);
+      },
+      async delete({ args, query }) {
+        await guardLineWrite("quote", args.where);
+        return query(args);
+      },
+      async deleteMany({ args, query }) {
+        await guardLineWrite("quote", args.where);
         return query(args);
       },
     },
     deliveryNote: {
       async update({ args, query }) {
         await guardPrintOptions("deliveryNote", args.where, args.data);
+        await guardHeadWrite("deliveryNote", args.where, args.data);
         return query(args);
       },
       async updateMany({ args, query }) {
         await guardPrintOptions("deliveryNote", args.where, args.data);
+        await guardHeadWrite("deliveryNote", args.where, args.data);
         return query(args);
       },
       async updateManyAndReturn({ args, query }) {
         await guardPrintOptions("deliveryNote", args.where, args.data);
+        await guardHeadWrite("deliveryNote", args.where, args.data);
         return query(args);
       },
       async upsert({ args, query }) {
         await guardPrintOptions("deliveryNote", args.where, args.update);
+        await guardHeadWrite("deliveryNote", args.where, args.update);
+        return query(args);
+      },
+      async delete({ args, query }) {
+        await guardHeadWrite("deliveryNote", args.where, null);
+        return query(args);
+      },
+      async deleteMany({ args, query }) {
+        await guardHeadWrite("deliveryNote", args.where, null);
+        return query(args);
+      },
+    },
+    deliveryNoteLine: {
+      async create({ args, query }) {
+        await guardLineCreateFor("deliveryNote", args.data);
+        return query(args);
+      },
+      async createMany({ args, query }) {
+        await guardLineCreateFor("deliveryNote", args.data);
+        return query(args);
+      },
+      async createManyAndReturn({ args, query }) {
+        await guardLineCreateFor("deliveryNote", args.data);
+        return query(args);
+      },
+      async upsert({ args, query }) {
+        await guardLineWrite("deliveryNote", args.where);
+        await guardLineCreateFor("deliveryNote", args.create);
+        return query(args);
+      },
+      async update({ args, query }) {
+        await guardLineWrite("deliveryNote", args.where);
+        return query(args);
+      },
+      async updateMany({ args, query }) {
+        await guardLineWrite("deliveryNote", args.where);
+        return query(args);
+      },
+      async updateManyAndReturn({ args, query }) {
+        await guardLineWrite("deliveryNote", args.where);
+        return query(args);
+      },
+      async delete({ args, query }) {
+        await guardLineWrite("deliveryNote", args.where);
+        return query(args);
+      },
+      async deleteMany({ args, query }) {
+        await guardLineWrite("deliveryNote", args.where);
         return query(args);
       },
     },
