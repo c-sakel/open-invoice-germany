@@ -87,20 +87,22 @@ function toView(row: ExportRow): DatevExportView {
 
 /**
  * Fuehrt den Export aus. Fehler: 422 (nicht bestaetigt, Zeitraum, fehlende Konten mit Liste), 409
- * (Zeitraum schon exportiert ohne `repeat`, nichts zu exportieren). `dryRun` des Auftrags wird hier ignoriert;
- * die Vorschau ist `planDatevExport`.
+ * (Zeitraum schon exportiert ohne `repeat`, nichts zu exportieren). Ein Auftrag mit `dryRun` wird abgelehnt (INVALID_PERIOD),
+ * er erzeugt nie einen echten Lauf; die Vorschau ist `planDatevExport`.
  */
 export async function runDatevExport(orgId: string, rawReq: unknown, actor: string, now: Date = new Date()): Promise<DatevExportView> {
   const req = parseExportRequest(rawReq);
+  if (req.dryRun === true) throw new DatevExportError("INVALID_PERIOD", "Eine Vorschau (dryRun) erzeugt keinen Export; dafuer die Vorschau-Funktion verwenden.");
   let writtenPath: string | null = null;
   try {
     const row = await withChangeLogRetry(() =>
       dbInternal.$transaction(async (tx) => {
+        // Erste Anweisung: Organisationssperre (unter Postgres seriell; SQLite fuehrt Transaktionen ohnehin nacheinander aus).
+        await lockOrganization(tx, orgId);
         if (writtenPath) {
           await removeArchiveFile(writtenPath);
           writtenPath = null;
         }
-        await lockOrganization(tx, orgId);
         const built = await buildDatevRun(tx, orgId, req, now);
         const { plan } = built;
         if (req.mode === "PERIOD" && plan.repeats.length > 0 && !req.repeat) {
@@ -120,6 +122,7 @@ export async function runDatevExport(orgId: string, rawReq: unknown, actor: stri
           );
         }
         const id = randomUUID();
+        const repeated = plan.repeats.length > 0 && req.repeat === true;
         const archivePath = `datev/${orgId}/${id}.zip`;
         const zipSha = sha256Hex(built.zip);
         await writeArchiveFile(archivePath, built.zip);
@@ -132,7 +135,7 @@ export async function runDatevExport(orgId: string, rawReq: unknown, actor: stri
             mode: req.mode,
             fromMonth: req.from,
             toMonth: req.to,
-            repeat: req.repeat === true,
+            repeat: repeated,
             lineCount: plan.lineCount,
             itemCount: primary.length,
             manualCount: plan.manualCount,
@@ -170,7 +173,7 @@ export async function runDatevExport(orgId: string, rawReq: unknown, actor: stri
           action: "EXPORT",
           actor,
           at: now,
-          diff: { mode: req.mode, from: req.from, to: req.to, repeat: req.repeat === true, lines: plan.lineCount, items: primary.length, manual: plan.manualCount, sha256: zipSha },
+          diff: { mode: req.mode, from: req.from, to: req.to, repeat: repeated, lines: plan.lineCount, items: primary.length, manual: plan.manualCount, sha256: zipSha },
         });
         await logActivity(tx, {
           orgId,

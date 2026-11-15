@@ -250,7 +250,11 @@ export async function runNotificationsJob(now: Date = new Date(), opts: RunNotif
       await processDunningStages(org.id, now, enabled, result.byType);
       await processQuoteExpiring(org.id, now, enabled, result.byType);
       await processOssThreshold(org.id, now, enabled, result.byType);
-      await processDatevLateItems(org.id, now, enabled, result.byType);
+      try {
+        await processDatevLateItems(org.id, now, enabled, result.byType);
+      } catch (e) {
+        result.errors.push({ orgId: org.id, message: `DATEV-Nachtraege: ${e instanceof Error ? e.message : String(e)}` });
+      }
       await sendDigestIfDue(org.id, now, opts.provider, result);
     } catch (e) {
       result.errors.push({ orgId: org.id, message: e instanceof Error ? e.message : String(e) });

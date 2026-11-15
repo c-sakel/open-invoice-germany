@@ -17,6 +17,7 @@ import {
   ddmm,
   ddmmyyyy,
   encodeCp1252,
+  unmappableChars,
   headerLine,
   text,
   type CellValue,
@@ -283,6 +284,8 @@ describe("Windows-1252 und Datei", () => {
     expect(b.indexOf(0xdf)).toBeGreaterThan(0);
     expect(encodeCp1252("5 €").toString("latin1")).toBe("5 EUR");
     expect(encodeCp1252("a😀b").toString("latin1")).toBe("a?b");
+    expect(encodeCp1252("Łukasz Žďár‑Říčany").equals(Buffer.from([0x4c,0x75,0x6b,0x61,0x73,0x7a,0x20,0x8e,0x64,0xe1,0x72,0x2d,0x52,0xed,0x63,0x61,0x6e,0x79]))).toBe(true);
+    expect(unmappableChars("Łódź Мир 😀")).toEqual(["М", "и", "р", "😀"]);
     expect(encodeCp1252("„x“").equals(Buffer.from([0x84, 0x78, 0x93]))).toBe(true);
   });
 

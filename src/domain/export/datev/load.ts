@@ -29,10 +29,13 @@ export interface PaymentRef {
   method: string;
 }
 
-/** Festgeschriebene Belege mit Belegdatum in [from, to) (Berliner Monatsgrenzen), schlank fuer Schluesselabgleiche. */
-export async function listDocRefs(tx: Tx, orgId: string, from: Date, to: Date, now: Date): Promise<DocRef[]> {
+/**
+ * Festgeschriebene Belege mit Belegdatum in [from, to) (Berliner Monatsgrenzen), schlank fuer Schluesselabgleiche.
+ * `since`: nur Belege, die nach diesem Zeitpunkt festgeschrieben wurden.
+ */
+export async function listDocRefs(tx: Tx, orgId: string, from: Date, to: Date, now: Date, since: Date | null = null): Promise<DocRef[]> {
   const rows = await tx.invoice.findMany({
-    where: { orgId, status: { not: "DRAFT" }, number: { not: null }, finalizedAt: { not: null, lte: now }, issueDate: { gte: from, lt: to } },
+    where: { orgId, status: { not: "DRAFT" }, number: { not: null }, finalizedAt: { not: null, lte: now, ...(since ? { gt: since } : {}) }, issueDate: { gte: from, lt: to } },
     select: { id: true, number: true, issueDate: true, grossTotalCents: true },
     orderBy: [{ issueDate: "asc" }, { number: "asc" }, { id: "asc" }],
   });

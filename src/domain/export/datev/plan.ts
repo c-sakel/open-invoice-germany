@@ -30,7 +30,7 @@ import { debtorRow, type DebtorCustomer } from "./debtor-file";
 import { assignDebtorAccountsWithinTx } from "./debtors";
 import { DatevExportError } from "./errors";
 import { BOOKING_FIELDS, DEBTOR_FIELDS } from "./fields";
-import { datevFile, encodeCp1252, headerLine, type CellValue } from "./format";
+import { datevFile, encodeCp1252, headerLine, unmappableChars, type CellValue } from "./format";
 import { exportedMonths, nextMonth, supplementCandidates } from "./late";
 import { listDocRefs, listPaymentRefs, loadDocInputs, loadPaymentInputs, monthOf, monthStartOf } from "./load";
 import { getDatevSettings, toConfig } from "./settings";
@@ -259,28 +259,33 @@ export async function buildDatevRun(tx: Tx, orgId: string, req: DatevExportReque
     }
   }
 
-  // Debitorennummern.
-  const customerIds = [...new Set([...docs.map((d) => d.customerId), ...payments.map((p) => p.customerId)])];
-  if (settings.debtorMode === "PERSONAL" && customerIds.length > 0) {
-    plan.newDebtors = await tx.customer.count({ where: { orgId, id: { in: customerIds }, datevAccount: null } });
-  }
-  const accounts = await assignDebtorAccountsWithinTx(tx, orgId, customerIds, settings);
-  const ctx: BookingContext = { settings, mapping: mappingLookup(mappingRows), debtorOf: (id) => accounts.get(id) ?? null };
-
-  // Buchen.
-  const results: ItemResult[] = [];
-  const issues: DatevIssue[] = [];
-  for (const d of docs) {
-    const r = bookDocument(d, ctx);
-    if (Array.isArray(r)) issues.push(...r);
-    else results.push(r);
-  }
-  if (settings.exportPayments) {
-    for (const r of bookPayments(payments, ctx)) {
+  // Debitorennummern: nur fuer Kunden mit tatsaechlicher Buchung. Erster Durchlauf mit Platzhalterkonto
+  // bestimmt, welche Posten buchbar sind; danach werden Nummern vergeben und neu gebucht.
+  const customerOf = (key: string): string | null => docByKey.get(key)?.customerId ?? payByKey.get(key)?.customerId ?? null;
+  const bookAll = (debtorOf: (id: string) => number | null): { results: ItemResult[]; issues: DatevIssue[] } => {
+    const ctx: BookingContext = { settings, mapping: mappingLookup(mappingRows), debtorOf };
+    const results: ItemResult[] = [];
+    const issues: DatevIssue[] = [];
+    for (const d of docs) {
+      const r = bookDocument(d, ctx);
       if (Array.isArray(r)) issues.push(...r);
       else results.push(r);
     }
+    if (settings.exportPayments) {
+      for (const r of bookPayments(payments, ctx)) {
+        if (Array.isArray(r)) issues.push(...r);
+        else results.push(r);
+      }
+    }
+    return { results, issues };
+  };
+  const probe = bookAll(() => 1);
+  const bookedCustomers = [...new Set(probe.results.filter((r) => r.status === "EXPORTED").map((r) => customerOf(r.key)).filter((x): x is string => x !== null))];
+  if (settings.debtorMode === "PERSONAL" && bookedCustomers.length > 0) {
+    plan.newDebtors = await tx.customer.count({ where: { orgId, id: { in: bookedCustomers }, datevAccount: null } });
   }
+  const accounts = await assignDebtorAccountsWithinTx(tx, orgId, bookedCustomers, settings);
+  const { results, issues } = bookAll((id) => accounts.get(id) ?? null);
   if (issues.length > 0) {
     plan.issues = mergeIssues(issues);
     return built;
@@ -317,11 +322,18 @@ export async function buildDatevRun(tx: Tx, orgId: string, req: DatevExportReque
     };
     if (r.status === "EXPORTED") {
       const rows = rowsByMonth.get(r.month) ?? [];
-      for (const line of r.lines) rows.push(paddedCells(line, settings.accountLength));
+      const lost: string[] = [];
+      for (const line of r.lines) {
+        const cells = paddedCells(line, settings.accountLength);
+        rows.push(cells);
+        for (const v of cells.values()) if (typeof v === "string") for (const ch of unmappableChars(v)) if (!lost.includes(ch)) lost.push(ch);
+      }
+      const charNote = lost.length > 0 ? `Zeichen ausserhalb Windows-1252 (${lost.join(" ")}) als ? ausgegeben` : null;
+      const warning = [r.warning, charNote].filter((x): x is string => !!x).join("; ") || null;
       rowsByMonth.set(r.month, rows);
       if (customerId) debtorCustomers.add(customerId);
       const signed = pay?.kind === "REVERSAL" ? -Math.abs(r.amountCents) : r.amountCents;
-      plan.items.push({ ...base, status: "EXPORTED", lineCount: r.lines.length, amountCents: signed, reason: null, warning: r.warning ?? null });
+      plan.items.push({ ...base, status: "EXPORTED", lineCount: r.lines.length, amountCents: signed, reason: null, warning });
       plan.lineCount += r.lines.length;
       for (const k of r.coveredKeys ?? []) {
         if (k === r.key) continue;
@@ -333,7 +345,7 @@ export async function buildDatevRun(tx: Tx, orgId: string, req: DatevExportReque
           reason: null, warning: "Skonto im Skontofeld der Zahlung gebucht",
         });
       }
-      protocol.push({ art: pay ? "Zahlung" : "Beleg", key: r.key, month: r.month, status: "EXPORTED", reference, amountCents: signed, lines: r.lines.length, note: r.warning ?? "" });
+      protocol.push({ art: pay ? "Zahlung" : "Beleg", key: r.key, month: r.month, status: "EXPORTED", reference, amountCents: signed, lines: r.lines.length, note: warning ?? "" });
     } else if (r.status === "MANUAL") {
       plan.items.push({ ...base, status: "MANUAL", lineCount: 0, amountCents: r.amountCents, reason: r.reason, warning: null });
       plan.manualCount += 1;

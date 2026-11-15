@@ -8,10 +8,10 @@
  */
 import { berlinParts } from "@/lib/berlin-time";
 import { FORMULA_START } from "@/domain/export/csv-writer";
-import { encodeCp1252 } from "./cp1252";
+import { encodeCp1252, unmappableChars } from "./cp1252";
 import type { DatevField, FieldKind } from "./fields";
 
-export { encodeCp1252 };
+export { encodeCp1252, unmappableChars };
 
 export class DatevFormatError extends Error {
   constructor(message: string) {

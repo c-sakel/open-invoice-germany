@@ -444,6 +444,7 @@ model Invoice {
 
   @@index([orgId])
   @@index([orgId, updatedAt]) // Phase 18d: Abgleich updatedSince
+  @@index([orgId, finalizedAt])
   @@index([customerId])
   @@index([recurringInvoiceId])
   @@index([paymentMethodId])

@@ -104,3 +104,6 @@ SET "enabledTypesJson" = CASE
 END
 WHERE "enabledTypesJson" LIKE '[%]' AND "enabledTypesJson" NOT LIKE '%"DATEV_LATE_ITEMS"%';
 
+
+-- Vorfilter der Nachtragspruefung
+CREATE INDEX "Invoice_orgId_finalizedAt_idx" ON "Invoice"("orgId", "finalizedAt");

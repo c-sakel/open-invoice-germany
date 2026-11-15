@@ -4,7 +4,7 @@
  * Bankverbindung. Nicht darstellbare Werte bleiben leer bzw. werden gekuerzt und als Hinweis gemeldet.
  */
 import { DEBTOR_FIELDS } from "./fields";
-import { dataLine, startsWithFormula, text, type CellValue } from "./format";
+import { dataLine, startsWithFormula, text, unmappableChars, type CellValue } from "./format";
 
 export interface DebtorCustomer {
   id: string;
@@ -29,6 +29,8 @@ function fit(value: string, max: number, label: string, notes: string[]): string
   if (startsWithFormula(value)) notes.push(`${label} beginnt mit einem Formelzeichen, Apostroph vorangestellt`);
   const cleaned = text(value, Number.MAX_SAFE_INTEGER);
   if (Array.from(cleaned).length > max) notes.push(`${label} auf ${max} Zeichen gekuerzt`);
+  const lost = unmappableChars(cleaned);
+  if (lost.length > 0) notes.push(`${label} enthaelt Zeichen ausserhalb Windows-1252 (${lost.join(" ")}), als ? ausgegeben`);
   return text(cleaned, max);
 }
 
@@ -36,6 +38,7 @@ export function debtorRow(c: DebtorCustomer, account: number): DebtorRow {
   const notes: string[] = [];
   const cells = new Map<number, CellValue>();
   cells.set(1, account);
+  if (c.name.trim() === "") notes.push("Name leer");
   const name = fit(c.name, 50, "Name", notes);
   if (c.type === "CONSUMER") {
     cells.set(6, name);

@@ -84,6 +84,14 @@ function exported(r: ItemResult | DatevIssue[]): Extract<ItemResult, { status: "
 const sumDelta = (lines: BookingLine[]) => lines.reduce((s, l) => s + debtorDelta(l), 0);
 const cell = (l: BookingLine, no: number) => l.cells.get(no);
 
+describe("bookDocument Korrekturrechnung", () => {
+  it("CORRECTION wird nie wie eine Rechnung gebucht, sondern von Hand gemeldet", () => {
+    const r = bookDocument(doc({ type: "CORRECTION" }), ctx());
+    expect(Array.isArray(r)).toBe(false);
+    expect(r).toMatchObject({ status: "MANUAL", reason: "Korrekturrechnung von Hand buchen", amountCents: 119000 });
+  });
+});
+
 describe("bookDocument", () => {
   it("zwei Steuersaetze -> zwei S-Zeilen, Summe = Brutto", () => {
     const r = exported(

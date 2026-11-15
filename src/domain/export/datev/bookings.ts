@@ -233,6 +233,9 @@ export function bookDocument(doc: DocInput, ctx: BookingContext): ItemResult | D
   const hasDeductions = doc.deductions.length > 0;
   const grossSum = doc.breakdown.reduce((sum, b) => sum + b.netCents + b.taxCents, 0);
 
+  if (doc.type === "CORRECTION") {
+    return manual(doc, "Korrekturrechnung von Hand buchen", grossSum);
+  }
   if (doc.type === "CREDIT_NOTE" && doc.correctsType === "FINAL") {
     return manual(doc, "Storno/Gutschrift einer Schlussrechnung von Hand buchen", grossSum);
   }
