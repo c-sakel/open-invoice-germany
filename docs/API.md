@@ -477,6 +477,10 @@ curl -s "$BASE/api/v1/Report?type=revenue&months=6&format=csv" -H "$AUTH" -o ums
 (`[{ avgDaysToPay, onTimeShare, paidCount }]`) — dieselbe Form wie die anderen drei
 Typen, damit Konsumenten nicht zwischen Liste und Einzelobjekt unterscheiden müssen.
 
+### Pflichtprüfungen an Rechnungen und Belegeinstellungen
+
+Jede Rechnungsantwort trägt `smallAmount` (Kleinbetragsrechnung, § 33 UStDV, nur Kennzeichnung), `issueDeadline` (letzter Ausstellungstag bei ig. Lieferung/Leistung als `YYYY-MM-DD`, sonst `null`; § 14a UStG) und `consumerDefaultNotice` (Verzugshinweis für Verbraucher, § 286 Abs. 3 BGB; bei Entwürfen die Vorgabe `true`/`false`/`null` = automatisch, nach dem Festschreiben der eingefrorene Wert). `POST` und `PATCH /api/v1/Invoice` nehmen `consumerDefaultNotice` an. Bei der atomaren Anlage (`POST /api/v1/Invoice` mit `finalize`) kommen die Hinweise zu Ausstellfrist und Umsatzgrenze in `warnings` zurück. Die Belegeinstellungen (`/api/settings/documents`) tragen `kuWarnPercent` (1 bis 99, Standard 80), `kuBusinessStartYear` (Jahr oder `null`), `kuExternalRevenue` (Objekt Jahr → Cent, höchstens 10 Jahre) und `consumerDefaultNotice` (Standard `false`).
+
 ### OSS-Schwelle (`GET /api/v1/Report/oss`)
 
 `GET /api/v1/Report/oss` (Scope `read`) wertet die Bagatellgrenze des § 3c Abs. 4 UStG aus (gleicher Kern wie das MCP-Tool `get_oss_threshold`). Query: `year` (optional, Standard aktuelles Jahr in Berliner Zeit). Antwort `{ data }` mit `thresholdCents` (1.000.000), `warnPercent`, `mode` (`ALL_EU_B2C` | `BY_PRODUCT`), `level` (`OK` | `WARN` | `EXCEEDED`), `previousYearExceeded`, `current` und `previous` (je `year`, `netEurCents`, `percent`, `documentCount`, `skippedWithoutEur`, `byCountry`) sowie `notice` (Orientierungshinweis, keine Steuerberatung). Alle Beträge Integer-Cent.

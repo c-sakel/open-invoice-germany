@@ -847,6 +847,12 @@ Code in `src/domain/online-payment/` (Fachlogik), `src/lib/payment/` (Anbietersc
 
 ---
 
+## 3k. Pflichtprüfungen (Umsatzgrenzen, Kleinbetrag, Ausstellfrist, Verzugshinweis)
+
+- **Umsatzgrenzen § 19 UStG:** Rechenkern `src/domain/reporting/ku-calc.ts` (rein, Integer-Cent, BigInt-Verhältnis, Berliner Jahr), Datenzugriff `ku.ts#kuThreshold`, Benachrichtigung `ku-notify.ts` (Typ `KU_THRESHOLD`, einmal je Jahr und Stufe). Neuberechnung nach dem Commit über `onInvoiceFinalizedKu` und `onPaymentChangedKu` (`src/domain/notifications/hooks.ts`; aufgerufen aus Zahlung, Gegenbuchung, Bankabgleich, Online-Zahlung, atomarer Anlage; wirft nie). Felder an `DocumentSettings`: `kuWarnPercent`, `kuBusinessStartYear`, `kuExternalRevenueJson`. REST `GET /api/v1/Report/smallBusiness`, MCP `get_small_business_threshold`, Dashboard-Karte `SmallBusinessCard`.
+- **Belegprüfungen:** `src/domain/invoice/checks.ts` (`isSmallAmountInvoice`, `issueDeadline`, `isIssueDeadlineMissed`, Berliner Kalendertag) und `finalize-warnings.ts#documentCheckWarnings` (Codes `ausstellfrist`, `ku-grenze`; blockieren nie). Editor und Belegansicht nutzen dieselben Funktionen; REST/MCP geben `smallAmount` und `issueDeadline` aus.
+- **Verzugshinweis:** `DocumentSettings.consumerDefaultNotice` (Standard aus) und `Invoice.consumerDefaultNotice Boolean?` (NULL = automatisch). `finalizeWithinTx` löst den Wert auf und friert ihn ein (Kundentyp Verbraucher und Einstellung an, nur Rechnungsfamilie ohne Gutschrift/Storno; Altbelege bleiben NULL und drucken nie). Ausgabe im PDF bei den Zahlungsbedingungen und als letzte Zeile von BT-20 (Mapper `src/lib/einvoice/mapper.ts`, Text aus `src/lib/i18n/doc`).
+
 ## 4. Lizenz-Empfehlung
 
 Ziel: (a) niemand zahlt mehr für Rechnungssoftware, (b) keine proprietäre Closed-Source-SaaS-Abzweigung, (c) maximale Community-Beiträge.
@@ -1006,7 +1012,7 @@ Diese Punkte sind bewusst oder bisher nicht umgesetzt (Details: `docs/LIMITATION
 - Kein ZUGFeRD-EXTENDED-Profil; ausgegeben werden XRechnung (UBL, CII) und ZUGFeRD EN 16931.
 - Keine OZG-RE-Anbindung und kein Peppol-Versand.
 - Keine Margenaufzeichnung nach § 25a UStG (Differenzbesteuerung).
-- § 33 UStDV (Kleinbetragsrechnung) nur als Validierungsoption.
+- § 33 UStDV (Kleinbetragsrechnung) wird nur gekennzeichnet; reduzierte Angaben gibt es nicht, die Option `isSmallAmount` der Pflichtangabenprüfung ist nicht angeschlossen.
 - Keine DATEV-Anbindung und keine Finanzbuchhaltung; der DATEV-Export ist eine reine Dateiübergabe (Abschnitt „DATEV-Export“).
 - Kein RLS (Postgres-Row-Level-Security); Single-Tenant je Instanz.
 
