@@ -35,6 +35,7 @@ import { berlinCalendarDay } from "@/lib/berlin-time";
 import { FinalizeError } from "./finalize-error";
 import { buildDirectDebitSnapshot } from "./direct-debit";
 import { DIRECT_DEBIT_CODE } from "@/lib/einvoice/payment-means";
+import { createPayLinkWithinTx, resolveForFinalizeWithinTx } from "@/domain/online-payment/pay-link";
 import { resolveFxSnapshot, deductedTaxEurCents, type DeductionFxEntry } from "@/domain/fx/snapshot";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -414,6 +415,22 @@ export async function finalizeWithinTx(
   const number = await assignDocumentNumber(tx, invoice.orgId, docType, now);
   await tx.invoice.update({ where: { id: invoiceId }, data: { number } });
 
+  // 4b) Bezahllink (Online-Zahlung): Anbieter aufloesen und Link in derselben Transaktion anlegen
+  // (kein Netzaufruf; der Vorgang beim Anbieter entsteht erst beim Klick des Kunden). Alle Wege
+  // (UI, REST, MCP, Abo-Lauf, Sammelrechnung) laufen ueber diese Stelle.
+  const payLinkChoice = await resolveForFinalizeWithinTx(tx, {
+    orgId: invoice.orgId,
+    invoiceType: invoice.type,
+    payableCents: payableCents ?? totals.grossTotalCents,
+    currency: invoice.currency,
+    paymentMethod: invoice.paymentMethod ? { code: invoice.paymentMethod.code, onlineProvider: invoice.paymentMethod.onlineProvider } : null,
+    customerOnlineProvider: invoice.customer.onlinePaymentProvider,
+    hasDirectDebitMandate: directDebit !== null,
+  });
+  if (payLinkChoice) {
+    await createPayLinkWithinTx(tx, { orgId: invoice.orgId, invoiceId, provider: payLinkChoice.provider, onDocument: payLinkChoice.onDocument, actor, now });
+  }
+
   // 5) Audit
   await appendChangeLog(tx, {
     orgId: invoice.orgId,
@@ -427,6 +444,8 @@ export async function finalizeWithinTx(
       status: "FINALIZED",
       grossTotalCents: totals.grossTotalCents,
       snapshotSource,
+      // Bezahllink: nur Anbieter und Dokumentanzeige, nie das Token.
+      ...(payLinkChoice ? { payLink: { provider: payLinkChoice.provider, onDocument: payLinkChoice.onDocument } } : {}),
       // Phase 16b: eingefrorener Kurs in der Hash-Kette (nur Fremdwaehrung; EUR ohne Kurs).
       ...(fx.fxRateMicros !== null
         ? {

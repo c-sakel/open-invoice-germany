@@ -12,6 +12,7 @@
  * wenn ihr Typ deaktiviert ist (Selbstheilung inklusive, wie beim Scheduler-Job).
  */
 import { dbInternal } from "@/lib/db";
+import type { Prisma } from "@/generated/prisma/client";
 import { buyerSnapshotSchema } from "@/schemas";
 import { isOssBuyer } from "@/domain/reporting/oss-calc";
 import { checkOssNotifications } from "@/domain/reporting/oss-notify";
@@ -189,4 +190,61 @@ export async function onPaymentRuleFailed(
       at: input.at,
     }),
   );
+}
+
+export interface OnlinePaymentNotice {
+  type: "ONLINE_OVERPAYMENT" | "ONLINE_PAYMENT_ISSUE";
+  title: string;
+  body: string;
+  invoiceId?: string;
+  dedupeKey: string;
+  at: Date;
+}
+
+/** Online-Zahlung: Hinweis ausserhalb einer Transaktion (Fehler werden geloggt, nie geworfen). */
+export async function onOnlinePaymentNotice(orgId: string, input: OnlinePaymentNotice): Promise<void> {
+  await safeNotify(orgId, input.type, () =>
+    createNotification({
+      orgId,
+      type: input.type,
+      title: input.title,
+      body: input.body,
+      ...(input.invoiceId ? { link: `/rechnungen/${input.invoiceId}`, entityType: "INVOICE", entityId: input.invoiceId } : {}),
+      dedupeKey: input.dedupeKey,
+      at: input.at,
+    }),
+  );
+}
+
+/**
+ * Online-Zahlung: Hinweis in der Buchungstransaktion (nur `tx`, kein zweiter Datenbankzugriff). Beachtet die
+ * Einstellung der Organisation; ein vorhandener Dedupe-Schluessel erzeugt nichts. Kein P2002-Fehler in der Transaktion:
+ * die Pruefung liegt unter der Rechnungssperre und der Schluessel ist je Ereignis eindeutig.
+ */
+export async function notifyOnlinePaymentWithinTx(tx: Prisma.TransactionClient, orgId: string, input: OnlinePaymentNotice): Promise<void> {
+  const settings = await tx.notificationSettings.findUnique({ where: { orgId }, select: { enabledTypesJson: true } });
+  if (settings) {
+    try {
+      const parsed: unknown = JSON.parse(settings.enabledTypesJson);
+      if (Array.isArray(parsed) && !parsed.includes(input.type)) return;
+    } catch {
+      // kaputte Einstellung: wie Standard (alle aktiv)
+    }
+  }
+  const existing = await tx.notification.findFirst({ where: { orgId, dedupeKey: input.dedupeKey }, select: { id: true } });
+  if (existing) return;
+  await tx.notification.create({
+    data: {
+      orgId,
+      type: input.type,
+      title: input.title,
+      body: input.body,
+      link: input.invoiceId ? `/rechnungen/${input.invoiceId}` : null,
+      entityType: input.invoiceId ? "INVOICE" : null,
+      entityId: input.invoiceId ?? null,
+      createdAt: input.at,
+      dedupeKey: input.dedupeKey,
+    },
+    select: { id: true },
+  });
 }

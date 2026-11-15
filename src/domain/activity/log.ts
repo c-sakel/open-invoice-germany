@@ -31,7 +31,7 @@ export type ActivityDbClient = Prisma.TransactionClient | PrismaClient;
 // keine entityId und der Versuch waere ohnehin nur ueber die E-Mail identifizierbar,
 // die laut R12 nie ins Protokoll darf; die IP-Bremse (src/lib/rate-limit.ts) deckt das
 // Durchprobieren unbekannter Adressen ab.
-export type ActivityEntityType = "INVOICE" | "QUOTE" | "DELIVERY_NOTE" | "CUSTOMER" | "RECURRING" | "API_KEY" | "TAG" | "TEMPLATE" | "USER" | "EXCHANGE_RATE" | "LAYOUT_DESIGN" | "POSTAL" | "IMPORT" | "INVOICE_BATCH" | "PORTAL" | "BANK_IMPORT" | "BANK_TRANSACTION" | "PAYMENT_RULE";
+export type ActivityEntityType = "INVOICE" | "QUOTE" | "DELIVERY_NOTE" | "CUSTOMER" | "RECURRING" | "API_KEY" | "TAG" | "TEMPLATE" | "USER" | "EXCHANGE_RATE" | "LAYOUT_DESIGN" | "POSTAL" | "IMPORT" | "INVOICE_BATCH" | "PORTAL" | "BANK_IMPORT" | "BANK_TRANSACTION" | "PAYMENT_RULE" | "PAYMENT_PROVIDER";
 
 /** Aktivitaetstypen (`ActivityLog.type`) mit deutschem Anzeigetext (Task-3-Brief). */
 export const ACTIVITY_TYPES = {
@@ -124,6 +124,11 @@ export const ACTIVITY_TYPES = {
   PAYMENT_RULE_EXECUTED: "Aktion nach Zahlungseingang",
   PAYMENT_CONFIRMATION_SENT: "Zahlungsbestaetigung versendet",
   RECURRING_RESUMED_BY_RULE: "Abo nach Zahlungseingang fortgesetzt",
+  // Online-Zahlung: Bezahllink je Rechnung (entityType INVOICE; Daten nie mit Token) und Einstellungen (entityType PAYMENT_PROVIDER).
+  PAY_LINK_CREATED: "Bezahllink angelegt",
+  PAY_LINK_DISABLED: "Bezahllink deaktiviert",
+  PAY_LINK_REACTIVATED: "Bezahllink reaktiviert",
+  ONLINE_PAYMENT_SETTINGS_SAVED: "Online-Zahlung: Einstellungen gespeichert",
 } as const;
 
 export type ActivityType = keyof typeof ACTIVITY_TYPES;

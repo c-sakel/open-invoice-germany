@@ -3,6 +3,7 @@
  * Ersetzen zugleich die fehlenden Prisma-Enums (DB hält Strings).
  */
 import { z } from "zod";
+import { onlineProviderChoiceSchema } from "./online-payment";
 import { syncFilterShape } from "@/domain/sync/updated-since";
 // Fix-Runde 1, Befund 3: eine Quelle fuer das Groessenlimit je Anhang statt einer
 // zweiten Konstante hier (galt zuvor doppelt gepflegt fuer src/lib/attachments/mime.ts).
@@ -345,6 +346,8 @@ export const customerFieldsSchema = z.object({
   notes: z.string().optional(),
   // Phase 16d: bevorzugter Versandkanal fuer Mahnungen (Stufe "CUSTOMER" folgt diesem Wert); ohne Angabe unveraendert.
   deliveryChannel: z.enum(["EMAIL", "POST", "EMAIL_AND_POST"]).optional(),
+  // Online-Zahlung: NULL/fehlt = Voreinstellung der Organisation, NONE = nie ein Bezahllink.
+  onlinePaymentProvider: onlineProviderChoiceSchema.nullable().optional(),
   ...customerDirectDebitFields,
 });
 /** Paarpruefung Peppol-ID/Schema (Phase 17a); fuer create und gemergten PATCH-Zustand. */
@@ -1111,6 +1114,8 @@ export const paymentMethodSchema = z.object({
   paymentTermsDays: z.number().int().min(0).optional(), invoiceText: z.string().optional(), bankAccountRef: z.string().optional(),
   bankIban: ibanInput, bankBic: z.string().optional(), bankName: z.string().optional(),
   untdidCode: z.enum(UNTDID_PAYMENT_MEANS_CODES).default("ZZZ"), isActive: z.boolean().default(true), sortOrder: z.number().int().default(0),
+  // Online-Zahlung: NULL/fehlt = keine Vorgabe (Kunde/Organisation entscheiden), NONE = nie ein Bezahllink.
+  onlineProvider: onlineProviderChoiceSchema.nullable().optional(),
 });
 export type PaymentMethodInput = z.infer<typeof paymentMethodSchema>;
 export const dunningStageSchema = z.object({
@@ -1347,3 +1352,6 @@ export * from "./bank";
 
 // ── Regeln nach Zahlungseingang ──────────────────────────────────────────────
 export * from "./payment-rule";
+
+// ── Online-Zahlung ───────────────────────────────────────────────────────────
+export * from "./online-payment";

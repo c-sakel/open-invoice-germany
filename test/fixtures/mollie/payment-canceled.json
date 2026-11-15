@@ -1,0 +1,10 @@
+{
+  "resource": "payment",
+  "id": "tr_TestAbc12345",
+  "mode": "test",
+  "status": "canceled",
+  "amount": { "currency": "EUR", "value": "119.00" },
+  "metadata": { "attemptId": "att_test_0001" },
+  "expiresAt": "2026-12-01T10:00:00+00:00",
+  "_links": { "checkout": { "href": "https://www.mollie.com/checkout/select-method/TestAbc12345" } }
+}

@@ -24,7 +24,14 @@ export const REDACTED = "[redaktiert]";
 // Fix-Welle (m7): nicht mehr `export` — wird ausserhalb dieses Moduls nirgends importiert
 // (weder von redactJson noch von der neuen redactQuery, beide bleiben innerhalb der Datei).
 // `csv`: Import-Bodies (`{ csv }`) enthalten ganze Kunden-/Produktlisten und sind personenbezogen; `contentbase64`: Kontoauszug-Upload.
-const SECRET_KEY_PATTERN = /(secret|token|password|passwort|api[_-]?key|authorization|iban|bic|cardpan|cardholdername|sepadebitaccountname|mandate|^csv$|^contentbase64$)/i;
+const SECRET_KEY_PATTERN = /(secret|token|password|passwort|api[_-]?key|authorization|iban|bic|cardpan|cardholdername|sepadebitaccountname|mandate|^csv$|^contentbase64$|(^|[_-])key$|[a-z]Key$)/i;
+/** Ausnahmen (vor dem Muster geprueft): bekannte Namen ohne Geheimnis; alles andere auf `…Key` wird geschwaerzt. */
+const HARMLESS_KEY_NAMES = new Set(["idempotencykey", "dedupekey", "periodkey", "sortkey"]);
+function isSecretKey(key: string): boolean {
+  return !HARMLESS_KEY_NAMES.has(key.toLowerCase()) && SECRET_KEY_PATTERN.test(key);
+}
+/** Wertbasiert: Zeichenketten im Muster von Anbieter-Schluesseln (live_/test_ bzw. sk_/rk_/pk_), unabhaengig vom Feldnamen. */
+const SECRET_VALUE_PATTERN = /^((live|test)_[A-Za-z0-9]{20,}|(sk|rk|pk)_(live|test)?_?[A-Za-z0-9]{20,})$/;
 /** Zusaetzlich zu SECRET_KEY_PATTERN nur fuer Query-Parameter (I1): E-Mail-Adressen sind
  *  keine Geheimnisse, aber personenbezogene Daten (z. B. `/api/v1/Contact?email=...`). */
 const QUERY_ONLY_PATTERN = /email/i;
@@ -43,10 +50,11 @@ export function shouldLogPath(pathname: string): boolean {
 
 export function redactJson(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(redactJson);
+  if (typeof value === "string") return SECRET_VALUE_PATTERN.test(value) ? REDACTED : value;
   if (value === null || typeof value !== "object") return value;
   const out: Record<string, unknown> = {};
   for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
-    out[key] = SECRET_KEY_PATTERN.test(key) ? REDACTED : redactJson(v);
+    out[key] = isSecretKey(key) ? REDACTED : redactJson(v);
   }
   return out;
 }
@@ -65,7 +73,7 @@ export function redactQuery(search: string | null | undefined): string | null {
     const params = new URLSearchParams(search);
     let changed = false;
     for (const key of [...params.keys()]) {
-      if (SECRET_KEY_PATTERN.test(key) || QUERY_ONLY_PATTERN.test(key)) {
+      if (isSecretKey(key) || QUERY_ONLY_PATTERN.test(key)) {
         params.set(key, REDACTED);
         changed = true;
       }

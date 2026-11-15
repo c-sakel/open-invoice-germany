@@ -28,6 +28,17 @@ describe("redactJson", () => {
   it("schwaerzt den Import-Body-Schluessel csv (Phase 18b)", () => {
     expect(redactJson({ csv: "Name;Straße\r\nGeheim AG;Weg 1", dryRun: true })).toEqual({ csv: REDACTED, dryRun: true });
   });
+  it("unbekanntes fooKey wird geschwaerzt, bekannte harmlose Namen (idempotencyKey) nicht", () => {
+    expect(redactJson({ fooKey: "x", idempotencyKey: "abc", dedupeKey: "d", sortKey: "s" })).toEqual({ fooKey: REDACTED, idempotencyKey: "abc", dedupeKey: "d", sortKey: "s" });
+  });
+
+  it("schwaerzt Schluesselfelder (key, mollieKey, live_key) und Werte im Muster von Anbieter-Schluesseln", () => {
+    const fake = "test_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+    expect(redactJson({ key: "x", mollieKey: "x", live_key: "x", name: "ok" })).toEqual({ key: REDACTED, mollieKey: REDACTED, live_key: REDACTED, name: "ok" });
+    expect(redactJson({ wert: fake, liste: [fake, "live_" + "y".repeat(30), "sk_live_" + "z".repeat(24), "rk_" + "z".repeat(24), "kurz"], n: { x: fake } })).toEqual({
+      wert: REDACTED, liste: [REDACTED, REDACTED, REDACTED, REDACTED, "kurz"], n: { x: REDACTED },
+    });
+  });
   it("laesst harmlose Felder und Nicht-Objekte unveraendert", () => {
     expect(redactJson({ name: "Kunde AG", netTotalCents: 11900 })).toEqual({ name: "Kunde AG", netTotalCents: 11900 });
     expect(redactJson("text")).toBe("text");

@@ -3,6 +3,8 @@
  * Es wird nie gebucht: das Ergebnis sind nur Vorschlaege, die ein Mensch bestaetigt.
  */
 import { detectSkonto, type SkontoTerm } from "@/lib/pricing/skonto";
+import { adapterFor } from "@/lib/payment/registry";
+import { ONLINE_PROVIDERS } from "@/lib/payment/types";
 
 export interface OpenInvoiceForMatch {
   id: string;
@@ -152,6 +154,14 @@ function rankKey(s: Suggestion): string {
   return s.allocations.map((a) => a.invoiceId).join(",");
 }
 
+export const PROVIDER_PAYOUT_HINT = "Auszahlung des Zahlungsanbieters \u2014 Zahlungen wurden einzeln gebucht";
+
+/** Auszahlung eines Online-Zahlungsanbieters (Gegenpartei/Verwendungszweck): einzeln gebuchte Zahlungen, keine Rechnungsvorschlaege. */
+export function providerPayoutHint(tx: Pick<MatchTransaction, "counterpartyName" | "remittance">): string | null {
+  const text = `${tx.counterpartyName ?? ""} ${tx.remittance}`;
+  return ONLINE_PROVIDERS.some((p) => adapterFor(p).payoutPattern.test(text)) ? PROVIDER_PAYOUT_HINT : null;
+}
+
 /**
  * Vorschlaege fuer einen Umsatz, bestes zuerst. Nur Gutschriften (CRDT) mit Restbetrag und nur offene
  * Rechnungen gleicher Waehrung. "SICHER" nur bei genau einer vollen Belegnummer mit passendem Betrag
@@ -160,6 +170,7 @@ function rankKey(s: Suggestion): string {
 export function suggestMatches(tx: MatchTransaction, ctx: MatchContext, max = 5): Suggestion[] {
   const txRest = tx.amountCents - tx.allocatedCents;
   if (tx.isReturn || tx.direction !== "CRDT" || txRest <= 0 || max <= 0) return [];
+  if (providerPayoutHint(tx)) return [];
 
   const invoices = ctx.invoices
     .filter((i) => i.currency === tx.currency && i.openCents > 0)

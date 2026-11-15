@@ -40,6 +40,7 @@ import { confirmBankMatch, undoBankMatch } from "@/domain/bank/confirm";
 import { BankAllocationError, BankConflictError } from "@/domain/bank/errors";
 import { PaymentError } from "@/domain/invoice/payment";
 import { reversePayment } from "@/domain/invoice/payment-reversal";
+import { reconcileAttempt } from "@/domain/online-payment/reconcile";
 import { buildCamt } from "../helpers/camt-builder";
 import { runCsvImport, ImportRejectedError, ImportAlreadyDoneError } from "@/domain/import/run";
 
@@ -613,6 +614,48 @@ describe("Parallele Zugriffe unter PostgreSQL", () => {
     const active = await dbInternal.payment.aggregate({ where: { invoiceId: { in: [invA.id, invB.id] } }, _sum: { amountCents: true } });
     const row = await dbInternal.bankTransaction.findUniqueOrThrow({ where: { id: txId }, select: { allocatedCents: true } });
     expect(row.allocatedCents).toBe(active._sum.amountCents);
+    expect((await verifyOrgChain(s.orgId, "UI")).valid).toBe(true);
+  });
+
+  it("Online-Zahlung: drei parallele Abgleiche (bezahlt) + paralleler Bank-Teilbetrag -> Summe <= Rechnungsbetrag, genau eine Anbieter-Zahlung", async () => {
+    const s = await newScenario();
+    const inv = await invoiceFromQuote(s.orgId, s.quote.id, s.now);
+    const link = await dbInternal.invoicePayLink.create({
+      data: { orgId: s.orgId, invoiceId: inv.id, provider: "MOLLIE", tokenHash: `race-hash-${s.orgId}`, tokenEnc: "race-enc", createdBy: "race" },
+      select: { id: true },
+    });
+    const attempt = await dbInternal.paymentProviderAttempt.create({
+      data: { orgId: s.orgId, payLinkId: link.id, provider: "MOLLIE", amountCents: inv.grossTotalCents, currency: "EUR", status: "OPEN", providerObjectId: `tr_Race${s.orgId.slice(-8)}` },
+      select: { id: true, providerObjectId: true },
+    });
+    const txId = await bankTxFor(s.orgId, 4000);
+    const state = {
+      objectId: attempt.providerObjectId ?? "",
+      testMode: false,
+      status: "PAID" as const,
+      amountCents: inv.grossTotalCents,
+      currency: "EUR",
+      refundedCents: 0,
+      chargedBackCents: 0,
+      paidAt: s.now,
+      expiresAt: null,
+      attemptId: attempt.id,
+    };
+    const rs: PromiseSettledResult<unknown>[] = await Promise.allSettled([
+      reconcileAttempt(attempt.id, state, { createdBy: "webhook", actor: "race", now: s.now }),
+      reconcileAttempt(attempt.id, state, { createdBy: "webhook", actor: "race", now: s.now }),
+      reconcileAttempt(attempt.id, state, { createdBy: "scheduler", actor: "race", now: s.now }),
+      confirmBankMatch(s.orgId, txId, { allocations: [{ invoiceId: inv.id, amountCents: 4000 }], expectedAllocatedCents: 0 }, { ...bankOpts, now: s.now }),
+    ]);
+    for (const f of rejected(rs.slice(3))) {
+      expect(f.reason instanceof BankConflictError || f.reason instanceof PaymentError || f.reason instanceof BankAllocationError, String(f.reason)).toBe(true);
+    }
+    expect(rejected(rs.slice(0, 3)).length, describeFailures(rs.slice(0, 3))).toBe(0);
+    expect(await dbInternal.payment.count({ where: { invoiceId: inv.id, provider: "MOLLIE" } })).toBe(1);
+    const sum = await dbInternal.payment.aggregate({ where: { invoiceId: inv.id }, _sum: { amountCents: true } });
+    expect(sum._sum.amountCents ?? 0).toBeLessThanOrEqual(inv.grossTotalCents);
+    const after = await dbInternal.invoice.findFirstOrThrow({ where: { id: inv.id }, select: { paidAmountCents: true } });
+    expect(after.paidAmountCents).toBe(sum._sum.amountCents);
     expect((await verifyOrgChain(s.orgId, "UI")).valid).toBe(true);
   });
 });

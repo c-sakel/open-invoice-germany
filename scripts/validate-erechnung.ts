@@ -6,7 +6,7 @@
  *   - CII: EN-16931-CII (KoSIT-Konfig)
  *
  * Aufruf:
- *   npm run validate:erechnung                # alle 29 Fixtures (57 XML: base nur UBL) erzeugen + prüfen
+ *   npm run validate:erechnung                # alle 36 Fixtures (71 XML: base nur UBL) erzeugen + prüfen
  *   npm run validate:erechnung -- pfad/zur.xml
  *
  * Exit 0 = bestanden, 1 = Verletzung(en). Schematrons landen in validation/.cache
@@ -98,7 +98,7 @@ async function validateFile(target: string): Promise<boolean> {
   return false;
 }
 
-// Fixture-Set: alle 34 Fixtures (67 XML: base nur UBL), siehe scripts/generate-sample-xrechnung.ts.
+// Fixture-Set: alle 36 Fixtures (71 XML: base nur UBL), siehe scripts/generate-sample-xrechnung.ts.
 const SAMPLE_NAMES = [
   "base",
   "line-discount",
@@ -134,6 +134,8 @@ const SAMPLE_NAMES = [
   "abo-verbrauch-subcent", // Phase 18f: BT-146 mit 5 Nachkommastellen, BG-26 Leistungszeitraum je Position
   "abo-verbrauch-subcent-storno", // Phase 18f: Storno dazu (CreditNote, positive Preise)
   "sammelrechnung-abo", // Sammelrechnung aus Abos: Bloecke, BG-26 je Position, BG-14 am Beleg
+  "online-zahlung-bt20", // Online-Bezahllink: Satz am Ende von BT-20 nach den Skonto-Zeilen, BT-81 58 mit BG-17
+  "online-68", // Zahlungsart ONLINE: BT-81 68 ohne BG-17
 ];
 
 async function main(): Promise<void> {

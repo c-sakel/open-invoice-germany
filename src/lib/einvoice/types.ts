@@ -184,6 +184,8 @@ export interface EInvoiceData {
   chargeTotalCents?: number;
   /** BT-81 ff. — Zahlungsweg aus dem Zahlungsmethoden-Snapshot (Fallback: Org-Konto, Code 58). */
   paymentMeans?: EInvoicePaymentMeans | null;
+  /** Online-Bezahllink (nur wenn am Beleg gedruckt): PDF-Zeile/QR und Satz in BT-20. */
+  payLinkUrl?: string | null;
   /** Freitext der Zahlungsmethode (invoiceText) — NUR PDF-Layout, nicht im XML. */
   paymentMethodText?: string | null;
   // BG-3 Vorausgehende Rechnung (für Gutschrift/Korrektur, BT-25/BT-26)

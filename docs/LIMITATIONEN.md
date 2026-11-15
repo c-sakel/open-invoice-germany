@@ -47,7 +47,6 @@ Datumsangaben zu Altbelegen beziehen sich auf den Programmstand; maßgeblich ist
   - **Umsortieren der Mahnstufen wirkt nicht rückwirkend auf die Stufenwahl.** `dunningScheduleFor` überspringt Stufen, die für die Rechnung bereits erreicht wurden (`stageId` bestehender Mahnungen), und wählt die nächste Stufe über `order` der zuletzt erstellten Mahnung; eine erreichte Stufe wird nie erneut erzeugt. `reorderDunningStages` verhindert zudem, dass eine Stufe mit Mahnkosten auf `order < 2` wandert (409, COMPLIANCE §12). Restgrenze: Wird eine noch nicht erreichte Stufe vor die zuletzt erreichte Position sortiert, entfällt sie für diese Rechnung (kein Rückschritt). Altmahnungen ohne `stageId` verhalten sich wie früher (nach `level`). Bereits erstellte `Dunning`-Zeilen bleiben unverändert.
   - **Altmahnungen ohne Beträge-Snapshot.** Mahnungen, die vor Einführung der stufenbasierten Mahnautomatik erstellt wurden, haben `claimBaseCents = 0` (Forderungsbetrag zum Zeitpunkt der Mahnung ist aus dem heutigen Rechnungsstand nicht mehr rekonstruierbar) und `snapshotSource = null`, bis `ensureDunningSnapshots` (aufgerufen bei jedem Laden von `/mahnwesen` sowie einmal je Organisation in jedem automatischen Mahnlauf, `runDunningJob`) einen Kunden-/Verkäufer-Snapshot mit Herkunft `MIGRATION` nachträgt. Der Forderungsbetrag bleibt dabei bewusst `0` (nicht rekonstruierbar) — PDF-Nachdruck und E-Mail-Kontext erkennen das an `snapshotSource !== "CREATE"` und fallen für diese Altmahnungen auf die **live** berechnete Restforderung zurück, nicht auf den (fehlenden) historischen Betrag.
 - **Wiederkehrende Rechnungen/Abos** sind vorhanden: Vorlage mit Rhythmus (wöchentlich–jährlich), optional Auto-Festschreiben. Derselbe Scheduler/Cron-Mechanismus wie oben erzeugt fällige Rechnungen automatisch, per Cron (`npm run recurring:run`, `GET/POST /api/cron/run-recurring`) oder manuell (UI/MCP). Positionen sind je Lauf fest oder werden nach Verbrauch abgerechnet (Abschnitt „Sub-Cent-Preise, Brutto-Eingabe und Verbrauch").
-- **Online-Zahlung (Mollie) ist noch nicht angebunden.** Der Layout-Block `paylink` (Zahlungslink im Beleg) steht deshalb noch nicht zur Verfügung.
 
 - **Sammelrechnung für Abos:** höchstens 50 Abos je Rechnung (weitere bilden die nächste Gruppe). Die Herkunft je Position (Abo) geht verloren, wenn die Positionen eines Entwurfs bearbeitet werden; die Abo-Verknüpfung der Rechnung bleibt. Eine Teil-Stornierung je Block gibt es nicht, nur Storno oder Teilgutschrift der ganzen Rechnung. Bei einem Fehler im Gruppenpfad rechnet der Scheduler-Lauf die Abos einzeln ab; ein defektes Abo wird isoliert und gemeldet. Verbrauchsabos in einer Gruppe verschieben die ganze Gruppe auf den Berliner Folgetag.
 
@@ -61,7 +60,7 @@ Datumsangaben zu Altbelegen beziehen sich auf den Programmstand; maßgeblich ist
 
 ## Kundenportal
 - **Token in Zugriffsprotokollen außerhalb der Anwendung.** Reverse-Proxy und CDN sehen den Pfad `/portal/<token>` samt IP; die Anwendung selbst protokolliert ihn nie. Dort Protokollierung für die Portalpfade abschalten (siehe BETRIEB-VORLAGE).
-- **Nur Ansicht und Download.** Der Kunde kann im Portal nichts eingeben, keine Rechnung reklamieren und (noch) nicht online bezahlen; ein „Jetzt bezahlen" folgt erst mit einer Online-Zahlung.
+- **Nur Ansicht und Download.** Der Kunde kann im Portal nichts eingeben, keine Rechnung reklamieren; online bezahlt wird auf der Bezahlseite des Anbieters, nicht im Portal selbst (der Knopf „Jetzt bezahlen" führt dorthin).
 - **Sichtbar ist alles, was zum Kunden gehört.** Festgeschriebene Rechnungen, Gutschriften/Stornos und versendete Mahnungen erscheinen auch dann, wenn die Rechnung nie per Mail verschickt wurde. Der Link gilt als Zugangsschlüssel: wer ihn kennt, sieht alle Belege des Kunden (Rotation oder Widerruf in der Kundenkarte).
 - **Kein Versand an den Kunden ohne Mailkonfiguration.** Der Link lässt sich auch kopieren; die Mail braucht SMTP und `APP_BASE_URL`. Ohne `APP_BASE_URL` entstehen keine Links (kein Rückfall auf den Host-Header).
 - **Rate-Limit nur im Speicher je Instanz** (Seite und Download je IP und je Link). Wer den Link kennt, kann ihn durch Dauerabruf vorübergehend drosseln. Die Seite antwortet bei Überschreitung mit Status 200 und einem Hinweistext, nur der Download mit 429.
@@ -156,7 +155,7 @@ Datumsangaben zu Altbelegen beziehen sich auf den Programmstand; maßgeblich ist
 - **Mahnungen:** Mit einem Design wird die Version bei der Erstellung eingefroren; mit festem Layout bleibt es beim Verhalten ohne Einfrieren. Eine Mahnung ohne eingefrorene Version rendert nie mit einem später zugeordneten Design. Verweist `Dunning.layoutVersionId` auf eine nicht mehr vorhandene Version (kein Fremdschlüssel), rendert die Mahnung mit dem festen Basislayout des zugeordneten Designs, nie mit dem Design.
 - **Textbausteine und Pflichtangaben:** Betreff, Einleitungstext und Fußtext steuern nur die Reihenfolge; vorhandener Text wird immer gedruckt. Bei ausgeblendeter oder eigener Fußzeile stehen Steuernummer und USt-IdNr des Leistenden automatisch in den Belegdaten. Bei Angebot, Auftragsbestätigung, Proforma und Lieferschein werden Logo, Absenderzeile und Fußzeile beim Nachdruck live gelesen, nicht eingefroren.
 - **Bestandsbelege:** Angebote und Lieferscheine, die vor Einführung des Layout-Designers (November 2026) ausgegeben wurden, haben keine eingefrorene Version und rendern nur mit dem festen Layout.
-- **Umfang je Belegart:** Der Lieferschein unterstützt nur Kopf-, Spalten- und Stilanpassung, die Mahnung nur Stil. Der Block `paylink` folgt mit der Online-Zahlung (noch nicht angebunden, siehe „Zahlung, Mahnwesen & Abos").
+- **Umfang je Belegart:** Der Lieferschein unterstützt nur Kopf-, Spalten- und Stilanpassung, die Mahnung nur Stil. Den Bezahllink gibt es nicht als Layout-Block, sondern als feste Zeile im Zahlungsblock des Rechnungs-PDF.
 - **DIN 5008 Form B:** Alle sieben festen Layouts und die Designs setzen Absenderzeile (Rücksendeangabe, 7 pt, bei Überlänge bis 6 pt, danach Umbruch an „ · " innerhalb der Vermerkzone 45–62,7 mm) und Anschrift (ab 62,7 mm, 20 mm von links, höchstens 85 mm breit) in das Anschriftfeld; damit sind sie für Fensterumschläge und den Postversand geeignet. Der Inhalt unterhalb (Tabelle) beginnt frühestens bei 97 mm, die erste Seite fasst entsprechend weniger Positionen. Bereits archivierte Rechnungs- und Mahnungs-PDFs (Belegarchiv) bleiben unverändert; nur neu erzeugte Ausgaben nutzen die DIN-Lage. Nur die Postanschrift wird eingepasst (Schrift mindestens 8 pt; passt sie nicht, verringert sich der Zeilenabstand); ein Zusatzblock (Lieferanschrift, Ansprechpartner) steht darunter in Normalgröße. Der Informationsblock rechts beginnt nie links von 125 mm (bei engem Platz Umbruch), Logo, Kopfbalken und Kopflinien der festen Layouts enden bei 45 mm (bei großem oberen Rand rücken sie nach oben, das Logo wird kleiner). Designs, bei denen eine sechszeilige Anschrift nicht ins Fenster passt, werden beim Speichern abgelehnt. Eine mehrzeilige Lieferanschrift kann unter das Fenster ragen; im Umschlag ist sie verdeckt, die Postanschrift bleibt im Fenster.
 - **Guards und verschachtelte Schreibzugriffe:** Die Guards in `src/lib/db.ts` (Prisma-Query-Extensions) greifen nur bei Top-Level-Aufrufen; verschachtelte Schreibzugriffe (z. B. `layoutDesign.update({ data: { versions: { update } } })`) werden nicht abgefangen. Die Domain-Services nutzen keine verschachtelten Schreibzugriffe auf geschützte Modelle; das gilt projektweit wie bei den bestehenden GoBD-Guards.
 
@@ -292,6 +291,23 @@ Datumsangaben zu Altbelegen beziehen sich auf den Programmstand; maßgeblich ist
 - **Nichts wird rückgängig gemacht.** Eine Gegenbuchung oder ein Storno nach der Ausführung nimmt versendete Mails, Tags, Benachrichtigungen und fortgesetzte Abos nicht zurück; davor überspringt es den Lauf.
 - **Höchstens 5 Aktionen je Regel**, jede Art einmal; höchstens 20 Läufe je Regel und Rechnung.
 
+## Online-Zahlung
+- **Nur Mollie.** Weitere Zahlungsanbieter folgen nicht automatisch; die Schnittstelle ist darauf vorbereitet, ein weiterer Anbieter ist aber ein eigener Auftrag. Eine Anbindung von Stripe gibt es nicht.
+- **Testmodus bucht nie.** Zahlungen mit einem Testschlüssel erzeugen nur eine Benachrichtigung und ein Protokoll; Testlinks erscheinen nie auf PDF, E-Rechnung, in Mails oder im Portal; ein im Livebetrieb auf den Beleg gedruckter Link führt bei einem später auf Test umgestellten Zugang zu „nicht verfügbar“ statt in einen Test-Checkout.
+- **Kein Skonto online.** Gebucht wird immer der volle offene Rest.
+- **Überzahlung und Erstattung beim Anbieter von Hand.** Ein Mehrbetrag wird nur gemeldet, nie als Zahlung gebucht; die Erstattung an den Kunden löst der Betreiber bei Mollie aus.
+- **Erstattung bei vorhandener Gutschrift nur als Hinweis.** Gibt es zur Rechnung eine gebuchte Gutschrift oder Teilgutschrift, bucht die Anwendung eine Erstattung beim Anbieter nicht gegen, sondern meldet sie zur manuellen Zuordnung; Rückbuchungen werden weiter automatisch gegengebucht.
+- **Aufgehobene Rückbuchung nur als Hinweis.** Wird eine Erstattung oder Rückbuchung beim Anbieter später verringert oder aufgehoben, bucht die Anwendung nichts neu; die Buchung korrigiert der Betreiber von Hand.
+- **Gebühren des Anbieters werden nicht gebucht.**
+- **Nachprüfung zeitlich begrenzt.** Der Scheduler gleicht offene Vorgänge bis 14 Tage und bezahlte bis 180 Tage nach Anlage nach (Erstattung, Rückbuchung); danach nur noch über „Status abrufen" an der Rechnung. Ohne laufenden Scheduler und bei verlorenem Webhook gibt es keine Buchung.
+- **Webhook braucht eine öffentliche `APP_BASE_URL`.** Ohne erreichbare Adresse kommt keine Benachrichtigung an; ohne `APP_BASE_URL` entstehen keine Links auf PDF, E-Rechnung und Mail.
+- **Kein Link bei Lastschrift mit Mandat, „Bereits bezahlt", Gutschriften und stornierten Rechnungen.** Ein Link auf dem PDF bleibt in dessen Archivstand auch nach dem Deaktivieren stehen; die Bezahlseite zeigt dann „nicht verfügbar".
+- **QR-Code nur ohne GiroCode.** Wird ein GiroCode gedruckt, steht der Link nur als Text.
+- **Bestandsrechnungen nur einzeln.** Es gibt keinen Massen-Nachtrag; Links für ältere Rechnungen entstehen auf Knopfdruck und erscheinen nicht rückwirkend im archivierten PDF.
+- **Mail nur über den Platzhalter** `{{invoice.paymentLink}}`; die Standardvorlagen enthalten ihn nicht.
+- **Rate-Limits nur im Prozess** und je Instanz (Bezahlseite, Webhook, Verbindungstest).
+- **Schlüssel und Einschalter nur in der Oberfläche,** nie per REST oder MCP.
+
 ## Bewusst nicht umgesetzt
 Diese Punkte sind keine Lücken, sondern bewusste Projektentscheidungen (Abgrenzung: keine Buchhaltungssoftware):
 
@@ -304,7 +320,6 @@ Diese Punkte sind keine Lücken, sondern bewusste Projektentscheidungen (Abgrenz
 - **ZM, OSS-Meldung und USt-Voranmeldung:** Die Software erzeugt keine Meldedaten; der OSS-Schwellenrechner ist nur Orientierung.
 
 ## Noch nicht umgesetzt
-- **Online-Zahlung (Mollie)** ist noch nicht angebunden.
 - **E-Rechnungen empfangen:** Eingangsrechnungen werden nicht entgegengenommen oder ausgelesen. Den Empfang (Pflicht im Inland seit 1.1.2025) deckt das eigene E-Mail-Postfach bzw. die Buchhaltung ab.
 - **Umsatzgrenzen der Kleinunternehmerregelung (§ 19 UStG, 25.000/100.000 €)** werden nicht überwacht; es gibt keine Warnung beim Überschreiten.
 - **Kleinbetragsrechnung (§ 33 UStDV):** Die Grenze von 250 € brutto wird nicht automatisch geprüft.

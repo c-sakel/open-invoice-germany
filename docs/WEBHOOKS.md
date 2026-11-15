@@ -26,7 +26,7 @@ Webhooks** oder per REST-API (`/api/v1/Webhook`, Scope `admin`) bzw. MCP
 | `postal.cancelled` | Postauftrag storniert (auch: Testauftrag in der geleerten Postbox) |
 | `payment_rule.triggered` | Eine Regel nach Zahlungseingang hat die Aktion „Webhook senden“ ausgeführt (Daten: Regel, Zahlung, Rechnung) |
 
-`payment_rule.triggered` trägt `rule` (`id`, `name`), `trigger` (`PAID_FULL` oder `PAID_PARTIAL`), `source` (`MANUAL`, `API`, `MCP`, `BANK`), `payment` und `invoice` (wie in `payment.recorded`) sowie die Id des Laufs.
+`payment_rule.triggered` trägt `rule` (`id`, `name`), `trigger` (`PAID_FULL` oder `PAID_PARTIAL`), `source` (`MANUAL`, `API`, `MCP`, `BANK`, `MOLLIE`), `payment` und `invoice` (wie in `payment.recorded`) sowie die Id des Laufs.
 
 Ein Endpunkt abonniert eine oder mehrere dieser Ereignisse (`events`-Feld bei
 Anlage/Änderung). Eine **Test-Zustellung** (`webhook.test`, über „Testen"/
@@ -46,6 +46,8 @@ Erreichbarkeit und Signierbarkeit.
 ```
 
 Zahlungen aus dem Bankabgleich lösen `payment.recorded` bzw. `payment.reversed` wie jede andere Zahlung aus; im `Payment`-Objekt steht dann `provider: "BANK"` (sonst `null`).
+
+Zahlungen über die Online-Zahlung lösen `payment.recorded` aus wie jede andere Zahlung (`method` `ONLINE`, `provider: "MOLLIE"`, `reference` = Zahlungsnummer des Anbieters); Erstattungen und Rückbuchungen des Anbieters lösen `payment.reversed` aus. Testzahlungen werden nie gebucht und lösen nichts aus.
 
 `data` ist derselbe Serializer-Schnappschuss wie die entsprechende REST-Ressource
 (`GET /api/v1/Invoice/{id}` u. Ä.) zum Zeitpunkt des Ereignisses — Geld als

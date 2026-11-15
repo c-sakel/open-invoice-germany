@@ -21,6 +21,8 @@ export default defineConfig({
       FX_AUTO_FETCH: "0",
       // Regel-Laeufe nach Zahlungseingang fuehren Tests explizit aus, nie automatisch nach dem Commit.
       PAYMENT_RULES_AFTER_COMMIT: "0",
+      // Anbieter-APIs fuer Online-Zahlung nie aus der Testsuite heraus ins Netz (Transport ist injizierbar).
+      PAYMENT_NETWORK: "0",
       ARCHIVE_DIR: path.join(os.tmpdir(), "oig-test-archive"),
     },
     // SQLite verträgt keine parallelen Writer -> Test-Files seriell

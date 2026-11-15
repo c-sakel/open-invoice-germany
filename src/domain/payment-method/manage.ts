@@ -48,6 +48,7 @@ export async function savePaymentMethod(orgId: string, id: string | null, rawInp
           bankBic: input.bankBic,
           bankName: input.bankName,
           isActive: input.isActive,
+          ...(input.onlineProvider !== undefined ? { onlineProvider: input.onlineProvider } : {}),
         };
         // Nur eine Nicht-Systemmethode darf Code/UNTDID-Code/Sortierung aendern.
         if (!existing.isSystem) {
@@ -74,6 +75,7 @@ export async function savePaymentMethod(orgId: string, id: string | null, rawInp
           isSystem: false,
           isActive: input.isActive,
           sortOrder: input.sortOrder,
+          onlineProvider: input.onlineProvider ?? null,
         },
       });
     });

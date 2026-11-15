@@ -439,14 +439,14 @@ Verkaufst du an Privatkunden in anderen EU-Ländern (Rechnung ohne USt-IdNr.), s
 - Die Karte ist eine Orientierung, keine steuerliche Beratung; eine OSS-Meldung erzeugt die Software nicht. Grenzen: [LIMITATIONEN.md](LIMITATIONEN.md), Rechtsgrundlage: COMPLIANCE.md § 10.
 
 ### Benachrichtigungen (Glocke oben rechts, `/benachrichtigungen`)
-Die Glocke im Kopfbereich zeigt die Anzahl ungelesener Benachrichtigungen und eine Kurzliste; „**Alle anzeigen**" führt zur vollständigen Liste. Benachrichtigt wirst du u. a. bei: Rechnung heute fällig, Rechnung überfällig, nächste Mahnstufe erreicht, Angebot läuft bald ab, E-Mail nicht zustellbar, wiederkehrende Rechnung fehlgeschlagen, ungültige E-Rechnung, OSS-Schwelle erreicht, Aktion nach Zahlungseingang ausgelöst oder fehlgeschlagen. Unter „**Einstellungen → Benachrichtigungen**" schaltest du jeden dieser Typen einzeln an/aus und aktivierst optional einen **täglichen E-Mail-Digest** (eine Sammel-E-Mail statt einzelner Benachrichtigungen). Erzeugt werden Benachrichtigungen von einem dritten Scheduler-Job (`notifications`, nach `recurring`/`dunning`) — läuft automatisch mit dem eingebauten Scheduler/Cron aus Schritt 8, kein separater Aufruf nötig.
+Die Glocke im Kopfbereich zeigt die Anzahl ungelesener Benachrichtigungen und eine Kurzliste; „**Alle anzeigen**" führt zur vollständigen Liste. Benachrichtigt wirst du u. a. bei: Rechnung heute fällig, Rechnung überfällig, nächste Mahnstufe erreicht, Angebot läuft bald ab, E-Mail nicht zustellbar, wiederkehrende Rechnung fehlgeschlagen, ungültige E-Rechnung, OSS-Schwelle erreicht, Aktion nach Zahlungseingang ausgelöst oder fehlgeschlagen, Online-Zahlung zu prüfen (Überzahlung, Testzahlung, nicht gebucht). Unter „**Einstellungen → Benachrichtigungen**" schaltest du jeden dieser Typen einzeln an/aus und aktivierst optional einen **täglichen E-Mail-Digest** (eine Sammel-E-Mail statt einzelner Benachrichtigungen). Erzeugt werden Benachrichtigungen von einem dritten Scheduler-Job (`notifications`, nach `recurring`/`dunning`) — läuft automatisch mit dem eingebauten Scheduler/Cron aus Schritt 8, kein separater Aufruf nötig.
 
 ### Aktionen nach Zahlungseingang (`Einstellungen → Nach Zahlungseingang`)
 
 Eine Regel führt nach einer erfassten Zahlung feste Aktionen aus. Es gibt keine Skripte; die Aktionsarten sind abschließend. Die Zahlungsbestätigung läuft immer als letzter Schritt: Tag, Benachrichtigung, Webhook und Abo-Fortsetzung hängen nie vom Mailversand ab.
 
 - **Auslöser:** „Vollständig bezahlt" (Rechnung wird PAID) oder „Teilzahlung" (Rechnung bleibt offen, wird PARTIALLY_PAID). Eine Skonto-Folgezahlung löst nichts zusätzlich aus.
-- **Quellen:** optional eine Auswahl aus manuell, REST-Schnittstelle, MCP, Bankabgleich; ohne Auswahl gelten alle. Maßgeblich ist, wie die Zahlung gebucht wurde.
+- **Quellen:** optional eine Auswahl aus manuell, REST-Schnittstelle, MCP, Bankabgleich, Online (Mollie); ohne Auswahl gelten alle. Maßgeblich ist, wie die Zahlung gebucht wurde.
 - **Rechnungs-Tag (optional):** die Regel greift nur, wenn die Rechnung dieses Tag trägt.
 - **Wartezeit:** 0 bis 1440 Minuten (Voreinstellung 5). Die Aktionen laufen frühestens nach Ablauf, tatsächlich beim nächsten Lauf des eingebauten Schedulers (Job „payment-rules"). Eine Gegenbuchung oder ein Storno innerhalb der Wartezeit überspringt den Lauf („Zahlung gegengebucht", „Rechnung storniert"); ebenso werden noch nicht ausgeführte Läufe einer deaktivierten oder archivierten Regel übersprungen („Regel deaktiviert").
 - **Aktionen** (höchstens 5 je Regel, jede Art einmal): Zahlungsbestätigung per E-Mail an den Kunden, Tag an die Rechnung setzen, interne Benachrichtigung (Glocke), Webhook `payment_rule.triggered` senden, pausierte Abos der Rechnung fortsetzen.
@@ -549,7 +549,7 @@ Mit dem Kundenportal können Kunden ihre Belege selbst abrufen, ohne Konto und o
 
 ### Was der Kunde sieht
 
-Eine Seite in der Sprache des Kunden mit Firmenname, offenen Posten je Währung (davon überfällig) und einer Tabelle seiner **festgeschriebenen** Rechnungen, Gutschriften/Stornos und **versendeten** Mahnungen, jeweils mit Status und Download als PDF und (wenn eingeschaltet) E-Rechnung (XML). Die Dateien kommen unverändert aus dem Belegarchiv, es ist derselbe Stand wie bei der ersten Ausgabe. Entwürfe, interne Notizen, Tags, Abos und andere Kunden erscheinen nie. Das Portal ist nur eine Ansicht: der Kunde kann nichts eingeben und (noch) nicht online bezahlen.
+Eine Seite in der Sprache des Kunden mit Firmenname, offenen Posten je Währung (davon überfällig) und einer Tabelle seiner **festgeschriebenen** Rechnungen, Gutschriften/Stornos und **versendeten** Mahnungen, jeweils mit Status und Download als PDF und (wenn eingeschaltet) E-Rechnung (XML). Die Dateien kommen unverändert aus dem Belegarchiv, es ist derselbe Stand wie bei der ersten Ausgabe. Entwürfe, interne Notizen, Tags, Abos und andere Kunden erscheinen nie. Das Portal ist nur eine Ansicht: der Kunde kann nichts eingeben. Ist die Online-Zahlung eingeschaltet (6h), erscheint bei offenen Rechnungen zusätzlich ein Knopf „Jetzt bezahlen".
 
 ### Abrufprotokoll
 
@@ -600,6 +600,56 @@ Je Umsatz speichert die App Buchungs- und Wertstellungsdatum, Betrag, Währung, 
 **Ignorierte und erledigte Umsätze:** Auch Umsätze ohne Rechnungsbezug (ignoriert oder als erledigt markiert) behalten Name und IBAN des Gegenkontos sowie den Verwendungszweck. Sie gehören als Teil der Kontoauszugsdaten zu den aufbewahrungspflichtigen Buchungsunterlagen (§ 147 AO). Die App bietet für festgeschriebene Bankdaten vor Fristablauf bewusst keine Löschfunktion; nach Fristablauf entfernst du sie nur mit direktem Datenbankzugriff.
 
 Auch per REST (`/api/v1/BankStatement`, `/api/v1/BankTransaction`, siehe [API.md](API.md)) und MCP (siehe [MCP.md](MCP.md)) nutzbar.
+
+---
+
+## 6h. Online-Zahlung (Mollie)
+
+Rechnungen können einen **Bezahllink** erhalten: Der Kunde öffnet ihn, sieht Rechnungsnummer und offenen Betrag und zahlt beim Zahlungsanbieter **Mollie**. Die Anbindung ist **standardmäßig aus**. Weitere Anbieter gibt es nicht.
+
+### Einrichten (`Einstellungen → Online-Zahlung`)
+
+1. **Voraussetzung:** Die Umgebungsvariable `APP_BASE_URL` ist gesetzt und von außen erreichbar (Bezahllink und Webhook-Adresse entstehen daraus; ohne sie meldet die Oberfläche, dass keine Basisadresse gesetzt ist). Außerdem muss `AUTH_SECRET` gesetzt sein, weil der Schlüssel verschlüsselt gespeichert wird.
+2. **API-Schlüssel eintragen:** Den Schlüssel gibt es bei Mollie (`test_…` für den Testmodus, `live_…` für den Livemodus). Er wird verschlüsselt gespeichert und nie wieder angezeigt, nur „hinterlegt" und die letzten 4 Zeichen. Der Modus (Test oder Live) ergibt sich aus dem Schlüssel. **Jeder Schlüsselwechsel schaltet die Anbindung aus.** Schlüssel und Einschalter gibt es nur in der Oberfläche, nicht über REST oder MCP.
+3. **Verbindung prüfen:** baut eine echte Verbindung zu Mollie auf und liest nur die verfügbaren Zahlarten; es wird nichts gebucht. Zwischen zwei Tests liegen mindestens 10 Sekunden.
+4. **Einschalten:** erst nach einem erfolgreichen Verbindungstest möglich.
+5. **Zahlarten und Währungen:** optional Kennungen der erlaubten Zahlarten (leer = alle aktiven Zahlarten bei Mollie) und die Währungen, für die Links entstehen (Standard nur EUR).
+6. **Standardanbieter und Anzeige:** Standardanbieter „Mollie" oder „Kein"; Schalter, ob der Link im Rechnungs-PDF, in E-Mails (über den Platzhalter) und im Kundenportal erscheint (je Standard an).
+
+Mollie ruft die Anwendung über eine Webhook-Adresse unter `/api/public/payments/mollie/<geheime Kennung>` auf. Sie wird bei jeder Zahlung automatisch mitgegeben und muss nicht bei Mollie eingetragen werden; sie muss aus dem Internet erreichbar sein.
+
+### Wann bekommt eine Rechnung einen Link?
+
+Beim **Festschreiben** wird der Anbieter bestimmt. Vorrang: **Zahlungsart** (Feld „Online-Zahlung (Bezahllink)"), dann **Kunde** (gleiches Feld), dann die **Voreinstellung** der Firma. „Kein" an einer Stelle beendet die Kette ausdrücklich; leer heißt „keine Vorgabe". Kein Link entsteht bei Gutschriften, ohne offenen Betrag, bei SEPA-Lastschrift mit Mandat, bei der Zahlungsart „Bereits bezahlt", bei ausgeschaltetem Zugang oder bei einer Währung, die nicht freigegeben ist. Für **Bestandsrechnungen** gibt es keinen Massen-Nachtrag: Auf der Belegseite (Abschnitt „Online-Zahlung") legst du den Link einzeln an, deaktivierst oder reaktivierst ihn und rufst den Status ab. Eine stornierte Rechnung bekommt nie einen Link; ein vorhandener wird beim Storno deaktiviert. Ein beim Festschreiben bereits ausgegebener Link auf dem PDF bleibt im Archiv unverändert; wird er später deaktiviert, zeigt die Bezahlseite „nicht verfügbar".
+
+### Der Weg des Kunden
+
+Der Link `/zahlen/<Token>` zeigt Firmenname, Rechnungsnummer, Rechnungsdatum und den offenen Betrag mit dem Knopf „Jetzt bezahlen". **Erst der Klick** legt den Bezahlvorgang bei Mollie an (Betrag = offener Rest, Bezeichnung „Rechnung <Nummer>") und leitet weiter; ein Seitenaufruf ruft Mollie nie auf. Ein noch ausreichend lange gültiger Vorgang mit gleichem Betrag wird wiederverwendet. Nach der Zahlung kehrt der Kunde zur Seite zurück, die den Status sofort abfragt. Ist die Rechnung bezahlt oder storniert, nennt die Seite das; sonst steht dort „derzeit nicht verfügbar" mit dem Hinweis auf die Zahlungsangaben der Rechnung. Der Link enthält ein 256-Bit-Token; wer ihn kennt, kann diese eine Rechnung bezahlen, sonst nichts.
+
+### Wann wird gebucht?
+
+**Nie aufgrund der Benachrichtigung von Mollie.** Deren Aufruf liefert nur eine Kennung; die Anwendung lädt den Zustand selbst bei Mollie nach und bucht erst, wenn Mollie die Zahlung als bezahlt meldet. Gebucht wird über die reguläre Zahlungserfassung (Zahlungsart „Online", Referenz = Mollie-Zahlungsnummer), also mit Regeln nach Zahlungseingang, Webhook `payment.recorded` (`provider` `MOLLIE`) und Eintrag in der Hash-Kette. Zusätzlich gleicht der Scheduler offene Vorgänge ab, falls eine Benachrichtigung ausfällt: alle 15 Minuten, ab 3 Tagen täglich, bis 14 Tage nach Anlage; bezahlte Vorgänge werden bis 180 Tage nach Anlage mit abnehmender Häufigkeit nachgeprüft (Erstattung und Rückbuchung).
+
+- **Testmodus bucht nie.** Zahlungen mit einem `test_`-Schlüssel erzeugen nur eine Benachrichtigung „Testzahlung eingegangen" und einen Protokolleintrag. Links im Testmodus erscheinen nie auf PDF, E-Rechnung, in Mails oder im Portal; auf der Belegseite gibt es einen internen „Testlink".
+- **Kein Skonto online.** Die Online-Zahlung bucht immer den vollen offenen Rest ohne Skonto.
+- **Überzahlung:** Gebucht wird höchstens der offene Rest; den Mehrbetrag meldet eine Benachrichtigung „Online-Zahlung höher als offener Betrag". Die Erstattung beim Anbieter machst du von Hand.
+- **Rechnung inzwischen storniert oder nichts mehr offen:** Es wird nichts gebucht; eine Benachrichtigung meldet die Zahlung zur Erstattung.
+- **Erstattung und Rückbuchung:** Meldet Mollie eine Erstattung oder Rückbuchung, bucht die Anwendung eine Gegenbuchung der Zahlung (kumuliert, bei mehreren Teilbeträgen nur die Differenz) und öffnet die Rechnung wieder; ein nach vollständiger Zahlung automatisch deaktivierter Link wird dabei wieder aktiv. Existiert zur Rechnung bereits eine **Gutschrift oder Teilgutschrift**, wird eine Erstattung bei Mollie **nicht** gegengebucht (der Betrag ist durch die Gutschrift erledigt); die Anwendung meldet sie einmal mit „Erstattung beim Zahlungsanbieter – bitte manuell zuordnen“, Rückbuchungen werden weiterhin automatisch gegengebucht. Wird eine Erstattung bei Mollie später **verringert oder aufgehoben**, bucht die Anwendung nichts neu, sondern meldet es zur Prüfung; die Buchung korrigierst du von Hand.
+- **Gebühren** von Mollie werden nicht gebucht.
+- Stimmen Betrag, Währung oder Modus der Zahlung nicht zum Vorgang, wird nichts gebucht und eine Prüfmeldung angelegt.
+
+### Wo erscheint der Link?
+
+- **PDF:** Zeile „Online bezahlen: <Adresse>" im Zahlungsblock, dazu ein QR-Code (20 mm), **nur wenn kein GiroCode** gedruckt wird. Nur bei Livekonto, offener Rechnung und gesetzter `APP_BASE_URL`; er wird beim Festschreiben festgelegt.
+- **E-Rechnung:** derselbe Satz steht am Ende der Zahlungsbedingungen (BT-20) in XRechnung und ZUGFeRD; Zahlungscode und Bankdaten bleiben unverändert. Die neue Systemzahlungsart „Online-Zahlung" (Code 68) kannst du an einer Rechnung wählen; dann steht kein Bankkonto in der E-Rechnung.
+- **E-Mail:** Platzhalter `{{invoice.paymentLink}}` in deinen Vorlagen (z. B. unter `Einstellungen → Textvorlagen`). Die Standardvorlagen bleiben unverändert; ergänze den Platzhalter in deiner Vorlage selbst. Er ist leer, wenn kein aktiver Livelink, die Mail-Anzeige aus, nichts offen oder die Rechnung storniert ist. Im Versandprotokoll und in der Hash-Kette steht statt des Links „[Zahlungslink]".
+- **Kundenportal:** Knopf „Jetzt bezahlen" bei offenen Rechnungen mit aktivem Link.
+- **Belegseite:** Abschnitt „Online-Zahlung" mit Linkstatus, Adresse (zum Kopieren und Öffnen), den letzten Bezahlvorgängen und „Status abrufen". Ein Vorgang mit „Anlage unklar" bedeutet: Beim Anbieter prüfen, ob eine Zahlung entstanden ist, und ggf. von Hand buchen.
+- **Regeln nach Zahlungseingang:** Quelle „Online (Mollie)" lässt sich als Filter wählen (6b).
+
+### Datenschutz und Betrieb
+
+An Mollie gehen nur Betrag, Währung, die Bezeichnung „Rechnung <Nummer>", die Rückkehr- und die Webhook-Adresse, nie Positionen, Kundenname oder interne Notizen. Welche Rolle Mollie datenschutzrechtlich hat (Auftragsverarbeitung oder eigene Verantwortlichkeit), richtet sich nach den Bedingungen von Mollie; kläre das **vor dem Einschalten im Livemodus** (siehe COMPLIANCE.md). Für den Reverse-Proxy: Pfade `/zahlen/` und `/api/public/payments/` ohne Zugriffsprotokoll führen, da das Token im Pfad steht (siehe `docs/BETRIEB-VORLAGE.md`). Mit `PAYMENT_NETWORK=0` sperrst du jeden Netzaufruf zu Mollie (Notbremse, auch für Tests).
 
 ---
 

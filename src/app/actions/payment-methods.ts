@@ -38,6 +38,8 @@ export async function savePaymentMethodAction(_prev: ActionResult, fd: FormData)
     bankBic: str(fd, "bankBic"),
     bankName: str(fd, "bankName"),
     untdidCode: str(fd, "untdidCode") ?? "ZZZ",
+    // Leer = keine Vorgabe (NULL).
+    onlineProvider: str(fd, "onlineProvider") ?? null,
     isActive: fd.get("isActive") === "on",
     sortOrder: str(fd, "sortOrder") ? Number(str(fd, "sortOrder")) : 0,
   };

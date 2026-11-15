@@ -25,6 +25,8 @@ export const NOTIFICATION_TYPES = {
   DUNNING_NOT_SENT: "Mahnung nicht versendet",
   PAYMENT_RULE: "Regel nach Zahlungseingang",
   PAYMENT_RULE_FAILED: "Regel nach Zahlungseingang fehlgeschlagen",
+  ONLINE_OVERPAYMENT: "Online-Zahlung hoeher als offener Betrag",
+  ONLINE_PAYMENT_ISSUE: "Online-Zahlung pruefen",
 } as const;
 
 export type NotificationType = keyof typeof NOTIFICATION_TYPES;

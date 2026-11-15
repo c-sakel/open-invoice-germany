@@ -25,7 +25,7 @@ import { pdfMargins, marginsFromMm, drawBackground, senderLineFallback } from ".
 import { addressCountryLine } from "../countries";
 import { paymentMeansPdfText } from "./payment-means-text";
 import { buildEpcPayload, EpcError } from "./epc";
-import { renderGiroCode } from "./giro";
+import { renderGiroCode, qrPng } from "./giro";
 import { categoryNoticesToPrint } from "@/domain/invoice/mandatory";
 import { docStrings, docLocale, formatDocDate, formatDocMoney, resolveDocLanguage, type DocLanguage, type DocStrings } from "@/lib/i18n/doc";
 import { fxOf, fxPdfRateLine } from "@/lib/einvoice/fx-note";
@@ -621,6 +621,8 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
       !data.paymentMeans?.card &&
       !data.paymentMeans?.directDebit,
   );
+  // Online-Bezahllink: QR (20 mm) nur, wenn kein GiroCode gedruckt wird; vorab erzeugt, damit der Zahlungsblock synchron bleibt.
+  const payLinkQr = data.payLinkUrl && !giroEligible ? await qrPng(data.payLinkUrl) : null;
   // Fix (Kontoinhaber): Zahlungsempfaenger-Name im GiroCode — Kontoinhaber, wenn gesetzt,
   // sonst der Firmenname (dieselbe Fallback-Regel wie mapper.ts#payeeAccountName fuer
   // BT-85, EINMAL berechnet fuer beide Platzierungen unten).
@@ -734,6 +736,17 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
       y = ensurePlainSpace(y, 30);
       y += 5;
       y = renderPlainTextPdf(doc, paymentMeansText, y, { x: left, width: right - left, fontSize: base - 1, ensureSpace: ensurePlainSpace, color: ink });
+    }
+    if (data.payLinkUrl) {
+      y = ensurePlainSpace(y, 30);
+      y += 5;
+      y = renderPlainTextPdf(doc, t.paymentMeans.payOnline(data.payLinkUrl), y, { x: left, width: right - left, fontSize: base - 1, ensureSpace: ensurePlainSpace, color: ink });
+      if (payLinkQr) {
+        const qrSize = mm(20);
+        y = ensurePlainSpace(y, qrSize + 10);
+        doc.image(payLinkQr, left, y + 4, { width: qrSize, height: qrSize });
+        y += qrSize + 8;
+      }
     }
   };
 

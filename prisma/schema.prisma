@@ -55,34 +55,39 @@ model Organization {
   numberRanges    NumberRange[]
   changeLogs      ChangeLog[]
 
-  documentRelations      DocumentRelation[]
-  deliveryNotes          DeliveryNote[]
-  textTemplates          TextTemplate[]
-  emailTemplates         EmailTemplate[]
-  emailLogs              EmailLog[]
-  customerAddresses      CustomerAddress[]
-  contactPersons         ContactPerson[]
-  paymentMethods         PaymentMethod[]
-  dunningStages          DunningStage[]
-  dunningSettings        DunningSettings?
-  baseInterestRates      BaseInterestRate[]
-  mailSettings           MailSettings?
-  documentSettings       DocumentSettings?
-  documentAttachments    DocumentAttachment[]
-  brandingSettings       BrandingSettings?
-  printSettings          PrintSettings?
-  customFieldDefinitions CustomFieldDefinition[]
-  documentTemplates      DocumentTemplate[]
-  tags                   Tag[]
-  postalSettings         PostalSettings?
-  postalJobs             PostalJob[]
-  portalSettings         CustomerPortalSettings?
-  portalLinks            CustomerPortalLink[]
-  bankImports            BankStatementImport[]
-  paymentRules           PaymentRule[]
-  bankTransactions       BankTransaction[]
-  bankHints              BankCounterpartyHint[]
-  sepaCreditorId         String? // Phase 18e: SEPA-Glaeubiger-ID (BT-90), normalisiert
+  documentRelations       DocumentRelation[]
+  deliveryNotes           DeliveryNote[]
+  textTemplates           TextTemplate[]
+  emailTemplates          EmailTemplate[]
+  emailLogs               EmailLog[]
+  customerAddresses       CustomerAddress[]
+  contactPersons          ContactPerson[]
+  paymentMethods          PaymentMethod[]
+  dunningStages           DunningStage[]
+  dunningSettings         DunningSettings?
+  baseInterestRates       BaseInterestRate[]
+  mailSettings            MailSettings?
+  documentSettings        DocumentSettings?
+  documentAttachments     DocumentAttachment[]
+  brandingSettings        BrandingSettings?
+  printSettings           PrintSettings?
+  customFieldDefinitions  CustomFieldDefinition[]
+  documentTemplates       DocumentTemplate[]
+  tags                    Tag[]
+  postalSettings          PostalSettings?
+  postalJobs              PostalJob[]
+  portalSettings          CustomerPortalSettings?
+  portalLinks             CustomerPortalLink[]
+  bankImports             BankStatementImport[]
+  paymentRules            PaymentRule[]
+  paymentProviderSettings PaymentProviderSettings?
+  paymentProviderAccounts PaymentProviderAccount[]
+  invoicePayLinks         InvoicePayLink[]
+  paymentProviderAttempts PaymentProviderAttempt[]
+  paymentProviderEvents   PaymentProviderEvent[]
+  bankTransactions        BankTransaction[]
+  bankHints               BankCounterpartyHint[]
+  sepaCreditorId          String? // Phase 18e: SEPA-Glaeubiger-ID (BT-90), normalisiert
 }
 
 /// Kunde / Leistungsempfänger.
@@ -118,11 +123,12 @@ model Customer {
   createdAt               DateTime     @default(now())
   updatedAt               DateTime     @updatedAt
 
-  quotes      Quote[]
-  invoices    Invoice[]
-  recurring   RecurringInvoice[]
-  portalLinks CustomerPortalLink[]
-  bankHints   BankCounterpartyHint[]
+  quotes                Quote[]
+  invoices              Invoice[]
+  recurring             RecurringInvoice[]
+  portalLinks           CustomerPortalLink[]
+  bankHints             BankCounterpartyHint[]
+  onlinePaymentProvider String? // NULL = Voreinstellung | NONE | MOLLIE
 
   addresses              CustomerAddress[]
   contacts               ContactPerson[]
@@ -421,6 +427,7 @@ model Invoice {
   payments                Payment[]
   bankMatches             BankMatch[]
   archivedDocuments       ArchivedDocument[]
+  payLink                 InvoicePayLink?
   dunnings                Dunning[]
   finalDeductions         FinalInvoiceDeduction[] @relation("FinalInvoiceDeductions")
   downpaymentOfFinals     FinalInvoiceDeduction[] @relation("DownpaymentInvoiceDeductions")
@@ -627,42 +634,42 @@ model Dunning {
 /// ENTWÜRFE erzeugt werden. Selbst KEIN Beleg (frei editierbar). Die erzeugten
 /// Invoices durchlaufen Festschreibung/Nummernkreis/Hash-Chain wie jede Rechnung.
 model RecurringInvoice {
-  id               String         @id @default(cuid())
-  orgId            String
-  org              Organization   @relation(fields: [orgId], references: [id])
-  customerId       String
-  customer         Customer       @relation(fields: [customerId], references: [id])
-  title            String // interne Bezeichnung, z. B. "Wartungsvertrag Mustermann"
-  status           String         @default("ACTIVE") // ACTIVE | PAUSED | ENDED
-  interval         String         @default("MONTHLY") // DAY | WEEKLY | MONTHLY | QUARTERLY | YEARLY
-  intervalCount    Int            @default(1) // alle N Intervalle (z. B. 2 = alle 2 Monate)
-  anchorDay        Int? // fixer Tag im Monat (1..28) für MONTHLY/QUARTERLY/YEARLY
-  startDate        DateTime
-  nextRunDate      DateTime // Stichtag der nächsten Erzeugung
-  endDate          DateTime?
+  id                String         @id @default(cuid())
+  orgId             String
+  org               Organization   @relation(fields: [orgId], references: [id])
+  customerId        String
+  customer          Customer       @relation(fields: [customerId], references: [id])
+  title             String // interne Bezeichnung, z. B. "Wartungsvertrag Mustermann"
+  status            String         @default("ACTIVE") // ACTIVE | PAUSED | ENDED
+  interval          String         @default("MONTHLY") // DAY | WEEKLY | MONTHLY | QUARTERLY | YEARLY
+  intervalCount     Int            @default(1) // alle N Intervalle (z. B. 2 = alle 2 Monate)
+  anchorDay         Int? // fixer Tag im Monat (1..28) für MONTHLY/QUARTERLY/YEARLY
+  startDate         DateTime
+  nextRunDate       DateTime // Stichtag der nächsten Erzeugung
+  endDate           DateTime?
   // Phase 8b (§43): harte Obergrenze der Laeufe — nach issuedCount >= maxRuns (nach dem
   // jeweiligen Lauf) wechselt das Abo auf ENDED, zusaetzlich/alternativ zu endDate.
-  maxRuns          Int?
-  taxScheme        String         @default("REGULAR")
-  currency         String         @default("EUR")
-  paymentTermsDays Int            @default(14)
-  notes            String?
-  autoFinalize     Boolean        @default(false) // true = erzeugte Rechnung sofort festschreiben
-  autoSend         Boolean        @default(false) // Phase 7, Task 1 — true = erzeugte Rechnung nach Festschreibung automatisch versenden
+  maxRuns           Int?
+  taxScheme         String         @default("REGULAR")
+  currency          String         @default("EUR")
+  paymentTermsDays  Int            @default(14)
+  notes             String?
+  autoFinalize      Boolean        @default(false) // true = erzeugte Rechnung sofort festschreiben
+  autoSend          Boolean        @default(false) // Phase 7, Task 1 — true = erzeugte Rechnung nach Festschreibung automatisch versenden
   // Phase 8b (§43): Vorlage fuer den automatischen Versand (autoSend); NULL = weiterhin
   // die Standardvorlage INVOICE (prefillEmail-Default).
-  emailTemplateId  String?
-  emailTemplate    EmailTemplate? @relation(fields: [emailTemplateId], references: [id], onDelete: SetNull)
+  emailTemplateId   String?
+  emailTemplate     EmailTemplate? @relation(fields: [emailTemplateId], references: [id], onDelete: SetNull)
   // Phase 8b (§43): ueberstimmt je Abo den Settings-Default (recurringInsertPeriodText).
   // Default true = uebernimmt den bisherigen Settings-Default beim Anlegen (createRecurring).
-  showPeriodText   Boolean        @default(true)
-  lastRunAt        DateTime?
-  issuedCount      Int            @default(0)
-  createdAt        DateTime       @default(now())
-  language         String         @default("de") // Belegsprache (ISO-639-1): de | en
-  collectiveBilling Boolean       @default(false) // mit anderen faelligen Abos des Kunden in einer Rechnung abrechnen
-  invoiceHeading   String? // oeffentliche Blockueberschrift auf der Sammelrechnung (Pflicht bei collectiveBilling)
-  updatedAt        DateTime       @updatedAt
+  showPeriodText    Boolean        @default(true)
+  lastRunAt         DateTime?
+  issuedCount       Int            @default(0)
+  createdAt         DateTime       @default(now())
+  language          String         @default("de") // Belegsprache (ISO-639-1): de | en
+  collectiveBilling Boolean        @default(false) // mit anderen faelligen Abos des Kunden in einer Rechnung abrechnen
+  invoiceHeading    String? // oeffentliche Blockueberschrift auf der Sammelrechnung (Pflicht bei collectiveBilling)
+  updatedAt         DateTime       @updatedAt
 
   lines    RecurringInvoiceLine[]
   invoices Invoice[]
@@ -981,6 +988,7 @@ model PaymentMethod {
   bankBic          String?
   bankName         String?
   untdidCode       String       @default("ZZZ") // UNTDID 4461 (BT-81)
+  onlineProvider   String? // NULL = keine Vorgabe | NONE | MOLLIE
   isSystem         Boolean      @default(false)
   isActive         Boolean      @default(true)
   sortOrder        Int          @default(0)
@@ -1887,4 +1895,102 @@ model PaymentRuleRun {
   @@index([orgId, customerId, mailSentAt])
   @@index([paymentId])
   @@index([invoiceId])
+}
+
+/// Online-Zahlung: Einstellungen je Organisation (eigene Tabelle, nicht DocumentSettings).
+model PaymentProviderSettings {
+  id              String       @id @default(cuid())
+  orgId           String       @unique
+  org             Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  defaultProvider String       @default("NONE") // NONE | MOLLIE
+  showOnPdf       Boolean      @default(true)
+  showInMail      Boolean      @default(true)
+  showInPortal    Boolean      @default(true)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+}
+
+/// Zugang je Anbieter; apiKeyEnc verschluesselt; webhookPathId = Zufallsbestandteil der Webhook-URL.
+model PaymentProviderAccount {
+  id                 String       @id @default(cuid())
+  orgId              String
+  org                Organization @relation(fields: [orgId], references: [id])
+  provider           String
+  enabled            Boolean      @default(false)
+  mode               String? // TEST | LIVE
+  apiKeyEnc          String?
+  webhookSecretEnc   String?
+  webhookPathId      String       @unique
+  allowedMethodsJson String?
+  currenciesJson     String? // NULL = ["EUR"]
+  lastTestAt         DateTime?
+  lastTestOk         Boolean?
+  lastTestError      String?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  @@unique([orgId, provider])
+}
+
+/// Fester Bezahllink je Rechnung; Klartext-Token nie gespeichert (tokenHash), tokenEnc fuer Wiederabruf.
+model InvoicePayLink {
+  id             String                   @id @default(cuid())
+  orgId          String
+  org            Organization             @relation(fields: [orgId], references: [id])
+  invoiceId      String                   @unique
+  invoice        Invoice                  @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  provider       String
+  tokenHash      String                   @unique
+  tokenEnc       String
+  onDocument     Boolean                  @default(false)
+  status         String                   @default("ACTIVE") // ACTIVE | DISABLED
+  createdBy      String
+  createdAt      DateTime                 @default(now())
+  disabledAt     DateTime?
+  disabledReason String? // MANUAL | INVOICE_CANCELLED
+  attempts       PaymentProviderAttempt[]
+
+  @@index([orgId])
+}
+
+/// Bezahlvorgang beim Anbieter (Anlage erst beim Klick, Betrag = offener Rest). Nie geloescht.
+model PaymentProviderAttempt {
+  id               String         @id @default(cuid())
+  orgId            String
+  org              Organization   @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  payLinkId        String
+  payLink          InvoicePayLink @relation(fields: [payLinkId], references: [id], onDelete: Restrict)
+  provider         String
+  providerObjectId String?
+  checkoutUrl      String?
+  amountCents      Int
+  currency         String
+  expiresAt        DateTime?
+  status           String         @default("CREATING") // CREATING | OPEN | PAID | EXPIRED | CANCELED | FAILED
+  error            String?
+  lastCheckedAt    DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@unique([provider, providerObjectId])
+  @@index([orgId, status, lastCheckedAt])
+  @@index([payLinkId, createdAt])
+}
+
+/// Verarbeitete Anbieter-Ereignisse, append-only; eventId = Objekt + beobachteter Zustand.
+model PaymentProviderEvent {
+  id         String       @id @default(cuid())
+  orgId      String
+  org        Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  provider   String
+  eventId    String
+  type       String
+  objectId   String
+  attemptId  String?
+  receivedAt DateTime     @default(now())
+  result     String // APPLIED | IGNORED | ERROR | TEST
+  detail     String?
+
+  @@unique([provider, eventId])
+  @@index([orgId, receivedAt])
 }

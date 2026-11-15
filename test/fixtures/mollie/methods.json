@@ -1,0 +1,1 @@
+{ "count": 2, "_embedded": { "methods": [ { "resource": "method", "id": "ideal" }, { "resource": "method", "id": "creditcard" } ] } }

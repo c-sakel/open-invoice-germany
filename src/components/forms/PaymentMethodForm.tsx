@@ -3,7 +3,7 @@
 import { useActionState } from "react";
 import { savePaymentMethodAction } from "@/app/actions/payment-methods";
 import type { ActionResult } from "@/app/actions/result";
-import { TextField, TextAreaField, CheckboxField, SubmitButton, ErrorBanner } from "./fields";
+import { TextField, TextAreaField, SelectField, CheckboxField, SubmitButton, ErrorBanner } from "./fields";
 
 export interface PaymentMethodFormData {
   id: string;
@@ -17,6 +17,8 @@ export interface PaymentMethodFormData {
   bankBic: string | null;
   bankName: string | null;
   untdidCode: string;
+  /** NULL = keine Vorgabe | NONE | MOLLIE */
+  onlineProvider?: string | null;
   isSystem: boolean;
   isActive: boolean;
   sortOrder: number;
@@ -53,6 +55,17 @@ export function PaymentMethodForm({ method }: { method?: PaymentMethodFormData |
               : "Erlaubt: 58, 30, 10, 68, 97, 1, ZZZ, 48, 54, 55, 59 (48/54/55/59 erscheinen in der E-Rechnung als Code 1)."
           }
           placeholder="ZZZ"
+        />
+        <SelectField
+          label="Online-Zahlung (Bezahllink)"
+          name="onlineProvider"
+          defaultValue={method?.onlineProvider ?? ""}
+          options={[
+            { value: "", label: "Wie Voreinstellung" },
+            { value: "NONE", label: "Keine" },
+            { value: "MOLLIE", label: "Mollie" },
+          ]}
+          hint="Hat Vorrang vor der Vorgabe am Kunden und der Voreinstellung der Organisation."
         />
         <TextAreaField label="Rechnungstext" name="invoiceText" defaultValue={method?.invoiceText} className="sm:col-span-2" hint="Erscheint als Zahlungshinweis auf der Rechnung." />
         <TextField label="Bank (Freitext, z. B. Kartenanbieter)" name="bankAccountRef" defaultValue={method?.bankAccountRef} />

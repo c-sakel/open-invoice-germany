@@ -14,6 +14,8 @@ import { linkDocuments } from "@/domain/relations";
 import { NotFoundError } from "@/domain/errors";
 import { creditCapCents, openAmountCents, payableBaseCents } from "@/domain/invoice/amounts";
 import { incrementPaidAmount } from "./paid-amount";
+import { disablePayLinkWithinTx } from "@/domain/online-payment/pay-link";
+import { cancelOpenAttemptsAfterCommit } from "@/domain/online-payment/cancel-open";
 import { assertAllowedTaxRates, ratesOfLines } from "@/domain/settings/tax-rates";
 import { finalizeWithinTx } from "./finalize";
 import { SCHEME_NOTICE_BY_LANG, categoryNoticesToPrint, noticeContained } from "./mandatory";
@@ -66,7 +68,7 @@ export async function createPartialCreditNote(
 
   if (input.lines.length === 0) throw new CreditError("Mindestens eine Position erforderlich.");
 
-  return dbInternal.$transaction(async (tx) => {
+  const created = await dbInternal.$transaction(async (tx) => {
     // Zeilensperre (17b) schliesst das Fenster unter Postgres (SQLite: No-op).
     await lockRow(tx, "Invoice", invoiceId, opts.orgId);
     const original = await tx.invoice.findUnique({
@@ -201,6 +203,7 @@ export async function createPartialCreditNote(
       if (newPaid === null) throw new CreditError(`Die Rechnung ${original.number} wurde parallel geändert (Zahlung/Gutschrift); bitte erneut versuchen.`);
       const newStatus = newPaid >= payBase ? "PAID" : "PARTIALLY_PAID";
       await tx.invoice.update({ where: { id: original.id }, data: { status: newStatus } });
+      if (newStatus === "PAID") await disablePayLinkWithinTx(tx, original.orgId, original.id, "INVOICE_PAID", actor, now);
       await appendChangeLog(tx, {
         orgId: original.orgId,
         entity: "INVOICE",
@@ -238,4 +241,6 @@ export async function createPartialCreditNote(
 
     return { originalId: original.id, originalNumber: original.number, creditNote: finalized, offsetCents, refundDueCents };
   });
+  if (created.offsetCents > 0) cancelOpenAttemptsAfterCommit(opts.orgId, invoiceId);
+  return created;
 }

@@ -718,7 +718,7 @@ Regeln, die nach einer Zahlung Aktionen auslösen (Zahlungsbestätigung per Mail
 | Endpunkt | Scope | Zweck |
 |---|---|---|
 | `GET /api/v1/PaymentRule` / `GET /api/v1/PaymentRule/{id}` | `read` | Regeln (`includeArchived=true` zeigt auch archivierte) |
-| `POST /api/v1/PaymentRule` | `admin` | Regel anlegen: `name`, `trigger` (`PAID_FULL`/`PAID_PARTIAL`), `sources` (optional, `MANUAL`/`API`/`MCP`/`BANK`), `invoiceTagId` (optional), `delayMinutes` (0 bis 1440), `actions` (1 bis 5, je Art einmal) |
+| `POST /api/v1/PaymentRule` | `admin` | Regel anlegen: `name`, `trigger` (`PAID_FULL`/`PAID_PARTIAL`), `sources` (optional, `MANUAL`/`API`/`MCP`/`BANK`/`MOLLIE`), `invoiceTagId` (optional), `delayMinutes` (0 bis 1440), `actions` (1 bis 5, je Art einmal) |
 | `PATCH /api/v1/PaymentRule/{id}` | `admin` | nur übergebene Felder ändern |
 | `DELETE /api/v1/PaymentRule/{id}` | `admin` | archivieren (nie hart gelöscht, Läufe bleiben) |
 | `POST /api/v1/PaymentRule/{id}/test` | `admin` | Trockenlauf gegen eine Rechnung (`invoiceId`) inkl. Mailvorschau; schreibt und sendet nichts |
@@ -726,6 +726,22 @@ Regeln, die nach einer Zahlung Aktionen auslösen (Zahlungsbestätigung per Mail
 | `POST /api/v1/PaymentRuleRun/{id}/retry` | `admin` | fehlgeschlagenen Lauf wiederholen |
 
 Aktionen: `SEND_PAYMENT_CONFIRMATION` (`templateId` oder `null` für den eingebauten Text), `ADD_TAG` (`tagId`), `NOTIFY` (`note` optional), `EMIT_WEBHOOK`, `RESUME_RECURRING` (`missedPeriods` `SKIP` oder `BILL`). Fehlertexte in Läufen und Schritten sind feste Hinweise, nie rohe Fehlermeldungen. Das Webhook-Ereignis `payment_rule.triggered` steht in [WEBHOOKS.md](WEBHOOKS.md).
+
+## Online-Zahlung
+
+Einstellungen und Bezahllinks. Der API-Schlüssel des Anbieters und der Einschalter sind **nur in der Oberfläche** änderbar; die API liefert nie einen Schlüssel (nur `hasApiKey`, Modus und das letzte Testergebnis).
+
+| Endpunkt | Scope | Zweck |
+|---|---|---|
+| `GET /api/v1/Settings/onlinePayment` | `admin` | Standardanbieter, Anzeigeoptionen und je Anbieter Einschalter, Modus, Zahlarten, Währungen, Testergebnis |
+| `PUT /api/v1/Settings/onlinePayment` | `admin` | Teil-Update von `defaultProvider` (`NONE`/`MOLLIE`), `showOnPdf`, `showInMail`, `showInPortal`; andere Felder werden mit `400` abgelehnt |
+| `POST /api/v1/Settings/onlinePayment/{provider}/test` | `admin` | Verbindungstest (liest nur die Zahlarten, bucht nichts; höchstens alle 10 Sekunden) |
+| `GET /api/v1/Invoice/{id}/payLink` | `read` | Linkstatus, letzte Bezahlvorgänge und bei aktivem Link die Adresse (`url`) |
+| `POST /api/v1/Invoice/{id}/payLink` | `write` | Link anlegen oder reaktivieren (`201` neu, `200` vorhanden) |
+| `POST /api/v1/Invoice/{id}/payLink/refresh` | `write` | Status offener Vorgänge beim Anbieter abrufen und abgleichen |
+| `POST /api/v1/Invoice/{id}/payLink/disable` | `write` | Link deaktivieren |
+
+Ein `Idempotency-Key` wird bei diesen schreibenden Aufrufen ignoriert. Fehler `422` tragen einen `reason` (z. B. `INVOICE_STATE`, `LINK_CANCELLED`, `NONE`, `ACCOUNT_OFF`, `CURRENCY`, `DIRECT_DEBIT`, `PREPAID`, `NOT_PAYABLE`). Die Adresse steht nur im Feld `url`, nie im Anfrageprotokoll oder in Idempotenz-Antworten. Der Zahlungseingang selbst läuft über den Webhook des Anbieters (`/api/public/payments/...`, kein Teil der API); gebuchte Zahlungen erscheinen als `Payment` mit `provider` `MOLLIE`.
 
 ## Fehlende Endpunkte / Grenzen (siehe auch [LIMITATIONEN.md](LIMITATIONEN.md))
 

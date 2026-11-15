@@ -6,7 +6,7 @@ export type RuleTrigger = "PAID_FULL" | "PAID_PARTIAL";
 
 /** Quelle einer Zahlung: Anbieter schlaegt Erfasser; Scheduler und Benutzer gelten als manuell. */
 export function paymentSource(createdBy: string, provider: string | null): PaymentSource {
-  if (provider === "BANK") return provider;
+  if (provider === "BANK" || provider === "MOLLIE") return provider;
   if (createdBy === "api" || createdBy === "webhook") return "API";
   if (createdBy === "mcp") return "MCP";
   return "MANUAL";

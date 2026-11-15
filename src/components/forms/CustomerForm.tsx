@@ -30,12 +30,21 @@ export interface CustomerFormData {
   defaultPaymentMethodId: string | null;
   notes: string | null;
   deliveryChannel?: string;
+  /** NULL = Voreinstellung der Organisation | NONE | MOLLIE */
+  onlinePaymentProvider?: string | null;
   sepaMandateReference?: string | null;
   /** YYYY-MM-DD */
   sepaMandateSignedAt?: string | null;
   sepaDebitIban?: string | null;
   sepaDebitAccountName?: string | null;
 }
+
+/** Auswahl "Wie Voreinstellung / Keine / Mollie" (leer = NULL = Voreinstellung der Organisation). */
+export const ONLINE_PROVIDER_CHOICES = [
+  { value: "", label: "Wie Voreinstellung" },
+  { value: "NONE", label: "Keine" },
+  { value: "MOLLIE", label: "Mollie" },
+];
 
 export interface PaymentMethodOption {
   id: string;
@@ -107,6 +116,13 @@ export function CustomerForm({
           defaultValue={customer?.defaultPaymentMethodId ?? ""}
           options={[{ value: "", label: "— keine —" }, ...paymentMethods.map((m) => ({ value: m.id, label: m.name }))]}
           hint="Wird bei neuen Rechnungen für diesen Kunden vorbelegt."
+        />
+        <SelectField
+          label="Online-Zahlung (Bezahllink)"
+          name="onlinePaymentProvider"
+          defaultValue={customer?.onlinePaymentProvider ?? ""}
+          options={ONLINE_PROVIDER_CHOICES}
+          hint="Gilt, wenn die Zahlungsmethode der Rechnung nichts vorgibt."
         />
         <SelectField
           label="Versandart für Mahnungen"

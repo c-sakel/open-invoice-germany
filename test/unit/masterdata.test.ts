@@ -4,8 +4,8 @@ import { PaymentMethod, RelationType, DocType } from "@/schemas";
 
 describe("Stammdaten-Defaults", () => {
   it("neun Systemzahlungsmethoden mit eindeutigen Codes und UNTDID-4461-Codes", () => {
-    expect(SYSTEM_PAYMENT_METHODS).toHaveLength(9);
-    expect(new Set(SYSTEM_PAYMENT_METHODS.map((m) => m.code)).size).toBe(9);
+    expect(SYSTEM_PAYMENT_METHODS).toHaveLength(10);
+    expect(new Set(SYSTEM_PAYMENT_METHODS.map((m) => m.code)).size).toBe(10);
     for (const code of ["TRANSFER", "CASH", "CARD", "SEPA", "SKONTO"]) {
       expect(SYSTEM_PAYMENT_METHODS.some((m) => m.code === code)).toBe(true); // Altcodes bleiben aufloesbar
     }

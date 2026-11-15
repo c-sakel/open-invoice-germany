@@ -100,3 +100,54 @@ export async function externalFetch(url: string, opts: ExternalFetchOptions = {}
   }
   throw new ExternalHttpError("Zu viele Weiterleitungen.");
 }
+
+export interface ExternalRequestOptions {
+  method: "GET" | "POST" | "DELETE";
+  headers?: Record<string, string>;
+  body?: string;
+  timeoutMs?: number;
+  maxBytes?: number;
+  fetchImpl?: typeof fetch;
+}
+
+/**
+ * Aufruf einer Anbieter-API mit fester HTTPS-Ziel-URL: jede Statusantwort (auch 4xx/5xx) wird
+ * geliefert, damit der Aufrufer sie fachlich auswerten kann. Weiterleitungen sind immer ein Fehler,
+ * Antwortgroesse und Laufzeit sind begrenzt. Fehlertexte enthalten nie Header oder Body.
+ */
+export async function externalRequest(
+  url: string,
+  opts: ExternalRequestOptions,
+): Promise<{ status: number; text: string }> {
+  // Netzsperre fuer Tests: ohne injizierten fetchImpl erreicht dieser Aufruf unter Vitest/NODE_ENV=test
+  // oder PAYMENT_NETWORK=0 nie das Netz (einziger Aufrufer sind die Zahlungsanbieter).
+  if (!opts.fetchImpl && (process.env.VITEST || process.env.NODE_ENV === "test" || process.env.PAYMENT_NETWORK === "0")) {
+    throw new ExternalHttpError("Netzzugriff in dieser Umgebung gesperrt.");
+  }
+  const fetchImpl = opts.fetchImpl ?? fetch;
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const maxBytes = opts.maxBytes ?? DEFAULT_MAX_BYTES;
+  if (new URL(url).protocol !== "https:") throw new ExternalHttpError("Nur HTTPS erlaubt.");
+  let res: Response;
+  try {
+    res = await fetchImpl(url, {
+      method: opts.method,
+      redirect: "manual",
+      signal: AbortSignal.timeout(timeoutMs),
+      ...(opts.headers ? { headers: opts.headers } : {}),
+      ...(opts.body !== undefined ? { body: opts.body } : {}),
+    });
+  } catch {
+    throw new ExternalHttpError("Abruf fehlgeschlagen.");
+  }
+  if (res.status >= 300 && res.status < 400) {
+    await res.body?.cancel();
+    throw new ExternalHttpError("Weiterleitung abgelehnt.", res.status);
+  }
+  try {
+    return { status: res.status, text: await readLimited(res, maxBytes) };
+  } catch (e) {
+    if (e instanceof ExternalHttpError) throw e;
+    throw new ExternalHttpError("Antwort nicht lesbar.");
+  }
+}

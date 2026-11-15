@@ -29,6 +29,7 @@ export const TEMPLATE_PLACEHOLDERS: { path: string; label: string }[] = [
   { path: "invoice.total", label: "Rechnungsbetrag" },
   { path: "invoice.dueDate", label: "Fälligkeitsdatum (Rechnung)" },
   { path: "invoice.openAmount", label: "Offener Betrag" },
+  { path: "invoice.paymentLink", label: "Online-Bezahllink" },
   { path: "offer.number", label: "Angebotsnummer" },
   { path: "offer.validUntil", label: "Angebot gültig bis" },
   { path: "portal.url", label: "Kundenportal-Link" },

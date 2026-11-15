@@ -62,6 +62,8 @@ export interface MapInput {
   // Phase 4b — Bestellnummer des Kunden (BT-13); optional, da Alt-Belege das Feld nicht kennen.
   orderNumber?: string | null;
   paymentTerms: string | null;
+  /** Online-Bezahllink fuer PDF und BT-20 (nur wenn am Beleg gedruckt). */
+  payLinkUrl?: string | null;
   notes: string | null;
   // Phase 13b — Betreff (BT-22 mit Subjektcode BT-21 "AAI"); optional, da Alt-Belege das Feld nicht kennen.
   subject?: string | null;
@@ -302,8 +304,12 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
   // keinen Zahlungsbedingungstext.
   const creditFallbackNote =
     invoice.type === "CREDIT_NOTE" && !paymentTermsHuman ? CREDIT_FALLBACK_NOTE[lang] : null;
-  const paymentTermsNote =
+  const baseTermsNote =
     skTerms.length > 0 && paymentTermsHuman ? xrechnungSkontoNote(skTerms, paymentTermsHuman) : (paymentTermsHuman ?? creditFallbackNote);
+  // Online-Bezahllink: Satz am Ende von BT-20, nach den #SKONTO#-Zeilen.
+  const payLinkUrl = invoice.payLinkUrl ?? null;
+  const payLinkSentence = payLinkUrl ? docStrings(lang).paymentMeans.payOnline(payLinkUrl) : null;
+  const paymentTermsNote = payLinkSentence ? (baseTermsNote ? `${baseTermsNote}\n${payLinkSentence}` : payLinkSentence) : baseTermsNote;
 
   // Phase 4a — Zahlungsweg aus dem Zahlungsmethoden-Snapshot; Fallback Org-Konto,
   // Code 58 (SEPA-Überweisung).
@@ -426,6 +432,7 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
     paymentTerms: invoice.paymentTerms,
     paymentTermsNote,
     paymentTermsHuman,
+    ...(payLinkUrl ? { payLinkUrl } : {}),
     notes: invoice.notes,
     subject: invoice.subject ?? null,
     seller: {

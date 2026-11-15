@@ -18,6 +18,7 @@ import { serializePayment } from "@/api/serializers/payment";
 import { NotFoundError } from "@/domain/errors";
 import { skipOpenRunsForPayment } from "@/domain/payment-rule/enqueue";
 import { payableBaseCents } from "@/domain/invoice/amounts";
+import { reactivatePayLinkAfterReopenWithinTx } from "@/domain/online-payment/pay-link";
 import { decrementPaidAmount } from "./paid-amount";
 import { PaymentError, type PaymentCreatedBy } from "./payment";
 import { deriveStatusAfterReversal } from "./payment-reversal-status";
@@ -175,6 +176,10 @@ export async function reversePaymentWithinTx(
   });
   if (status !== inv.status) {
     await tx.invoice.update({ where: { id: inv.id }, data: { status }, select: { id: true } });
+  }
+  // War die Rechnung voll bezahlt und ist wieder offen: ein wegen Vollzahlung deaktivierter Bezahllink wird reaktiviert.
+  if (inv.status === "PAID" && status !== "PAID") {
+    await reactivatePayLinkAfterReopenWithinTx(tx, inv.orgId, inv.id, opts.actor, now);
   }
 
   await appendChangeLog(tx, {

@@ -16,6 +16,8 @@ export const SYSTEM_PAYMENT_METHODS = [
   // Skonto-Buchung (Phase 4a) — keine echte Zahlungsart, sondern der Systemcode fuer
   // recordPayment(), wenn ein Skontoabzug als zweite Zahlung verbucht wird.
   { code: "SKONTO", name: "Skonto", untdidCode: "ZZZ", sortOrder: 9 },
+  // Online-Zahlung ueber einen Zahlungsanbieter (Bezahllink); wird bei Zahlungseingang ueber den Anbieter als Zahlungsart gebucht.
+  { code: "ONLINE", name: "Online-Zahlung", untdidCode: "68", sortOrder: 10 },
 ] as const;
 
 /** Standard-Mahnstufen (Fristen aus dem Lastenheft, Titel wie DUNNING_LEVEL_TITLE). */

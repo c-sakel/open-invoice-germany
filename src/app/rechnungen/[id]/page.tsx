@@ -35,6 +35,9 @@ import { InvoiceMoreMenu } from "./_parts/InvoiceMoreMenu";
 import { InvoiceTotals } from "./_parts/InvoiceTotals";
 import { CorrectionSection } from "./_parts/CorrectionSection";
 import { PaymentSection } from "./_parts/PaymentSection";
+import { PayLinkSection } from "@/components/online-payment/PayLinkSection";
+import { loadInvoicePayLink } from "@/domain/online-payment/views";
+import { loadOnlinePaymentSettings } from "@/domain/online-payment/settings";
 import { finalizeWarningMessage, parseWarningCodes } from "@/domain/invoice/finalize-warnings";
 import { normalizeVatId } from "@/lib/vat-id";
 import { collectiveBlockRanges } from "@/domain/recurring/collective";
@@ -183,6 +186,11 @@ export default async function InvoiceDetail({
   const showPaymentList = vm.isInvoiceType && !vm.isDraft;
   // Abschnitt "Zahlung & Mahnung" nur, wenn PaymentSection etwas rendert (sonst stuende eine leere Ueberschrift).
   const showPayment = showPaymentBlock && ((vm.openCents > 0 && dunningSchedule != null) || invoice.dunnings.length > 0);
+  // Online-Zahlung: Abschnitt nur bei Rechnungen ausser Entwurf, wenn ein Link existiert oder ein Zugang eingerichtet ist.
+  const onlineSettings = vm.isInvoiceType && !vm.isDraft ? await loadOnlinePaymentSettings(org.id) : null;
+  const mollieAccount = onlineSettings?.accounts.find((acc) => acc.provider === "MOLLIE") ?? null;
+  const payLinkViewRaw = onlineSettings ? await loadInvoicePayLink(org.id, invoice.id, { withUrl: true }) : null;
+  const payLinkView = payLinkViewRaw && (payLinkViewRaw.link !== null || mollieAccount?.hasApiKey) ? payLinkViewRaw : null;
   const showCorrection = !vm.isDraft && !vm.isCancelled;
 
   return (
@@ -356,6 +364,18 @@ export default async function InvoiceDetail({
             dunningPausedUntil={invoice.dunningPausedUntil}
             dunningSchedule={dunningSchedule}
             dunnings={invoice.dunnings}
+          />
+        </DetailSection>
+      )}
+
+      {payLinkView && (
+        <DetailSection id="online-zahlung" title="Online-Zahlung">
+          <PayLinkSection
+            invoiceId={invoice.id}
+            initial={payLinkView}
+            invoiceCancelled={vm.isCancelled}
+            mode={mollieAccount?.mode ?? null}
+            providerEnabled={mollieAccount?.enabled ?? false}
           />
         </DetailSection>
       )}

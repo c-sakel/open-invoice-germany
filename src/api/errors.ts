@@ -37,6 +37,7 @@ import { TaxRateNotAllowedError } from "@/domain/settings/tax-rates";
 import { VatCheckDisabledError, VatCheckRateLimitError } from "@/domain/customer/vat-check";
 import { CustomerValidationError } from "@/domain/customer/save";
 import { PortalError } from "@/domain/portal/errors";
+import { OnlinePaymentError } from "@/domain/online-payment/errors";
 import { PostalConflictError } from "@/domain/postal/errors";
 import { PaymentRuleError } from "@/domain/payment-rule/errors";
 import { PostalDisabledError, PostalKeyUnreadableError, PostalNotConfiguredError } from "@/domain/postal/settings";
@@ -217,6 +218,12 @@ export function mapApiError(e: unknown): { status: number; body: ApiErrorBody } 
   // Kundenportal: PORTAL_DISABLED / CUSTOMER_ARCHIVED als 409 mit fachlichem Code in `reason`.
   if (e instanceof PortalError) {
     return { status: 409, body: { error: { code: "CONFLICT", message: e.message, reason: e.code } } };
+  }
+  // Online-Zahlung: feste Texte, nie Anbietertexte. Unbekannte Rechnung 404, Fachfehler 422 mit Code in `reason`.
+  if (e instanceof OnlinePaymentError) {
+    if (e.code === "NOT_FOUND") return { status: 404, body: { error: { code: "NOT_FOUND", message: e.message } } };
+    if (e.code === "RATE_LIMITED") return { status: 429, body: { error: { code: "RATE_LIMITED", message: e.message } } };
+    return { status: 422, body: { error: { code: "UNPROCESSABLE", message: e.message, reason: e.code } } };
   }
   // Phase 16d: Postversand. Feste Texte, nie die Meldung des Anbieters (kein Schluessel in Antworten).
   if (e instanceof PostalConflictError) {

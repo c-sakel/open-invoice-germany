@@ -38,6 +38,8 @@ export async function saveCustomerDefaults(orgId: string, customerId: string, ra
       deliveryTermsText: v.deliveryTermsText ?? null,
       paymentTermsText: v.paymentTermsText ?? null,
       language: v.language,
+      // Online-Zahlung: nur bei ausdruecklicher Angabe aendern (bestehende Aufrufer kennen das Feld nicht).
+      ...(v.onlinePaymentProvider !== undefined ? { onlinePaymentProvider: v.onlinePaymentProvider } : {}),
     },
   });
 }
@@ -53,6 +55,7 @@ export interface CustomerDefaultsView {
   deliveryTermsText: string | null;
   paymentTermsText: string | null;
   language: string;
+  onlinePaymentProvider: string | null;
   defaultBillingAddress: Awaited<ReturnType<typeof defaultAddressFor>>;
   defaultShippingAddress: Awaited<ReturnType<typeof defaultAddressFor>>;
   defaultContact: Awaited<ReturnType<typeof defaultContactFor>>;
@@ -77,6 +80,7 @@ export async function customerDefaultsFor(orgId: string, customerId: string): Pr
     deliveryTermsText: customer.deliveryTermsText,
     paymentTermsText: customer.paymentTermsText,
     language: customer.language,
+    onlinePaymentProvider: customer.onlinePaymentProvider,
     defaultBillingAddress,
     defaultShippingAddress,
     defaultContact,

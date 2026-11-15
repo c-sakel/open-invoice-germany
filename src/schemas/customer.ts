@@ -5,6 +5,7 @@
  * Eingabe selbst — kein Bypass ueber Route, UI oder MCP (Lastenheft 50/55).
  */
 import { z } from "zod";
+import { onlineProviderChoiceSchema } from "./online-payment";
 
 export const AddressType = z.enum(["BILLING", "SHIPPING", "OTHER"]);
 export type AddressType = z.infer<typeof AddressType>;
@@ -159,5 +160,7 @@ export const customerDefaultsInputSchema = z.object({
     .string()
     .regex(/^[a-z]{2}$/, "language muss aus 2 Kleinbuchstaben bestehen (ISO-639-1).")
     .default("de"),
+  /** NULL/fehlt = Voreinstellung der Organisation; NONE = nie ein Bezahllink; nur uebergebene Werte werden gespeichert. */
+  onlinePaymentProvider: onlineProviderChoiceSchema.nullable().optional(),
 });
 export type CustomerDefaultsInput = z.infer<typeof customerDefaultsInputSchema>;

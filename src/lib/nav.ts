@@ -44,6 +44,7 @@ export const SETTINGS_KEYS = [
   "vorlagen",
   "textvorlagen",
   "zahlungsmethoden",
+  "online-zahlung",
   "mahnwesen",
   "kundenfelder",
   "tags",
@@ -119,6 +120,7 @@ export const SETTINGS_ITEMS: readonly SettingsNavItem[] = [
   { href: "/einstellungen/vorlagen", label: "Textvorlagen", key: "vorlagen" },
   { href: "/einstellungen/textvorlagen", label: "Dokumenttexte", key: "textvorlagen" },
   { href: "/einstellungen/zahlungsmethoden", label: "Zahlungsmethoden", key: "zahlungsmethoden" },
+  { href: "/einstellungen/online-zahlung", label: "Online-Zahlung", key: "online-zahlung" },
   { href: "/einstellungen/mahnwesen", label: "Mahnwesen", key: "mahnwesen" },
   { href: "/einstellungen/kundenfelder", label: "Kundenfelder", key: "kundenfelder" },
   { href: "/einstellungen/tags", label: "Tags", key: "tags" },
@@ -139,7 +141,7 @@ export const SETTINGS_ITEMS: readonly SettingsNavItem[] = [
  * einer Gruppe (siehe test/unit/nav.test.ts).
  */
 export const SETTINGS_GROUPS: readonly { label: string; keys: readonly SettingsKey[] }[] = [
-  { label: "Firma", keys: ["stammdaten", "marke", "briefpapier", "zahlungsmethoden"] },
+  { label: "Firma", keys: ["stammdaten", "marke", "briefpapier", "zahlungsmethoden", "online-zahlung"] },
   { label: "Belege", keys: ["belege", "nummernkreise", "kurse", "vorlagen", "textvorlagen", "mahnwesen", "kundenfelder", "tags"] },
   { label: "Kommunikation", keys: ["email", "post", "kundenportal", "benachrichtigungen"] },
   { label: "System", keys: ["automatisierung", "zahlungsregeln", "api", "webhooks", "pruefung", "konto"] },

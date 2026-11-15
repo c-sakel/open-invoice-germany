@@ -15,6 +15,7 @@ import { rateFor } from "@/domain/fx/rate-for";
 import { loadDeductedTaxEurCents } from "@/domain/fx/snapshot";
 import { taxBreakdownSchema } from "@/schemas";
 import { buildDirectDebitSnapshot } from "@/domain/invoice/direct-debit";
+import { documentPayLinkUrl } from "@/domain/online-payment/document-link";
 import { DIRECT_DEBIT_CODE } from "./payment-means";
 import { buildEInvoiceData, type MapInput } from "./mapper";
 
@@ -160,9 +161,11 @@ export async function loadEInvoiceData(invoiceId: string, orgId?: string) {
   // spaeteren Beleg entspricht. Festgeschriebene Belege lesen unveraendert nur ihren Snapshot.
   const liveDirectDebit =
     invoice.status === "DRAFT" && invoice.paymentMethodSnapshotJson == null ? await previewDirectDebit(invoice) : null;
+  const payLinkUrl = await documentPayLinkUrl(invoice.orgId, invoice, openAmountCents(invoice));
   const data = buildEInvoiceData({
     ...invoice,
     ...draftFx,
+    payLinkUrl,
     ...(liveDirectDebit ?? {}),
     paidAmountCents: invoice.paidAmountCents - (offsets._sum.amountCents ?? 0),
     deductions: invoice.type === "FINAL" ? aggregateDeductions(invoice.finalDeductions) : undefined,

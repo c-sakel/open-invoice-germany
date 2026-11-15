@@ -186,6 +186,8 @@ export interface DocStrings {
   paymentMeans: {
     directDebit: (amount: string, date: string | null, ibanMasked: string, mandateReference: string, creditorId: string) => string;
     card: (network: string, last4: string) => string;
+    /** Zeile mit dem Online-Bezahllink (PDF und BT-20). */
+    payOnline: (url: string) => string;
   };
   page: (n: number, total: number) => string;
   dunning: {
@@ -214,6 +216,7 @@ export interface DocStrings {
     kinds: { INVOICE: string; CREDIT_NOTE: string; CORRECTION: string; DUNNING: string };
     status: { OPEN: string; PARTIALLY_PAID: string; PAID: string; OVERDUE: string; CANCELLED: string; CREDIT: string; DUNNING: string };
     downloadPdf: string;
+    payNow: string;
     downloadXml: string;
     relatedTo: (number: string) => string;
     expiresNotice: (date: string) => string;
