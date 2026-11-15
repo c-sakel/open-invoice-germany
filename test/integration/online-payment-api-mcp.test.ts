@@ -25,7 +25,7 @@ vi.mock("@/lib/payment/transport", async (importOriginal) => {
 });
 
 import { dbInternal } from "@/lib/db";
-import { encryptSecret, PAYMENT_PROVIDER_KEY_PURPOSE } from "@/lib/crypto/secrets";
+import { encryptSecret, PAYMENT_PROVIDER_KEY_PURPOSE, PAYMENT_WEBHOOK_SECRET_PURPOSE } from "@/lib/crypto/secrets";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { saveDocumentSettings } from "@/domain/document/settings";
 import { createApiKey } from "@/domain/api-key/create";
@@ -42,6 +42,7 @@ import { POST as disablePost } from "@/app/api/v1/Invoice/[id]/payLink/disable/r
 import { POST as refreshPost } from "@/app/api/v1/Invoice/[id]/payLink/refresh/route";
 import { PATCH as contactPatch } from "@/app/api/v1/Contact/[id]/route";
 import { mollieFixture, FAKE_TEST_KEY } from "../helpers/mollie-fake";
+import { FAKE_STRIPE_LIVE_KEY, FAKE_STRIPE_SIGNING_SECRET } from "../helpers/stripe-fake";
 
 interface ToolResult {
   content: { type: string; text: string }[];
@@ -303,7 +304,7 @@ describe("Contact und Zahlungsart: Vorgabe", () => {
       expect(r.status).toBe(200);
       expect(((await r.json()) as { data: { onlinePaymentProvider: string | null } }).data.onlinePaymentProvider).toBe(v);
     }
-    expect((await contactPatch(req(url, writeToken, "PATCH", { onlinePaymentProvider: "STRIPE" }), p(customerId))).status).toBe(400);
+    expect((await contactPatch(req(url, writeToken, "PATCH", { onlinePaymentProvider: "PAYPAL" }), p(customerId))).status).toBe(400);
   });
 });
 
@@ -395,5 +396,101 @@ describe("MCP", () => {
     expect(refreshed.content[0]!.text).not.toContain("/zahlen/");
     const rows = await dbInternal.activityLog.findMany({ where: { orgId, entityId: plainId, type: { in: ["PAY_LINK_DISABLED", "PAY_LINK_REACTIVATED"] } }, select: { actor: true } });
     expect(rows.some((r) => r.actor === "mcp")).toBe(true);
+  });
+});
+
+describe("Stripe: REST und MCP", () => {
+  const stripeAccount = (text: string) =>
+    (JSON.parse(text) as { data: { accounts: Array<{ provider: string; hasApiKey: boolean; hasWebhookSecret: boolean; requiresWebhookSecret: boolean }> } }).data.accounts.find((a) => a.provider === "STRIPE");
+
+  beforeAll(async () => {
+    await dbInternal.paymentProviderAccount.create({
+      data: {
+        orgId,
+        provider: "STRIPE",
+        enabled: false,
+        mode: "LIVE",
+        apiKeyEnc: encryptSecret(FAKE_STRIPE_LIVE_KEY, PAYMENT_PROVIDER_KEY_PURPOSE),
+        webhookPathId: `wh-stripe-${orgId}`,
+      },
+    });
+  });
+
+  it("GET zeigt beide Konten; hasWebhookSecret false, danach true; nie Schluessel, Signaturschluessel oder Pfadkennung", async () => {
+    const first = await (await settingsGet(req(SETTINGS, adminToken))).text();
+    expect(JSON.parse(first).data.accounts.map((a: { provider: string }) => a.provider)).toEqual(["MOLLIE", "STRIPE"]);
+    expect(stripeAccount(first)).toMatchObject({ hasApiKey: true, hasWebhookSecret: false, requiresWebhookSecret: true });
+    await dbInternal.paymentProviderAccount.update({
+      where: { orgId_provider: { orgId, provider: "STRIPE" } },
+      data: { webhookSecretEnc: encryptSecret(FAKE_STRIPE_SIGNING_SECRET, PAYMENT_WEBHOOK_SECRET_PURPOSE) },
+    });
+    const second = await (await settingsGet(req(SETTINGS, adminToken))).text();
+    expect(stripeAccount(second)).toMatchObject({ hasWebhookSecret: true });
+    const mcp = (await callTool("get_online_payment_settings")).content[0]!.text;
+    expect(stripeAccount(JSON.stringify({ data: JSON.parse(mcp) }))).toMatchObject({ hasWebhookSecret: true });
+    for (const t of [first, second, mcp]) {
+      expect(t).not.toContain(FAKE_STRIPE_LIVE_KEY);
+      expect(t).not.toContain(FAKE_STRIPE_SIGNING_SECRET);
+      expect(t).not.toContain("whsec_");
+      expect(t).not.toContain("webhookPathId");
+      expect(t).not.toContain(`wh-stripe-${orgId}`);
+    }
+  });
+
+  it("PUT: defaultProvider STRIPE ok; webhookSecret/apiKey -> 400 ohne Echo; Scope write 403", async () => {
+    const ok = await settingsPut(req(SETTINGS, adminToken, "PUT", { defaultProvider: "STRIPE" }));
+    expect(ok.status).toBe(200);
+    expect(((await ok.json()) as { data: { defaultProvider: string } }).data.defaultProvider).toBe("STRIPE");
+    for (const bad of [{ webhookSecret: FAKE_STRIPE_SIGNING_SECRET }, { apiKey: FAKE_STRIPE_LIVE_KEY }]) {
+      const res = await settingsPut(req(SETTINGS, adminToken, "PUT", bad));
+      expect(res.status).toBe(400);
+      const text = await res.text();
+      expect(text).not.toContain(FAKE_STRIPE_SIGNING_SECRET);
+      expect(text).not.toContain(FAKE_STRIPE_LIVE_KEY);
+    }
+    expect((await settingsPut(req(SETTINGS, writeToken, "PUT", { defaultProvider: "MOLLIE" }))).status).toBe(403);
+    await settingsPut(req(SETTINGS, adminToken, "PUT", { defaultProvider: "MOLLIE" }));
+  });
+
+  it("Verbindungstest STRIPE: ok, 401, Scope write 403", async () => {
+    fake.handler = () => ({ status: 200, text: JSON.stringify({ object: "list", data: [], has_more: false }) });
+    await clearTestCooldown();
+    const res = await testPost(req(`${SETTINGS}/STRIPE/test`, adminToken, "POST"), pp("STRIPE"));
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { data: { ok: boolean } }).data.ok).toBe(true);
+    fake.handler = () => ({ status: 401, text: JSON.stringify({ error: { type: "invalid_request_error", message: "Invalid API Key provided" } }) });
+    await clearTestCooldown();
+    const bad = await (await testPost(req(`${SETTINGS}/STRIPE/test`, adminToken, "POST"), pp("STRIPE"))).text();
+    expect(JSON.parse(bad).data.ok).toBe(false);
+    expect(bad).not.toContain("Invalid API Key");
+    expect(bad).not.toContain(FAKE_STRIPE_LIVE_KEY);
+    await clearTestCooldown();
+    expect((await testPost(req(`${SETTINGS}/STRIPE/test`, writeToken, "POST"), pp("STRIPE"))).status).toBe(403);
+  });
+
+  it("Contact: onlinePaymentProvider STRIPE ok, PAYPAL 400", async () => {
+    const url = `${BASE}/api/v1/Contact/${customerId}`;
+    const r = await contactPatch(req(url, writeToken, "PATCH", { onlinePaymentProvider: "STRIPE" }), p(customerId));
+    expect(r.status).toBe(200);
+    expect(((await r.json()) as { data: { onlinePaymentProvider: string | null } }).data.onlinePaymentProvider).toBe("STRIPE");
+    expect((await contactPatch(req(url, writeToken, "PATCH", { onlinePaymentProvider: "PAYPAL" }), p(customerId))).status).toBe(400);
+    await contactPatch(req(url, writeToken, "PATCH", { onlinePaymentProvider: null }), p(customerId));
+  });
+
+  it("MCP: webhookSecret abgelehnt ohne Echo, defaultProvider STRIPE ok, Verbindungstest STRIPE", async () => {
+    const bad = await callTool("update_online_payment_settings", { webhookSecret: FAKE_STRIPE_SIGNING_SECRET });
+    expect(bad.isError).toBe(true);
+    expect(bad.content[0]!.text).not.toContain(FAKE_STRIPE_SIGNING_SECRET);
+    const mixed = await callTool("update_online_payment_settings", { defaultProvider: "STRIPE", webhookSecret: FAKE_STRIPE_SIGNING_SECRET });
+    expect(mixed.isError).toBe(true);
+    const ok = await callTool("update_online_payment_settings", { defaultProvider: "STRIPE" });
+    expect(ok.isError).toBeUndefined();
+    expect(JSON.parse(ok.content[0]!.text)).toMatchObject({ defaultProvider: "STRIPE" });
+    await callTool("update_online_payment_settings", { defaultProvider: "MOLLIE" });
+    fake.handler = () => ({ status: 200, text: JSON.stringify({ object: "list", data: [], has_more: false }) });
+    await clearTestCooldown();
+    const t = await callTool("test_online_payment_connection", { provider: "STRIPE" });
+    expect(t.isError).toBeUndefined();
+    expect(JSON.parse(t.content[0]!.text)).toMatchObject({ ok: true });
   });
 });

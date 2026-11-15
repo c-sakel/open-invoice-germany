@@ -141,9 +141,9 @@ describe("loadPayPage", () => {
     expect(await loadPayPage(s.token)).toMatchObject({ kind: "PAYABLE", testMode: false });
   });
 
-  it("Testkonto und im Livebetrieb ausgegebener Link (onDocument): Bezahlseite nicht verfuegbar", async () => {
+  it("Testkonto und im Livebetrieb ausgegebener Link (liveIssued): Bezahlseite nicht verfuegbar", async () => {
     const s = await setup("Pay Testlive GmbH");
-    await dbInternal.invoicePayLink.updateMany({ where: { invoiceId: s.invoiceId }, data: { onDocument: true } });
+    await dbInternal.invoicePayLink.updateMany({ where: { invoiceId: s.invoiceId }, data: { liveIssued: true } });
     expect(await loadPayPage(s.token)).toMatchObject({ kind: "UNAVAILABLE" });
     expect(await startCheckout(s.token, { now: NOW })).toMatchObject({ kind: "PAGE", state: { kind: "UNAVAILABLE" } });
     await dbInternal.paymentProviderAccount.updateMany({ where: { orgId: s.orgId }, data: { mode: "LIVE" } });

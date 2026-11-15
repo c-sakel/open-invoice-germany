@@ -10,7 +10,8 @@ import { describeError } from "@/lib/safe-error";
 import { hashToken } from "@/domain/quote-share/token";
 import { payLinkTokenSchema } from "@/schemas/online-payment";
 import { onOnlinePaymentNotice } from "@/domain/notifications/hooks";
-import { ONLINE_ACTOR, refreshAttempt } from "./reconcile";
+import { ONLINE_PROVIDERS } from "@/lib/payment/types";
+import { onlineActor, refreshAttempt } from "./reconcile";
 import { resolvePayLinkByToken } from "./pay-link";
 
 const OPEN_MIN_AGE_MS = 15 * 60_000;
@@ -78,7 +79,7 @@ export async function processOnlinePaymentPolls(
           { createdAt: { lte: t(OPEN_MAX_AGE_MS), gt: t(OPEN_FINAL_AGE_MS) }, OR: [{ lastCheckedAt: null }, { lastCheckedAt: { lt: t(DAY_MS) } }] },
         ],
       },
-      select: { id: true },
+      select: { id: true, provider: true },
       orderBy: order,
       take: limit,
     });
@@ -92,15 +93,17 @@ export async function processOnlinePaymentPolls(
           OR: [{ lastCheckedAt: null }, { lastCheckedAt: { lt: t(band.everyMs) } }],
         })),
       },
-      select: { id: true },
+      select: { id: true, provider: true },
       orderBy: order,
       take: limit,
     });
-    const todo = [...open.map((a) => a.id), ...paid.map((a) => a.id)];
-    for (const id of todo) {
+    const todo = [...open, ...paid];
+    for (const { id, provider: providerRaw } of todo) {
+      const provider = ONLINE_PROVIDERS.find((p) => p === providerRaw);
+      if (!provider) continue;
       checked += 1;
       try {
-        const res = await refreshAttempt(orgId, id, { createdBy: "scheduler", actor: ONLINE_ACTOR, transport, now });
+        const res = await refreshAttempt(orgId, id, { createdBy: "scheduler", actor: onlineActor(provider), transport, now });
         if (res.kind === "RECONCILED" && res.result === "APPLIED" && !res.duplicate) applied += 1;
       } catch (e) {
         errors += 1;
@@ -131,7 +134,7 @@ export async function refreshLatestAttempt(token: string, deps: { transport?: Pa
     if (!latest) return;
     await refreshAttempt(link.orgId, latest.id, {
       createdBy: "webhook",
-      actor: ONLINE_ACTOR,
+      actor: onlineActor(link.provider),
       ...(deps.transport ? { transport: deps.transport } : {}),
       ...(deps.now ? { now: deps.now } : {}),
     });

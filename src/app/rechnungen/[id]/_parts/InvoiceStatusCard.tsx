@@ -15,6 +15,7 @@ import { PaymentDialog } from "./PaymentDialog";
 import { ReversePaymentDialog } from "./ReversePaymentDialog";
 import { reversedCentsByPayment } from "@/domain/invoice/amounts";
 import type { InvoicePaymentRuleRun } from "@/domain/payment-rule/views";
+import { PROVIDER_LABEL } from "@/domain/online-payment/ui";
 import { PaymentRuleRunLines } from "@/components/payment-rules/PaymentRuleRunLines";
 
 const XML_FORMAT_LABEL: Record<string, string> = { XRECHNUNG: "XRechnung", ZUGFERD: "ZUGFeRD" };
@@ -241,8 +242,8 @@ export function InvoiceStatusCard({
                         {p.isSkonto && (
                           <span className="ml-2 rounded bg-ledger/10 px-1.5 py-0.5 text-xs font-medium text-ledger">Skonto</span>
                         )}
-                        {p.provider === "MOLLIE" && (
-                          <span className="ml-2 rounded bg-pen/10 px-1.5 py-0.5 text-xs font-medium text-pen">Online (Mollie)</span>
+                        {(p.provider === "MOLLIE" || p.provider === "STRIPE") && (
+                          <span className="ml-2 rounded bg-pen/10 px-1.5 py-0.5 text-xs font-medium text-pen">Online ({PROVIDER_LABEL[p.provider]})</span>
                         )}
                         {p.provider === "BANK" && (
                           <span className="ml-2 rounded bg-pen/10 px-1.5 py-0.5 text-xs font-medium text-pen">Bankabgleich</span>

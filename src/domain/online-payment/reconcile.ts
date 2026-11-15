@@ -11,7 +11,7 @@ import { withChangeLogRetry } from "@/lib/chain-retry";
 import { Prisma } from "@/generated/prisma/client";
 import { adapterFor } from "@/lib/payment/registry";
 import { defaultPaymentTransport } from "@/lib/payment/transport";
-import type { PaymentTransport, ProviderPaymentState } from "@/lib/payment/types";
+import { ONLINE_PROVIDERS, type OnlineProvider, type PaymentTransport, type ProviderPaymentState } from "@/lib/payment/types";
 import { describeError } from "@/lib/safe-error";
 import { recordPaymentWithinTx, type PaymentCreatedBy } from "@/domain/invoice/payment";
 import { reversePaymentWithinTx } from "@/domain/invoice/payment-reversal";
@@ -23,13 +23,21 @@ import { cancelOpenAttemptsAfterCommit } from "./cancel-open";
 import { eventIdFor, planReconcile, providerCentsFromEventId, providerSplitFromEventId, type AttemptStatus, type ReconcilePlan } from "./reconcile-plan";
 import { loadProviderSecret } from "./settings";
 
-export const ONLINE_ACTOR = "online-payment:mollie";
+export function onlineActor(provider: OnlineProvider): string {
+  return `online-payment:${provider.toLowerCase()}`;
+}
 
 export interface ReconcileOpts {
   createdBy: PaymentCreatedBy;
   actor: string;
   now?: Date;
+  /** Nur fuer Tests: feste Uhr fuer die Ereigniszeit (sonst Zeitpunkt in der Transaktion). */
+  eventClock?: Date;
+  /** Transport fuer den zweiten Abruf zur Bestaetigung einer verringerten Erstattung (Standard: echter Transport). */
+  transport?: PaymentTransport;
 }
+
+const NEEDS_CONFIRM = Symbol("needsConfirm");
 
 export interface ReconcileResult {
   result: string;
@@ -47,6 +55,11 @@ function money(cents: number, currency: string): string {
   return `${sign}${Math.floor(abs / 100)},${String(abs % 100).padStart(2, "0")} ${currency}`;
 }
 
+/** Ereigniskennung ohne Wiederkehr-/Fehlersuffix. */
+function baseEventId(id: string): string {
+  return id.replace(/#(err-|r\d).*$/, "");
+}
+
 const FROM_OPEN: AttemptStatus[] = ["CREATING", "OPEN"];
 
 function detailFor(plan: ReconcilePlan, state: ProviderPaymentState): string {
@@ -55,13 +68,69 @@ function detailFor(plan: ReconcilePlan, state: ProviderPaymentState): string {
   if (plan.overpaidCents > 0) parts.push(`Ueberzahlung ${plan.overpaidCents} Cent`);
   if (plan.unassigned) parts.push(plan.unassigned === "CANCELLED" ? "Rechnung storniert, nicht gebucht" : "nichts offen, nicht gebucht");
   if (plan.reverse) parts.push(`gegengebucht ${plan.reverse.cents} Cent`);
+  if (plan.coveredByManualCents > 0) {
+    const kind = state.chargedBackCents > 0 ? (state.refundedCents > 0 ? "Erstattung/Rueckbuchung" : "Rueckbuchung") : "Erstattung";
+    parts.push(`${kind} bereits gegengebucht (${plan.coveredByManualCents} Cent)`);
+  }
   if (plan.review) parts.push(`pruefen: ${plan.review}`);
   if (plan.result === "TEST") parts.push("Testmodus, nicht gebucht");
   return parts.join("; ").slice(0, 500);
 }
 
+/**
+ * Gleicht ab. Eine Verringerung der Erstattung/Rueckbuchung wird nur gemeldet, wenn ein zweiter, frischer Abruf
+ * (ausserhalb der Transaktion) den verringerten Stand bestaetigt; sonst gilt der Abruf als veraltet und wird verworfen.
+ */
 export async function reconcileAttempt(attemptId: string, state: ProviderPaymentState, opts: ReconcileOpts): Promise<ReconcileResult> {
+  const first = await reconcileOnce(attemptId, state, opts, false);
+  if (first !== NEEDS_CONFIRM) return first;
+  const meta = await dbInternal.paymentProviderAttempt.findUnique({ where: { id: attemptId }, select: { orgId: true, provider: true } });
+  const provider = ONLINE_PROVIDERS.find((p) => p === meta?.provider);
+  let fresh: ProviderPaymentState | null = null;
+  if (meta && provider) {
+    try {
+      const secret = await loadProviderSecret(meta.orgId, provider);
+      if (secret) fresh = await adapterFor(provider).fetchPayment(secret.key, state.objectId, opts.transport ?? defaultPaymentTransport());
+    } catch (e) {
+      console.error("reconcileAttempt: Bestaetigungsabruf fehlgeschlagen", describeError(e));
+    }
+  }
+  if (meta && provider && fresh && fresh.objectId === state.objectId) {
+    const again = await reconcileOnce(attemptId, fresh, opts, true);
+    if (again !== NEEDS_CONFIRM) return again;
+  }
+  // Nicht bestaetigt: veralteter Abruf, nur protokollieren (Wiederholung beim naechsten Abgleich).
+  if (meta && provider) {
+    try {
+      await dbInternal.paymentProviderEvent.create({
+        data: {
+          orgId: meta.orgId,
+          provider,
+          eventId: `${eventIdFor(state)}#stale-${randomUUID()}`,
+          type: "payment.status",
+          objectId: state.objectId,
+          attemptId,
+          receivedAt: opts.now ?? new Date(),
+          result: "IGNORED",
+          detail: "Verringerte Erstattung/Rueckbuchung nicht bestaetigt; Abruf als veraltet verworfen",
+        },
+        select: { id: true },
+      });
+    } catch (e) {
+      console.error("reconcileAttempt: Protokoll nicht gespeichert", describeError(e));
+    }
+  }
+  return { result: "IGNORED", paymentId: null, duplicate: false };
+}
+
+async function reconcileOnce(
+  attemptId: string,
+  state: ProviderPaymentState,
+  opts: ReconcileOpts,
+  decreaseConfirmed: boolean,
+): Promise<ReconcileResult | typeof NEEDS_CONFIRM> {
   const now = opts.now ?? new Date();
+  let attemptedEventId: string | null = null;
   const attempt = await dbInternal.paymentProviderAttempt.findUnique({
     where: { id: attemptId },
     select: { id: true, orgId: true, provider: true, providerObjectId: true, amountCents: true, currency: true, payLink: { select: { orgId: true, invoiceId: true } } },
@@ -69,7 +138,10 @@ export async function reconcileAttempt(attemptId: string, state: ProviderPayment
   if (!attempt || attempt.providerObjectId !== state.objectId || attempt.payLink.orgId !== attempt.orgId) {
     throw new OnlinePaymentError("Bezahlvorgang nicht gefunden.", "NOT_FOUND");
   }
-  const { orgId, provider } = attempt;
+  const { orgId } = attempt;
+  const provider = ONLINE_PROVIDERS.find((p) => p === attempt.provider);
+  if (!provider) throw new OnlinePaymentError("Unbekannter Zahlungsanbieter.", "NOT_FOUND");
+  const paymentRef = state.paymentRef ?? state.objectId;
   const invoiceId = attempt.payLink.invoiceId;
   const account = await dbInternal.paymentProviderAccount.findUnique({ where: { orgId_provider: { orgId, provider } }, select: { mode: true } });
   const accountTestMode = account?.mode === "TEST";
@@ -79,12 +151,45 @@ export async function reconcileAttempt(attemptId: string, state: ProviderPayment
     const out = await withChangeLogRetry(() =>
       dbInternal.$transaction(async (tx) => {
         await lockRow(tx, "Invoice", invoiceId, orgId);
-        const dup = await tx.paymentProviderEvent.findUnique({ where: { provider_eventId: { provider, eventId } }, select: { id: true } });
-        if (dup) {
-          // Unveraenderter Zustand: Pruefzeitpunkt trotzdem fortschreiben, damit der Abgleich reihum laeuft.
+        // Zahlungs-Id des Anbieters (Stripe: PaymentIntent) am Vorgang festhalten, damit spaetere Ereignisse ihn finden.
+        if (paymentRef !== state.objectId) {
+          const clash = await tx.paymentProviderAttempt.findFirst({
+            where: { provider, providerPaymentRef: paymentRef, id: { not: attempt.id } },
+            select: { id: true },
+          });
+          // Dieselbe Zahlungs-Id gehoert schon zu einem anderen Vorgang: nichts buchen, nur protokollieren und melden.
+          if (clash) {
+            await tx.paymentProviderAttempt.updateMany({ where: { id: attempt.id, orgId }, data: { lastCheckedAt: now } });
+            return { duplicate: false as const, refConflict: true as const };
+          }
+          await tx.paymentProviderAttempt.updateMany({ where: { id: attempt.id, orgId, providerPaymentRef: null }, data: { providerPaymentRef: paymentRef } });
+        }
+        const prev = await tx.paymentProviderEvent.findFirst({
+          where: { provider, objectId: state.objectId, result: { in: ["APPLIED", "TEST"] } },
+          orderBy: [{ receivedAt: "desc" }, { id: "desc" }],
+          select: { eventId: true },
+        });
+        // Unveraenderter Zustand = derselbe wie beim juengsten verarbeiteten Ereignis. Kehrt der Zustand zu einem
+        // frueheren zurueck (z. B. Streitfall aufgehoben), ist das ein neues Ereignis mit eigener Kennung.
+        const recent = await tx.paymentProviderEvent.findMany({
+          where: { provider, objectId: state.objectId },
+          orderBy: [{ receivedAt: "desc" }, { id: "desc" }],
+          take: 10,
+          select: { eventId: true, receivedAt: true },
+        });
+        const latest = recent.find((e) => /:\d+:\d+(#r\d+)?$/.test(e.eventId)) ?? null;
+        const known = await tx.paymentProviderEvent.findUnique({ where: { provider_eventId: { provider, eventId } }, select: { id: true } });
+        if (known && (latest === null || baseEventId(latest.eventId) === eventId)) {
+          // Pruefzeitpunkt trotzdem fortschreiben, damit der Abgleich reihum laeuft.
           await tx.paymentProviderAttempt.updateMany({ where: { id: attempt.id, orgId }, data: { lastCheckedAt: now } });
           return { duplicate: true as const };
         }
+        const revisits = known ? await tx.paymentProviderEvent.count({ where: { provider, eventId: { startsWith: `${eventId}#r` } } }) : 0;
+        const evId = known ? `${eventId}#r${revisits + 1}` : eventId;
+        attemptedEventId = evId;
+        // Reihenfolge der Ereignisse: Zeitpunkt unter der Sperre, nie vor dem juengsten vorhandenen Ereignis.
+        const newest = recent[0]?.receivedAt;
+        const eventAt = new Date(Math.max((opts.eventClock ?? new Date()).getTime(), newest ? newest.getTime() + 1 : 0));
 
         const inv = await tx.invoice.findFirst({
           where: { id: invoiceId, orgId },
@@ -92,7 +197,7 @@ export async function reconcileAttempt(attemptId: string, state: ProviderPayment
         });
         if (!inv) throw new OnlinePaymentError("Rechnung nicht gefunden.", "NOT_FOUND");
         const existing = await tx.payment.findUnique({
-          where: { provider_providerPaymentId: { provider, providerPaymentId: state.objectId } },
+          where: { provider_providerPaymentId: { provider, providerPaymentId: paymentRef } },
           select: { id: true, invoiceId: true, amountCents: true, kind: true },
         });
         if (existing && existing.invoiceId !== invoiceId) throw new OnlinePaymentError("Zahlung gehoert zu einer anderen Rechnung.", "NOT_FOUND");
@@ -101,11 +206,6 @@ export async function reconcileAttempt(attemptId: string, state: ProviderPayment
           const agg = await tx.payment.aggregate({ where: { reversesPaymentId: existing.id, kind: "REVERSAL" }, _sum: { amountCents: true } });
           booked = { paymentId: existing.id, amountCents: existing.amountCents, reversedCents: -(agg._sum.amountCents ?? 0) };
         }
-        const prev = await tx.paymentProviderEvent.findFirst({
-          where: { provider, objectId: state.objectId, result: { in: ["APPLIED", "TEST"] } },
-          orderBy: [{ receivedAt: "desc" }, { id: "desc" }],
-          select: { eventId: true },
-        });
         const openCents = payableBaseCents(inv) - inv.paidAmountCents;
         const creditNotes = await tx.invoice.count({
           where: { orgId, correctsInvoiceId: invoiceId, type: "CREDIT_NOTE", status: { not: "DRAFT" } },
@@ -121,21 +221,23 @@ export async function reconcileAttempt(attemptId: string, state: ProviderPayment
           hasCreditNote: creditNotes > 0,
         });
 
+        if (plan.review === "REVERSAL_DECREASED" && !decreaseConfirmed) return { needsConfirm: true as const };
+
         let paymentId = booked?.paymentId ?? null;
         let changed = false;
         if (plan.book !== null) {
           const rec = await recordPaymentWithinTx(
             tx,
             invoiceId,
-            { amountCents: plan.book, paidAt: state.paidAt ?? now, method: "ONLINE", reference: state.objectId, isSkonto: false, applySkonto: false },
-            { orgId, actor: ONLINE_ACTOR, createdBy: opts.createdBy, now, provider, providerPaymentId: state.objectId },
+            { amountCents: plan.book, paidAt: state.paidAt ?? now, method: "ONLINE", reference: paymentRef, isSkonto: false, applySkonto: false },
+            { orgId, actor: onlineActor(provider), createdBy: opts.createdBy, now, provider, providerPaymentId: paymentRef },
           );
           paymentId = rec.recorded.id;
           changed = true;
         }
         if (plan.reverse && paymentId) {
           await reversePaymentWithinTx(tx, paymentId, { amountCents: plan.reverse.cents, reason: plan.reverse.reason }, {
-            actor: ONLINE_ACTOR,
+            actor: onlineActor(provider),
             orgId,
             now,
             createdBy: opts.createdBy,
@@ -151,7 +253,7 @@ export async function reconcileAttempt(attemptId: string, state: ProviderPayment
             title: `Online-Zahlung hoeher als offener Betrag${num ? ` (${num})` : ""}`,
             body: `Der Anbieter meldet ${money(state.amountCents, inv.currency)}, gebucht wurden ${money(plan.book ?? 0, inv.currency)}. Der Rest (${money(plan.overpaidCents, inv.currency)}) ist zu erstatten.`,
             invoiceId,
-            dedupeKey: `online:${eventId}:over`,
+            dedupeKey: `online:${evId}:over`,
             at: now,
           });
         }
@@ -161,7 +263,7 @@ export async function reconcileAttempt(attemptId: string, state: ProviderPayment
             title: `Online-Zahlung nicht gebucht${num ? ` (${num})` : ""}`,
             body: `${plan.unassigned === "CANCELLED" ? "Die Rechnung ist storniert" : "Die Rechnung hat keinen offenen Betrag"}; ${money(state.amountCents, inv.currency)} wurden beim Anbieter bezahlt und sind zu erstatten.`,
             invoiceId,
-            dedupeKey: `online:${eventId}:unassigned`,
+            dedupeKey: `online:${evId}:unassigned`,
             at: now,
           });
         }
@@ -179,7 +281,7 @@ export async function reconcileAttempt(attemptId: string, state: ProviderPayment
             title: plan.review === "REFUND_WITH_CREDIT_NOTE" ? `Erstattung beim Zahlungsanbieter${num ? ` (${num})` : ""}` : `Online-Zahlung pruefen${num ? ` (${num})` : ""}`,
             body: why,
             invoiceId,
-            dedupeKey: `online:${eventId}:review`,
+            dedupeKey: `online:${evId}:review`,
             at: now,
           });
         }
@@ -189,7 +291,7 @@ export async function reconcileAttempt(attemptId: string, state: ProviderPayment
             title: `Testzahlung eingegangen${num ? ` (${num})` : ""}`,
             body: "Der Zugang steht auf Testmodus; die Zahlung wurde nicht gebucht.",
             invoiceId,
-            dedupeKey: `online:${eventId}:test`,
+            dedupeKey: `online:${evId}:test`,
             at: now,
           });
         }
@@ -207,11 +309,11 @@ export async function reconcileAttempt(attemptId: string, state: ProviderPayment
           data: {
             orgId,
             provider,
-            eventId,
+            eventId: evId,
             type: "payment.status",
             objectId: state.objectId,
             attemptId: attempt.id,
-            receivedAt: now,
+            receivedAt: eventAt,
             result: plan.result,
             detail: detailFor(plan, state),
           },
@@ -221,17 +323,36 @@ export async function reconcileAttempt(attemptId: string, state: ProviderPayment
         return { duplicate: false as const, paymentId, changed, plan, invoiceStatus: after.status };
       }),
     );
+    if ("needsConfirm" in out) return NEEDS_CONFIRM;
     if (out.duplicate) return { result: "IGNORED", paymentId: null, duplicate: true };
+    if ("refConflict" in out) {
+      try {
+        await dbInternal.paymentProviderEvent.create({
+          data: { orgId, provider, eventId: `${eventId}#conflict`, type: "payment.status", objectId: state.objectId, attemptId: attempt.id, receivedAt: now, result: "IGNORED", detail: "Zahlungs-Id bereits einem anderen Vorgang zugeordnet; nichts gebucht" },
+          select: { id: true },
+        });
+      } catch {
+        // bereits protokolliert
+      }
+      await reportProviderProblem(orgId, "Online-Zahlung pruefen", "Die Zahlungs-Id des Anbieters ist bereits einem anderen Bezahlvorgang zugeordnet; es wurde nichts gebucht.", now, `refclash:${state.objectId}`).catch((e: unknown) => {
+        console.error("reconcileAttempt: Meldung nicht gespeichert", describeError(e));
+      });
+      return { result: "IGNORED", paymentId: null, duplicate: false };
+    }
     if (out.changed) kickPaymentRules(orgId);
     if (out.invoiceStatus === "PAID" || out.invoiceStatus === "CANCELLED") cancelOpenAttemptsAfterCommit(orgId, invoiceId);
     return { result: out.plan.result, paymentId: out.paymentId, duplicate: false };
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
-      const dupEvent = await dbInternal.paymentProviderEvent.findUnique({ where: { provider_eventId: { provider, eventId } }, select: { id: true } });
+      // Nur ein Konflikt auf der Ereignis-Id gilt als Duplikat; jede andere Unique-Verletzung wird als Fehler behandelt.
+      const dupEvent = attemptedEventId
+        ? await dbInternal.paymentProviderEvent.findUnique({ where: { provider_eventId: { provider, eventId: attemptedEventId } }, select: { id: true } })
+        : null;
       if (dupEvent) {
         await dbInternal.paymentProviderAttempt.updateMany({ where: { id: attempt.id, orgId }, data: { lastCheckedAt: now } });
         return { result: "IGNORED", paymentId: null, duplicate: true };
       }
+      console.error("reconcileAttempt: Unique-Verletzung ausserhalb der Ereignis-Id", describeError(e));
     }
     // Fehlerzeile ausserhalb der Transaktion (eigene Id, blockiert keine Wiederholung); Schluessel/Details nie im Text.
     try {
@@ -268,7 +389,7 @@ export async function refreshAttempt(
   });
   if (!attempt) return { kind: "NOT_FOUND" };
   if (!attempt.providerObjectId) return { kind: "NO_OBJECT" };
-  const provider = attempt.provider === "MOLLIE" ? "MOLLIE" : null;
+  const provider = ONLINE_PROVIDERS.find((p) => p === attempt.provider);
   if (!provider) return { kind: "NOT_FOUND" };
   const secret = await loadProviderSecret(orgId, provider);
   if (!secret) return { kind: "NO_KEY" };

@@ -34,6 +34,7 @@ import {
   saveProviderOptionsAction,
   setProviderApiKeyAction,
   setProviderEnabledAction,
+  setProviderWebhookSecretAction,
   testProviderConnectionAction,
 } from "@/app/einstellungen/online-zahlung/actions";
 import { ensurePayLinkAction, disablePayLinkAction, refreshPayLinkAction } from "@/app/rechnungen/[id]/pay-link-actions";
@@ -133,6 +134,7 @@ describe("Einstellungen (Server-Actions)", () => {
   });
 
   it("Eingaben werden mit Zod geprueft: unbekannter Anbieter, Zusatzfelder, falsche Waehrung", async () => {
+    expect(await setProviderEnabledAction({ provider: "UNBEKANNT", enabled: true })).toMatchObject({ ok: false });
     expect(await setProviderEnabledAction({ provider: "STRIPE", enabled: true })).toMatchObject({ ok: false });
     expect(await setProviderApiKeyAction({ provider: "MOLLIE", apiKey: 5 })).toMatchObject({ ok: false });
     expect(await saveOnlinePaymentSettingsAction({ defaultProvider: "MOLLIE", apiKey: "x" })).toMatchObject({ ok: false });
@@ -146,6 +148,38 @@ describe("Einstellungen (Server-Actions)", () => {
   it("Schluessel entfernen schaltet aus und leert den Zugang", async () => {
     const res = await setProviderApiKeyAction({ provider: "MOLLIE", apiKey: null });
     expect(res.ok && res.settings.accounts[0]).toMatchObject({ hasApiKey: false, mode: null, enabled: false });
+  });
+});
+
+describe("Signaturschluessel (Server-Action)", () => {
+  // Fiktive Werte erst zur Laufzeit zusammensetzen.
+  const secret = ["whsec", "a".repeat(32)].join("_");
+  const stripeKey = ["sk", "test", "b".repeat(30)].join("_");
+  const stripeOf = (s: { accounts: { provider: string }[] }) => s.accounts.find((a) => a.provider === "STRIPE");
+
+  it("ungueltiges Format -> fester deutscher Text ohne Eingabewert", async () => {
+    const bad = "whsec_zu_kurz_" + "q".repeat(3);
+    const res = await setProviderWebhookSecretAction({ provider: "STRIPE", secret: bad });
+    expect(res.ok).toBe(false);
+    expect(JSON.stringify(res)).not.toContain(bad);
+    expect(res).toMatchObject({ error: expect.stringMatching(/Signaturschl/) });
+    expect(await setProviderWebhookSecretAction({ provider: "STRIPE", secret: 5 })).toEqual({ ok: false, error: "Der Signaturschlüssel hat kein gültiges Format." });
+    expect(await setProviderWebhookSecretAction({ provider: "MOLLIE", secret })).toMatchObject({ ok: false });
+  });
+
+  it("Erfolg liefert nur 'hinterlegt', speichert verschluesselt und schaltet aus; Entfernen leert", async () => {
+    await setProviderApiKeyAction({ provider: "STRIPE", apiKey: stripeKey });
+    const res = await setProviderWebhookSecretAction({ provider: "STRIPE", secret });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(JSON.stringify(res)).not.toContain(secret);
+    expect(stripeOf(res.settings)).toMatchObject({ hasWebhookSecret: true, requiresWebhookSecret: true, enabled: false });
+    const row = await dbInternal.paymentProviderAccount.findFirst({ where: { orgId, provider: "STRIPE" }, select: { webhookSecretEnc: true } });
+    expect(row?.webhookSecretEnc).toBeTruthy();
+    expect(row?.webhookSecretEnc).not.toContain(secret);
+    const gone = await setProviderWebhookSecretAction({ provider: "STRIPE", secret: null });
+    expect(gone.ok && stripeOf(gone.settings)).toMatchObject({ hasWebhookSecret: false });
+    await setProviderApiKeyAction({ provider: "STRIPE", apiKey: null });
   });
 });
 

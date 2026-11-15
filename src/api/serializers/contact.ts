@@ -112,7 +112,7 @@ export const contactSchema = z.object({
   customerNumber: z.string().nullable(),
   notes: z.string().nullable(),
   deliveryChannel: z.string(),
-  onlinePaymentProvider: z.string().nullable().describe("Vorgabe fuer Bezahllinks: MOLLIE, NONE (nie) oder null (Voreinstellung der Organisation)."),
+  onlinePaymentProvider: z.string().nullable().describe("Vorgabe fuer Bezahllinks: MOLLIE, STRIPE, NONE (nie) oder null (Voreinstellung der Organisation)."),
   sepaMandateReference: z.string().nullable().describe("SEPA-Mandatsreferenz (BT-89); nur zusammen mit sepaDebitIban."),
   sepaMandateSignedAt: z.string().nullable().describe("Datum der Mandatsunterschrift (YYYY-MM-DD)."),
   sepaDebitIbanMasked: z.string().nullable().describe("Belastetes Konto maskiert (z. B. DE02 **** 2051); die volle IBAN wird nie ausgegeben."),

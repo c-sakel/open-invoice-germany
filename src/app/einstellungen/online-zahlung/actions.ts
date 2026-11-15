@@ -16,6 +16,7 @@ import {
   saveProviderOptions,
   setProviderApiKey,
   setProviderEnabled,
+  setProviderWebhookSecret,
   assertConnectionTestCooldown,
   testProviderConnection,
   type OnlinePaymentSettingsView,
@@ -86,6 +87,22 @@ export async function setProviderApiKeyAction(input: unknown): Promise<OnlinePay
     // Bewusst keine Zod-Meldung durchreichen, die den Wert enthalten koennte: feste Texte genuegen.
     if (e instanceof ZodError) return { ok: false, error: "Der Schlüssel hat kein gültiges Format." };
     return fail(e, "setProviderApiKey");
+  }
+}
+
+const secretEnvelope = z.strictObject({ provider: onlineProviderSchema, secret: z.string().max(300).nullable() });
+
+/** Signaturschluessel der Benachrichtigungen setzen (Text) oder entfernen (null). Jeder Wechsel schaltet die Anbindung aus. */
+export async function setProviderWebhookSecretAction(input: unknown): Promise<OnlinePaymentActionResult> {
+  try {
+    const { provider, secret } = secretEnvelope.parse(input);
+    const { orgId, actor } = await ctx();
+    await setProviderWebhookSecret(orgId, provider, secret, actor);
+    return await done(orgId);
+  } catch (e) {
+    // Feste Texte: nie den eingegebenen Wert wiederholen.
+    if (e instanceof ZodError) return { ok: false, error: "Der Signaturschlüssel hat kein gültiges Format." };
+    return fail(e, "setProviderWebhookSecret");
   }
 }
 

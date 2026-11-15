@@ -331,6 +331,19 @@ describe("Laeufe", () => {
   });
 });
 
+describe("Quelle Stripe", () => {
+  it("REST und MCP nehmen sources STRIPE an, PAYPAL wird abgelehnt", async () => {
+    const id = await createRule({ name: "Nur Stripe", sources: ["STRIPE"] });
+    const one = await json<{ data: { sources: string[] | null } }>(await RuleGet(req(`http://x/api/v1/PaymentRule/${id}`, { token: readToken }), idCtx(id)));
+    expect(one.data.sources).toEqual(["STRIPE"]);
+    expect((await postRule(adminToken, validRule({ sources: ["PAYPAL"] }))).status).toBe(400);
+    const mcp = await callTool("upsert_payment_rule", { name: "MCP Stripe", trigger: "PAID_FULL", sources: ["STRIPE"], actions: [{ type: "NOTIFY", note: "x" }] });
+    expect(mcp.isError).toBeUndefined();
+    expect(text(mcp)).toContain("STRIPE");
+    expect((await callTool("upsert_payment_rule", { name: "Falsch", trigger: "PAID_FULL", sources: ["PAYPAL"], actions: [{ type: "NOTIFY", note: "x" }] })).isError).toBe(true);
+  });
+});
+
 describe("MCP", () => {
   it("upsert ohne id legt an, mit id aendert; list nennt Namen; Validierungsfehler", async () => {
     const created = await callTool("upsert_payment_rule", { name: "MCP-Regel", trigger: "PAID_PARTIAL", actions: [{ type: "NOTIFY", note: "Teilzahlung" }] });

@@ -30,7 +30,7 @@ export interface CustomerFormData {
   defaultPaymentMethodId: string | null;
   notes: string | null;
   deliveryChannel?: string;
-  /** NULL = Voreinstellung der Organisation | NONE | MOLLIE */
+  /** NULL = Voreinstellung der Organisation | NONE | MOLLIE | STRIPE */
   onlinePaymentProvider?: string | null;
   sepaMandateReference?: string | null;
   /** YYYY-MM-DD */
@@ -39,11 +39,12 @@ export interface CustomerFormData {
   sepaDebitAccountName?: string | null;
 }
 
-/** Auswahl "Wie Voreinstellung / Keine / Mollie" (leer = NULL = Voreinstellung der Organisation). */
+/** Auswahl "Wie Voreinstellung / Keine / Mollie / Stripe" (leer = NULL = Voreinstellung der Organisation). */
 export const ONLINE_PROVIDER_CHOICES = [
   { value: "", label: "Wie Voreinstellung" },
   { value: "NONE", label: "Keine" },
   { value: "MOLLIE", label: "Mollie" },
+  { value: "STRIPE", label: "Stripe" },
 ];
 
 export interface PaymentMethodOption {

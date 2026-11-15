@@ -617,6 +617,43 @@ describe("Parallele Zugriffe unter PostgreSQL", () => {
     expect((await verifyOrgChain(s.orgId, "UI")).valid).toBe(true);
   });
 
+  it("Online-Zahlung (Stripe): Webhook-, Abgleich- und Planer-Pfad parallel (bezahlt) -> genau eine STRIPE-Zahlung", async () => {
+    const s = await newScenario();
+    const inv = await invoiceFromQuote(s.orgId, s.quote.id, s.now);
+    const suffix = s.orgId.slice(-8);
+    const link = await dbInternal.invoicePayLink.create({
+      data: { orgId: s.orgId, invoiceId: inv.id, provider: "STRIPE", tokenHash: `race-hash-stripe-${s.orgId}`, tokenEnc: "race-enc", createdBy: "race" },
+      select: { id: true },
+    });
+    const attempt = await dbInternal.paymentProviderAttempt.create({
+      data: { orgId: s.orgId, payLinkId: link.id, provider: "STRIPE", amountCents: inv.grossTotalCents, currency: "EUR", status: "OPEN", providerObjectId: `cs_live_Race${suffix}` },
+      select: { id: true, providerObjectId: true },
+    });
+    const state = {
+      objectId: attempt.providerObjectId ?? "",
+      testMode: false,
+      status: "PAID" as const,
+      amountCents: inv.grossTotalCents,
+      currency: "EUR",
+      refundedCents: 0,
+      chargedBackCents: 0,
+      paidAt: null,
+      expiresAt: null,
+      attemptId: attempt.id,
+      paymentRef: `pi_Race${suffix}`,
+    };
+    const rs: PromiseSettledResult<unknown>[] = await Promise.allSettled([
+      reconcileAttempt(attempt.id, state, { createdBy: "webhook", actor: "race", now: s.now }),
+      reconcileAttempt(attempt.id, state, { createdBy: "webhook", actor: "race", now: s.now }),
+      reconcileAttempt(attempt.id, state, { createdBy: "scheduler", actor: "race", now: s.now }),
+    ]);
+    expect(rejected(rs).length, describeFailures(rs)).toBe(0);
+    expect(await dbInternal.payment.count({ where: { invoiceId: inv.id, provider: "STRIPE" } })).toBe(1);
+    const after = await dbInternal.invoice.findFirstOrThrow({ where: { id: inv.id }, select: { paidAmountCents: true } });
+    expect(after.paidAmountCents).toBe(inv.grossTotalCents);
+    expect((await verifyOrgChain(s.orgId, "UI")).valid).toBe(true);
+  });
+
   it("Online-Zahlung: drei parallele Abgleiche (bezahlt) + paralleler Bank-Teilbetrag -> Summe <= Rechnungsbetrag, genau eine Anbieter-Zahlung", async () => {
     const s = await newScenario();
     const inv = await invoiceFromQuote(s.orgId, s.quote.id, s.now);
@@ -640,6 +677,7 @@ describe("Parallele Zugriffe unter PostgreSQL", () => {
       paidAt: s.now,
       expiresAt: null,
       attemptId: attempt.id,
+      paymentRef: null,
     };
     const rs: PromiseSettledResult<unknown>[] = await Promise.allSettled([
       reconcileAttempt(attempt.id, state, { createdBy: "webhook", actor: "race", now: s.now }),

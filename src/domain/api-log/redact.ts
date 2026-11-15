@@ -31,7 +31,7 @@ function isSecretKey(key: string): boolean {
   return !HARMLESS_KEY_NAMES.has(key.toLowerCase()) && SECRET_KEY_PATTERN.test(key);
 }
 /** Wertbasiert: Zeichenketten im Muster von Anbieter-Schluesseln (live_/test_ bzw. sk_/rk_/pk_), unabhaengig vom Feldnamen. */
-const SECRET_VALUE_PATTERN = /^((live|test)_[A-Za-z0-9]{20,}|(sk|rk|pk)_(live|test)?_?[A-Za-z0-9]{20,})$/;
+const SECRET_VALUE_PATTERN = /^((live|test)_[A-Za-z0-9]{20,}|(sk|rk|pk)_(live|test)?_?[A-Za-z0-9]{20,}|whsec_[A-Za-z0-9]{20,})$/;
 /** Zusaetzlich zu SECRET_KEY_PATTERN nur fuer Query-Parameter (I1): E-Mail-Adressen sind
  *  keine Geheimnisse, aber personenbezogene Daten (z. B. `/api/v1/Contact?email=...`). */
 const QUERY_ONLY_PATTERN = /email/i;

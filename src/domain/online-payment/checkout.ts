@@ -96,8 +96,8 @@ async function evaluate(token: string): Promise<Evaluated | null> {
       accountCurrencies(account.currenciesJson).includes(inv.currency) &&
       appBaseUrlFromEnv() !== null;
     testMode = account?.mode === "TEST";
-    // Ein im Livebetrieb ausgegebener Link (auf dem Beleg) fuehrt nie in einen Test-Checkout.
-    verdict = usable && !(testMode && link.onDocument) ? { ok: true } : { ok: false, kind: "UNAVAILABLE" };
+    // Ein im Livebetrieb ausgegebener Link (Beleg, Mail, Portal) fuehrt nie in einen Test-Checkout.
+    verdict = usable && !(testMode && link.liveIssued) ? { ok: true } : { ok: false, kind: "UNAVAILABLE" };
   }
   return { link, invoice, verdict, testMode };
 }
@@ -249,6 +249,7 @@ export async function startCheckout(
         webhookUrl: `${baseUrl}/api/public/payments/${link.provider.toLowerCase()}/${secret.webhookPathId}`,
         locale: e.invoice.language,
         methods: parseMethods(account?.allowedMethodsJson ?? null),
+        now,
       },
       transport,
     );

@@ -38,7 +38,7 @@ const ATTEMPT_LIMIT = 20;
 const REFRESH_LIMIT = 5;
 
 /** Teil-Update der Anzeigeoptionen; Schluessel, Einschalter, Methoden und Waehrungen nur in der Oberflaeche. */
-export const ONLINE_PAYMENT_UI_ONLY_KEYS = ["apiKey", "key", "enabled", "mode", "allowedMethods", "currencies"];
+export const ONLINE_PAYMENT_UI_ONLY_KEYS = ["apiKey", "key", "webhookSecret", "enabled", "mode", "allowedMethods", "currencies"];
 
 export function parseOnlinePaymentSettingsInput(raw: unknown): OnlinePaymentSettingsInput {
   const obj = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};

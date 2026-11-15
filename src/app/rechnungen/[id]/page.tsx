@@ -188,9 +188,14 @@ export default async function InvoiceDetail({
   const showPayment = showPaymentBlock && ((vm.openCents > 0 && dunningSchedule != null) || invoice.dunnings.length > 0);
   // Online-Zahlung: Abschnitt nur bei Rechnungen ausser Entwurf, wenn ein Link existiert oder ein Zugang eingerichtet ist.
   const onlineSettings = vm.isInvoiceType && !vm.isDraft ? await loadOnlinePaymentSettings(org.id) : null;
-  const mollieAccount = onlineSettings?.accounts.find((acc) => acc.provider === "MOLLIE") ?? null;
   const payLinkViewRaw = onlineSettings ? await loadInvoicePayLink(org.id, invoice.id, { withUrl: true }) : null;
-  const payLinkView = payLinkViewRaw && (payLinkViewRaw.link !== null || mollieAccount?.hasApiKey) ? payLinkViewRaw : null;
+  // Konto des Link-Anbieters; ohne Link das Konto der Voreinstellung, sonst das erste mit Schluessel.
+  const linkProvider = payLinkViewRaw?.link?.provider ?? null;
+  const payAccount =
+    onlineSettings?.accounts.find((acc) => acc.provider === (linkProvider ?? onlineSettings.defaultProvider)) ??
+    onlineSettings?.accounts.find((acc) => acc.hasApiKey) ??
+    null;
+  const payLinkView = payLinkViewRaw && (payLinkViewRaw.link !== null || onlineSettings?.accounts.some((acc) => acc.hasApiKey)) ? payLinkViewRaw : null;
   const showCorrection = !vm.isDraft && !vm.isCancelled;
 
   return (
@@ -374,8 +379,8 @@ export default async function InvoiceDetail({
             invoiceId={invoice.id}
             initial={payLinkView}
             invoiceCancelled={vm.isCancelled}
-            mode={mollieAccount?.mode ?? null}
-            providerEnabled={mollieAccount?.enabled ?? false}
+            mode={payAccount?.mode ?? null}
+            providerEnabled={payAccount?.enabled ?? false}
           />
         </DetailSection>
       )}

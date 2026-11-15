@@ -73,7 +73,7 @@ export interface ResolveForFinalizeInput {
 export async function resolveProviderWithinTx(
   tx: Prisma.TransactionClient,
   input: ResolveForFinalizeInput,
-): Promise<{ provider: OnlineProvider; onDocument: boolean } | { provider: null; reason: string }> {
+): Promise<{ provider: OnlineProvider; onDocument: boolean; missingBaseUrl: boolean } | { provider: null; reason: string }> {
   const [settings, accounts] = await Promise.all([
     tx.paymentProviderSettings.findUnique({ where: { orgId: input.orgId }, select: { defaultProvider: true, showOnPdf: true } }),
     tx.paymentProviderAccount.findMany({
@@ -101,14 +101,16 @@ export async function resolveProviderWithinTx(
   if (res.provider === null) return res;
   // Testmodus-Links erscheinen nie auf Beleg/E-Rechnung/Mail; nur intern in der Belegansicht.
   const mode = accounts.find((a) => a.provider === res.provider)?.mode ?? null;
-  return { provider: res.provider, onDocument: mode === "LIVE" && (settings?.showOnPdf ?? true) && appBaseUrlFromEnv() !== null };
+  const wantsDocument = mode === "LIVE" && (settings?.showOnPdf ?? true);
+  const baseUrl = appBaseUrlFromEnv() !== null;
+  return { provider: res.provider, onDocument: wantsDocument && baseUrl, missingBaseUrl: wantsDocument && !baseUrl };
 }
 
 /** Beim Festschreiben: Anbieter aufloesen; null = kein Link. */
 export async function resolveForFinalizeWithinTx(
   tx: Prisma.TransactionClient,
   input: ResolveForFinalizeInput,
-): Promise<{ provider: OnlineProvider; onDocument: boolean } | null> {
+): Promise<{ provider: OnlineProvider; onDocument: boolean; missingBaseUrl: boolean } | null> {
   const res = await resolveProviderWithinTx(tx, input);
   return res.provider === null ? null : res;
 }
@@ -120,6 +122,14 @@ export async function createPayLinkWithinTx(
   // Org-Konsistenz: der Link gehoert immer zur Organisation der Rechnung (Attempt/Event erben spaeter die orgId des Links).
   const owner = await tx.invoice.findFirst({ where: { id: input.invoiceId, orgId: input.orgId }, select: { id: true } });
   if (!owner) throw new OnlinePaymentError("Rechnung nicht gefunden.", "NOT_FOUND");
+  // Keine Organisationssperre hier: dieser Aufruf liegt mitten in der Festschreibe-Transaktion, die Sperrreihenfolge
+  // "Organisation zuerst" wuerde verletzt (Deadlock-Risiko). Restrisiko bei exakt parallelem Einschalten eines Live-Kontos:
+  // der Link behaelt liveIssued=false; spaetestens die Ausgabe (Mail, Portal, Beleg) markiert ihn, zusaetzlich hebt setProviderEnabled nach dem Commit. Ein im Testmodus angelegter Link
+  // gilt nie als live ausgegeben (Standard der Spalte ist true).
+  const account = await tx.paymentProviderAccount.findUnique({
+    where: { orgId_provider: { orgId: input.orgId, provider: input.provider } },
+    select: { mode: true },
+  });
   const token = generateToken();
   const row = await tx.invoicePayLink.create({
     data: {
@@ -129,6 +139,7 @@ export async function createPayLinkWithinTx(
       tokenHash: hashToken(token),
       tokenEnc: encryptSecret(token, PAYLINK_TOKEN_PURPOSE),
       onDocument: input.onDocument,
+      liveIssued: account?.mode === "LIVE" || input.onDocument,
       createdBy: input.actor,
       createdAt: input.now,
     },
@@ -269,8 +280,13 @@ export async function reactivatePayLinkAfterReopenWithinTx(
 
 /** Voller Link fuer den Betreiber; nur ACTIVE. */
 export async function revealPayLinkUrl(orgId: string, invoiceId: string, baseUrl: string): Promise<string | null> {
-  const link = await dbInternal.invoicePayLink.findFirst({ where: { invoiceId, orgId }, select: { status: true, tokenEnc: true } });
+  const link = await dbInternal.invoicePayLink.findFirst({ where: { invoiceId, orgId }, select: { id: true, status: true, tokenEnc: true, provider: true, liveIssued: true } });
   if (!link || link.status !== "ACTIVE") return null;
+  // Der Betreiber kann die Adresse weitergeben: im Livekonto gilt der Link ab jetzt als ausgegeben (nur false -> true).
+  if (!link.liveIssued) {
+    const account = await dbInternal.paymentProviderAccount.findFirst({ where: { orgId, provider: link.provider, mode: "LIVE" }, select: { id: true } });
+    if (account) await dbInternal.invoicePayLink.updateMany({ where: { id: link.id, orgId, liveIssued: false }, data: { liveIssued: true } });
+  }
   return `${baseUrl.replace(/\/+$/, "")}/zahlen/${decryptSecret(link.tokenEnc, PAYLINK_TOKEN_PURPOSE)}`;
 }
 
@@ -282,6 +298,7 @@ export interface ResolvedPayLink {
   status: "ACTIVE" | "DISABLED";
   disabledReason: string | null;
   onDocument: boolean;
+  liveIssued: boolean;
 }
 
 /** Token -> Link ueber den Hash; falsches oder formfalsches Token -> null (identisch). */
@@ -289,8 +306,8 @@ export async function resolvePayLinkByToken(token: string): Promise<ResolvedPayL
   if (!payLinkTokenSchema.safeParse(token).success) return null;
   const row = await dbInternal.invoicePayLink.findUnique({
     where: { tokenHash: hashToken(token) },
-    select: { id: true, orgId: true, invoiceId: true, provider: true, status: true, disabledReason: true, onDocument: true },
+    select: { id: true, orgId: true, invoiceId: true, provider: true, status: true, disabledReason: true, onDocument: true, liveIssued: true },
   });
   if (!row) return null;
-  return { id: row.id, orgId: row.orgId, invoiceId: row.invoiceId, provider: asProvider(row.provider), status: row.status === "ACTIVE" ? "ACTIVE" : "DISABLED", disabledReason: row.disabledReason, onDocument: row.onDocument };
+  return { id: row.id, orgId: row.orgId, invoiceId: row.invoiceId, provider: asProvider(row.provider), status: row.status === "ACTIVE" ? "ACTIVE" : "DISABLED", disabledReason: row.disabledReason, onDocument: row.onDocument, liveIssued: row.liveIssued };
 }

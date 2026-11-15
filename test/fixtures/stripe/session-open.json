@@ -1,0 +1,13 @@
+{
+  "id": "cs_test_FAKEsession0001",
+  "object": "checkout.session",
+  "status": "open",
+  "payment_status": "unpaid",
+  "amount_total": 11900,
+  "currency": "eur",
+  "livemode": false,
+  "client_reference_id": "att_test_0001",
+  "expires_at": 1794000000,
+  "payment_intent": null,
+  "url": "https://checkout.stripe.com/c/pay/cs_test_FAKEsession0001"
+}

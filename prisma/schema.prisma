@@ -128,7 +128,7 @@ model Customer {
   recurring             RecurringInvoice[]
   portalLinks           CustomerPortalLink[]
   bankHints             BankCounterpartyHint[]
-  onlinePaymentProvider String? // NULL = Voreinstellung | NONE | MOLLIE
+  onlinePaymentProvider String? // NULL = Voreinstellung | NONE | MOLLIE | STRIPE
 
   addresses              CustomerAddress[]
   contacts               ContactPerson[]
@@ -988,7 +988,7 @@ model PaymentMethod {
   bankBic          String?
   bankName         String?
   untdidCode       String       @default("ZZZ") // UNTDID 4461 (BT-81)
-  onlineProvider   String? // NULL = keine Vorgabe | NONE | MOLLIE
+  onlineProvider   String? // NULL = keine Vorgabe | NONE | MOLLIE | STRIPE
   isSystem         Boolean      @default(false)
   isActive         Boolean      @default(true)
   sortOrder        Int          @default(0)
@@ -1902,7 +1902,7 @@ model PaymentProviderSettings {
   id              String       @id @default(cuid())
   orgId           String       @unique
   org             Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  defaultProvider String       @default("NONE") // NONE | MOLLIE
+  defaultProvider String       @default("NONE") // NONE | MOLLIE | STRIPE
   showOnPdf       Boolean      @default(true)
   showInMail      Boolean      @default(true)
   showInPortal    Boolean      @default(true)
@@ -1943,6 +1943,7 @@ model InvoicePayLink {
   tokenHash      String                   @unique
   tokenEnc       String
   onDocument     Boolean                  @default(false)
+  liveIssued     Boolean                  @default(true) /// je im Livebetrieb ausgebbar; nur false -> true
   status         String                   @default("ACTIVE") // ACTIVE | DISABLED
   createdBy      String
   createdAt      DateTime                 @default(now())
@@ -1955,24 +1956,26 @@ model InvoicePayLink {
 
 /// Bezahlvorgang beim Anbieter (Anlage erst beim Klick, Betrag = offener Rest). Nie geloescht.
 model PaymentProviderAttempt {
-  id               String         @id @default(cuid())
-  orgId            String
-  org              Organization   @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  payLinkId        String
-  payLink          InvoicePayLink @relation(fields: [payLinkId], references: [id], onDelete: Restrict)
-  provider         String
-  providerObjectId String?
-  checkoutUrl      String?
-  amountCents      Int
-  currency         String
-  expiresAt        DateTime?
-  status           String         @default("CREATING") // CREATING | OPEN | PAID | EXPIRED | CANCELED | FAILED
-  error            String?
-  lastCheckedAt    DateTime?
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+  id                 String         @id @default(cuid())
+  orgId              String
+  org                Organization   @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  payLinkId          String
+  payLink            InvoicePayLink @relation(fields: [payLinkId], references: [id], onDelete: Restrict)
+  provider           String
+  providerObjectId   String?
+  providerPaymentRef String? /// Zahlungs-Id beim Anbieter (Stripe: PaymentIntent), nur NULL -> Wert
+  checkoutUrl        String?
+  amountCents        Int
+  currency           String
+  expiresAt          DateTime?
+  status             String         @default("CREATING") // CREATING | OPEN | PAID | EXPIRED | CANCELED | FAILED
+  error              String?
+  lastCheckedAt      DateTime?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
 
   @@unique([provider, providerObjectId])
+  @@unique([provider, providerPaymentRef])
   @@index([orgId, status, lastCheckedAt])
   @@index([payLinkId, createdAt])
 }

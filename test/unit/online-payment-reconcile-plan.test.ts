@@ -4,6 +4,7 @@ import type { ProviderPaymentState } from "@/lib/payment/types";
 
 const state = (o: Partial<ProviderPaymentState> = {}): ProviderPaymentState => ({
   objectId: "tr_Plan0001",
+  paymentRef: null,
   testMode: false,
   status: "PAID",
   amountCents: 11900,
@@ -29,6 +30,30 @@ const input = (o: Partial<ReconcileInput> = {}): ReconcileInput => ({
 });
 
 describe("planReconcile", () => {
+  it("Erstattung bereits durch manuelle Gegenbuchung gedeckt: keine Buchung, coveredByManualCents", () => {
+    const booked = { paymentId: "p1", amountCents: 11900, reversedCents: 1900 };
+    const p = planReconcile(input({ booked, state: state({ refundedCents: 1900 }) }));
+    expect(p).toMatchObject({ reverse: null, coveredByManualCents: 1900, result: "IGNORED" });
+    const more = planReconcile(input({ booked, state: state({ refundedCents: 5000 }) }));
+    expect(more).toMatchObject({ reverse: { cents: 3100 }, coveredByManualCents: 0 });
+    const unchanged = planReconcile(input({ booked, previousProviderCents: 1900, previousRefundedCents: 1900, state: state({ refundedCents: 1900 }) }));
+    expect(unchanged.coveredByManualCents).toBe(0);
+  });
+
+  it("gedeckter Anteil ist der Zuwachs, nicht der kumulative Zielwert; Gutschrift + manuelle Rueckbuchung", () => {
+    const booked = { paymentId: "p1", amountCents: 11900, reversedCents: 2500 };
+    const inc = planReconcile(input({ booked, previousProviderCents: 1000, previousRefundedCents: 1000, state: state({ refundedCents: 2500 }) }));
+    expect(inc).toMatchObject({ reverse: null, coveredByManualCents: 1500 });
+    const credit = planReconcile(
+      input({ booked: { ...booked, reversedCents: 1900 }, hasCreditNote: true, state: state({ chargedBackCents: 1900 }) }),
+    );
+    expect(credit).toMatchObject({ reverse: null, coveredByManualCents: 1900 });
+    const again = planReconcile(
+      input({ booked: { ...booked, reversedCents: 1900 }, hasCreditNote: true, previousProviderCents: 1900, previousRefundedCents: 0, state: state({ chargedBackCents: 1900 }) }),
+    );
+    expect(again.coveredByManualCents).toBe(0);
+  });
+
   it("bezahlt und noch nicht gebucht: voller Betrag, keine Ueberzahlung", () => {
     const p = planReconcile(input());
     expect(p).toMatchObject({ result: "APPLIED", book: 11900, overpaidCents: 0, attemptStatus: "PAID", reverse: null, unassigned: null });

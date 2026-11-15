@@ -7,7 +7,7 @@
 import { dbInternal } from "@/lib/db";
 import { adapterFor } from "@/lib/payment/registry";
 import { defaultPaymentTransport, paymentNetworkBlocked } from "@/lib/payment/transport";
-import type { PaymentTransport } from "@/lib/payment/types";
+import { ONLINE_PROVIDERS, type PaymentTransport } from "@/lib/payment/types";
 import { describeError } from "@/lib/safe-error";
 import { loadProviderSecret } from "./settings";
 
@@ -55,18 +55,19 @@ export async function cancelOpenAttempts(orgId: string, invoiceId: string, deps:
   });
   if (attempts.length === 0) return;
   const transport = resolveTransport(deps);
-  const { refreshAttempt, ONLINE_ACTOR } = await import("./reconcile");
+  const { refreshAttempt, onlineActor } = await import("./reconcile");
   for (const a of attempts) {
-    if (a.provider !== "MOLLIE" || !a.providerObjectId) continue;
+    const provider = ONLINE_PROVIDERS.find((p) => p === a.provider);
+    if (!provider || !a.providerObjectId) continue;
     try {
-      const secret = await loadProviderSecret(orgId, a.provider);
+      const secret = await loadProviderSecret(orgId, provider);
       if (!secret) continue;
       try {
-        await adapterFor(a.provider).cancelCheckout(secret.key, a.providerObjectId, transport);
+        await adapterFor(provider).cancelCheckout(secret.key, a.providerObjectId, transport);
       } catch (err) {
         console.error("Online-Zahlung: Vorgang nicht beendet:", describeError(err));
       }
-      await refreshAttempt(orgId, a.id, { createdBy: "webhook", actor: ONLINE_ACTOR, transport, ...(deps.now ? { now: deps.now } : {}) });
+      await refreshAttempt(orgId, a.id, { createdBy: "webhook", actor: onlineActor(provider), transport, ...(deps.now ? { now: deps.now } : {}) });
     } catch (err) {
       console.error("Online-Zahlung: Abgleich nach Abbruch fehlgeschlagen:", describeError(err));
     }

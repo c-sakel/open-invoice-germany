@@ -5,7 +5,7 @@ import type { OnlinePaymentSettingsView } from "@/domain/online-payment/settings
 import type { InvoicePayLinkView, RefreshSummary } from "@/domain/online-payment/views";
 import { ONLINE_PROVIDERS } from "@/lib/payment/types";
 
-/** Einstellungen ohne jeden Schluesselanteil: nur hasApiKey, Modus und das letzte Testergebnis. */
+/** Einstellungen ohne jeden Schluesselanteil: nur hasApiKey/hasWebhookSecret, Modus und das letzte Testergebnis. */
 export function serializeOnlinePaymentSettings(s: OnlinePaymentSettingsView) {
   return {
     objectName: "OnlinePaymentSettings" as const,
@@ -18,6 +18,8 @@ export function serializeOnlinePaymentSettings(s: OnlinePaymentSettingsView) {
       enabled: a.enabled,
       mode: a.mode,
       hasApiKey: a.hasApiKey,
+      requiresWebhookSecret: a.requiresWebhookSecret,
+      hasWebhookSecret: a.hasWebhookSecret,
       allowedMethods: a.allowedMethods,
       currencies: a.currencies,
       lastTestAt: iso(a.lastTestAt),
@@ -39,6 +41,8 @@ export const onlinePaymentSettingsSchema = z.object({
       enabled: z.boolean(),
       mode: z.enum(["TEST", "LIVE"]).nullable(),
       hasApiKey: z.boolean().describe("Ob ein Schluessel hinterlegt ist; der Schluessel selbst wird nie ausgegeben."),
+      requiresWebhookSecret: z.boolean().describe("Ob der Anbieter Benachrichtigungen signiert und ohne Signaturschluessel nicht eingeschaltet werden kann."),
+      hasWebhookSecret: z.boolean().describe("Ob ein Signaturschluessel hinterlegt ist; der Schluessel selbst wird nie ausgegeben."),
       allowedMethods: z.array(z.string()).nullable(),
       currencies: z.array(z.string()),
       lastTestAt: z.string().nullable(),

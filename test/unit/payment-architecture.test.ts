@@ -34,6 +34,19 @@ describe("Architektur Online-Zahlung", () => {
       expect(readFileSync(f, "utf8"), f).not.toContain("externalRequest");
     }
   });
+  it("Stripe-Code ohne Netz, SDK und Schluessel-Ausgabe; Adresse nur im Adapter", () => {
+    const stripeFiles = all.filter((f) => /src[\\/]lib[\\/]payment[\\/](stripe[^\\/]*|form-encode)\.ts$/.test(f));
+    expect(stripeFiles.length).toBe(3);
+    for (const f of stripeFiles) {
+      const src = readFileSync(f, "utf8");
+      expect(src, f).not.toMatch(/\bfetch\s*\(|node:https|from\s+["']stripe["']|console\./);
+    }
+    for (const f of all) {
+      const rel = path.relative(process.cwd(), f);
+      if (rel === path.join("src", "lib", "payment", "stripe.ts")) continue;
+      expect(readFileSync(f, "utf8"), f).not.toContain("api.stripe.com");
+    }
+  });
   it("keine Konsolenausgabe mit Schluessel", () => {
     for (const f of all.filter(isPayment)) {
       const src = readFileSync(f, "utf8");

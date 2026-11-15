@@ -4,7 +4,7 @@ import { paymentRuleInputSchema, PAYMENT_SOURCES, type PaymentRuleAction, type P
 export const PAYMENT_CONFIRMATION_TEMPLATE_TYPE = "PAYMENT_CONFIRMATION";
 
 export const SOURCE_LABELS: Record<(typeof PAYMENT_SOURCES)[number], string> = {
-  MANUAL: "Manuell erfasst", API: "REST-Schnittstelle", MCP: "MCP", BANK: "Bankabgleich", MOLLIE: "Online (Mollie)",
+  MANUAL: "Manuell erfasst", API: "REST-Schnittstelle", MCP: "MCP", BANK: "Bankabgleich", MOLLIE: "Online (Mollie)", STRIPE: "Online (Stripe)",
 };
 export const TRIGGER_LABELS = { PAID_FULL: "Vollständig bezahlt", PAID_PARTIAL: "Teilweise bezahlt" } as const;
 export const ACTION_LABELS: Record<PaymentRuleAction["type"], string> = {

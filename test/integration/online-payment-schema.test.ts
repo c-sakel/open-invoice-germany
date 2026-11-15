@@ -64,6 +64,19 @@ describe("Online-Zahlung Schema", () => {
     expect(await code(dbInternal.paymentProviderAttempt.create({ data: attempt({ providerObjectId: "tr_TestDup" }) }))).toBe("P2002");
   });
 
+  it("Zahlungsreferenz: mehrere NULL erlaubt, gleiche (Anbieter, Referenz) nicht", async () => {
+    await dbInternal.paymentProviderAttempt.create({ data: attempt({ provider: "STRIPE" }) });
+    await dbInternal.paymentProviderAttempt.create({ data: attempt({ provider: "STRIPE" }) });
+    await dbInternal.paymentProviderAttempt.create({ data: attempt({ provider: "STRIPE", providerPaymentRef: "pi_FAKEdup1" }) });
+    expect(await code(dbInternal.paymentProviderAttempt.create({ data: attempt({ provider: "STRIPE", providerPaymentRef: "pi_FAKEdup1" }) }))).toBe("P2002");
+    await dbInternal.paymentProviderAttempt.create({ data: attempt({ provider: "MOLLIE", providerPaymentRef: "pi_FAKEdup1" }) });
+  });
+
+  it("Bezahllink: liveIssued Standard true", async () => {
+    const row = await dbInternal.invoicePayLink.findUniqueOrThrow({ where: { id: payLinkId }, select: { liveIssued: true } });
+    expect(row.liveIssued).toBe(true);
+  });
+
   it("Rechnung mit Bezahllink nicht loeschbar (Fremdschluessel)", async () => {
     expect(await code(dbInternal.invoice.delete({ where: { id: invoiceId } }))).toBeDefined();
     expect(await dbInternal.invoice.count({ where: { id: invoiceId } })).toBe(1);

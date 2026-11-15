@@ -390,6 +390,7 @@ export class InvoicePayLinkImmutableError extends Error {
 
 const PAYMENT_ATTEMPT_MUTABLE_KEYS: ReadonlySet<string> = new Set([
   "providerObjectId",
+  "providerPaymentRef",
   "checkoutUrl",
   "expiresAt",
   "status",
@@ -398,7 +399,7 @@ const PAYMENT_ATTEMPT_MUTABLE_KEYS: ReadonlySet<string> = new Set([
   "updatedAt",
 ]);
 
-const INVOICE_PAY_LINK_MUTABLE_KEYS: ReadonlySet<string> = new Set(["status", "disabledAt", "disabledReason"]);
+const INVOICE_PAY_LINK_MUTABLE_KEYS: ReadonlySet<string> = new Set(["status", "disabledAt", "disabledReason", "liveIssued"]);
 
 function assertOnlyKeys(data: unknown, allowed: ReadonlySet<string>, make: (detail: string) => Error): void {
   const keys = Object.keys((data ?? {}) as Record<string, unknown>);
@@ -429,7 +430,7 @@ async function guardPaymentAttemptUpdate(where: unknown, data: unknown): Promise
   assertOnlyKeys(data, PAYMENT_ATTEMPT_MUTABLE_KEYS, attemptErr);
   const record = (data ?? {}) as Record<string, unknown>;
   const whereInput = where as Prisma.PaymentProviderAttemptWhereInput;
-  for (const key of ["providerObjectId", "checkoutUrl"] as const) {
+  for (const key of ["providerObjectId", "providerPaymentRef", "checkoutUrl"] as const) {
     if (!(key in record)) continue;
     const next = unwrapSet(record[key]);
     if (typeof next !== "string" || next.length === 0) throw attemptErr(`${key} nur von NULL auf einen Wert`);
@@ -456,6 +457,8 @@ async function guardPaymentAttemptUpdate(where: unknown, data: unknown): Promise
 async function guardPayLinkUpdate(where: unknown, data: unknown): Promise<void> {
   assertOnlyKeys(data, INVOICE_PAY_LINK_MUTABLE_KEYS, payLinkErr);
   const record = (data ?? {}) as Record<string, unknown>;
+  // Live-Kennzeichen wird nur gesetzt (false -> true), nie zurueckgenommen.
+  if ("liveIssued" in record && unwrapSet(record.liveIssued) !== true) throw payLinkErr("liveIssued nur auf true");
   if (!("status" in record)) {
     if ("disabledAt" in record || "disabledReason" in record) throw payLinkErr("disabledAt/disabledReason nur mit status");
     return;

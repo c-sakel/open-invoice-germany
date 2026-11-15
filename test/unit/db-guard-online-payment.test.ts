@@ -159,3 +159,32 @@ describe("InvoicePayLink", () => {
     expect(row.status).toBe("ACTIVE");
   });
 });
+
+describe("Zahlungsreferenz und Live-Kennzeichen", () => {
+  it("providerPaymentRef nur von NULL auf einen Wert", async () => {
+    const e = PaymentProviderAttemptImmutableError;
+    const id = (await dbInternal.paymentProviderAttempt.create({ data: { orgId, payLinkId, provider: "STRIPE", amountCents: 600, currency: "EUR" }, select: { id: true } })).id;
+    for (const data of [{ providerPaymentRef: "" }, { providerPaymentRef: null }, { providerPaymentRef: { set: "" } }]) {
+      await expect(prisma.paymentProviderAttempt.update({ where: { id }, data })).rejects.toBeInstanceOf(e);
+    }
+    await prisma.paymentProviderAttempt.update({ where: { id }, data: { providerPaymentRef: "pi_FAKEguard1" } });
+    await expect(prisma.paymentProviderAttempt.update({ where: { id }, data: { providerPaymentRef: "pi_FAKEandere" } })).rejects.toBeInstanceOf(e);
+    await expect(prisma.paymentProviderAttempt.updateMany({ where: { id }, data: { providerPaymentRef: "pi_FAKEandere" } })).rejects.toBeInstanceOf(e);
+    const row = await dbInternal.paymentProviderAttempt.findUniqueOrThrow({ where: { id }, select: { providerPaymentRef: true } });
+    expect(row.providerPaymentRef).toBe("pi_FAKEguard1");
+  });
+
+  it("liveIssued nur auf true, nie zurueck", async () => {
+    const e = InvoicePayLinkImmutableError;
+    const customerId = (await dbInternal.customer.create({ data: { orgId, name: "Live-Kunde", addressLine1: "Weg 3", postalCode: "12345", city: "Teststadt" }, select: { id: true } })).id;
+    const invoiceId = (await dbInternal.invoice.create({ data: { orgId, customerId }, select: { id: true } })).id;
+    const id = (await dbInternal.invoicePayLink.create({ data: { orgId, invoiceId, provider: "STRIPE", tokenHash: "hash-guard-live", tokenEnc: "enc", createdBy: "test", liveIssued: false }, select: { id: true } })).id;
+    await expect(prisma.invoicePayLink.update({ where: { id }, data: { liveIssued: false } })).rejects.toBeInstanceOf(e);
+    await expect(prisma.invoicePayLink.updateMany({ where: { id }, data: { liveIssued: { set: false } } })).rejects.toBeInstanceOf(e);
+    const n = await prisma.invoicePayLink.updateMany({ where: { id, liveIssued: false }, data: { liveIssued: true } });
+    expect(n.count).toBe(1);
+    await expect(prisma.invoicePayLink.update({ where: { id }, data: { liveIssued: false } })).rejects.toBeInstanceOf(e);
+    const row = await dbInternal.invoicePayLink.findUniqueOrThrow({ where: { id }, select: { liveIssued: true } });
+    expect(row.liveIssued).toBe(true);
+  });
+});
