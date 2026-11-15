@@ -12,10 +12,19 @@ import { RateLimitError, rateLimit } from "@/lib/rate-limit";
 import { describeError } from "@/lib/safe-error";
 import { hashToken } from "@/domain/quote-share/token";
 import { OnlinePaymentError } from "./errors";
-import { ONLINE_ACTOR, reconcileAttempt, reportProviderProblem } from "./reconcile";
-import { loadProviderSecret } from "./settings";
+import { onlineActor, reconcileAttempt, reportProviderProblem } from "./reconcile";
+import { loadProviderSecret, loadWebhookSigningSecret } from "./settings";
 
+/** Obergrenze fuer unbekannte Anbieter; je Anbieter gilt `webhookBodyMax` des Adapters. */
 export const WEBHOOK_BODY_MAX = 1024;
+
+/** Hoechstzahl Bytes des Webhook-Bodys fuer den Anbieter aus dem Pfad (unbekannt: 1024). */
+export function webhookBodyMaxFor(providerRaw: string): number {
+  const provider = ONLINE_PROVIDERS.find((p) => p === providerRaw.toUpperCase());
+  return provider ? adapterFor(provider).webhookBodyMax : WEBHOOK_BODY_MAX;
+}
+
+const PROVIDER_LABEL: Record<(typeof ONLINE_PROVIDERS)[number], string> = { MOLLIE: "Mollie", STRIPE: "Stripe" };
 const IP_LIMIT = 120;
 const PATH_LIMIT = 600;
 const WINDOW_MS = 60_000;
@@ -27,15 +36,15 @@ export interface WebhookDeps {
   limits?: { ip?: number; path?: number };
 }
 
-/** Liest den Body erst nach Rate-Limit und Pfadpruefung; null = zu gross. */
-export type WebhookBodyReader = () => Promise<string | null>;
+/** Liest den Body erst nach Rate-Limit und Pfadpruefung (Rohbytes, fuer die Signatur unveraendert); null = zu gross. */
+export type WebhookBodyReader = () => Promise<Buffer | string | null>;
 
 export type WebhookStatus = 200 | 400 | 404 | 429 | 503;
 
 export async function handleProviderWebhook(
   providerRaw: string,
   webhookPathId: string,
-  body: string | WebhookBodyReader,
+  body: string | Buffer | WebhookBodyReader,
   headers: Headers,
   deps: WebhookDeps = {},
 ): Promise<{ status: WebhookStatus }> {
@@ -51,7 +60,7 @@ export async function handleProviderWebhook(
   const provider = ONLINE_PROVIDERS.find((p) => p === providerRaw.toUpperCase());
   if (!provider || webhookPathId.length < 16 || webhookPathId.length > 200) return { status: 404 };
   try {
-    const account = await dbInternal.paymentProviderAccount.findUnique({ where: { webhookPathId }, select: { orgId: true, provider: true } });
+    const account = await dbInternal.paymentProviderAccount.findUnique({ where: { webhookPathId }, select: { orgId: true, provider: true, mode: true } });
     if (!account || account.provider !== provider) return { status: 404 };
     const orgId = account.orgId;
 
@@ -62,22 +71,51 @@ export async function handleProviderWebhook(
       if (e instanceof RateLimitError) return { status: 429 };
       throw e;
     }
-    const rawBody = typeof body === "string" ? body : await body();
-    if (rawBody === null || Buffer.byteLength(rawBody, "utf8") > WEBHOOK_BODY_MAX) return { status: 400 };
-    const hook = adapterFor(provider).parseWebhook(Buffer.from(rawBody, "utf8"), headers, { signingSecret: null, now });
-    if (hook.kind === "REJECT") return { status: 400 };
-    if (hook.kind === "IRRELEVANT" || !("objectId" in hook.ref)) return { status: 200 };
-    const parsed = { objectId: hook.ref.objectId };
+    const read = typeof body === "function" ? await body() : body;
+    const rawBody = read === null ? null : typeof read === "string" ? Buffer.from(read, "utf8") : read;
+    const adapter = adapterFor(provider);
+    if (rawBody === null || rawBody.byteLength > adapter.webhookBodyMax) return { status: 400 };
+    const label = PROVIDER_LABEL[provider];
+    let signingSecret: string | null = null;
+    if (adapter.webhookAuth === "signature") {
+      try {
+        signingSecret = await loadWebhookSigningSecret(orgId, provider);
+      } catch (e) {
+        if (!(e instanceof OnlinePaymentError)) throw e;
+      }
+      if (!signingSecret) {
+        await reportProviderProblem(orgId, "Online-Zahlung: Zugang nicht nutzbar", `${label}: Signaturschluessel fehlt oder ist nicht lesbar; Benachrichtigungen koennen nicht geprueft werden.`, now, `nowhsec:${provider}`);
+        return { status: 503 };
+      }
+    }
+    // Signatur (falls vorgesehen) wird im Adapter vor jedem JSON-Parse ueber die Rohbytes geprueft.
+    const hook = adapter.parseWebhook(rawBody, headers, { signingSecret, now });
+    if (hook.kind === "REJECT") {
+      if (hook.reason === "NO_SECRET") return { status: 503 };
+      if (hook.reason === "UNSUPPORTED_FORMAT") {
+        await reportProviderProblem(orgId, "Online-Zahlung: Ereignisziel pruefen", `${label}: Ereignisziel im Format Snapshot anlegen.`, now, `fmt:${provider}`);
+      } else if (hook.reason === "SIGNATURE" || hook.reason === "STALE") {
+        await reportProviderProblem(orgId, "Online-Zahlung: Signatur ungueltig", `${label}-Benachrichtigung mit ungueltiger Signatur — Signaturschluessel pruefen.`, now, `sig:${provider}`);
+      }
+      return { status: 400 };
+    }
+    if (hook.kind === "IRRELEVANT") return { status: 200 };
+    // Modus des Ereignisses muss zum Kontomodus passen (Live-Ereignisse nie an ein Testkonto und umgekehrt).
+    if (hook.livemode !== null && hook.livemode !== (account.mode === "LIVE")) return { status: 200 };
 
     // Vorgang nur ueber die eigene Datenbank; die Organisation stammt aus dem Zugang des Pfads, nie aus dem Body.
     const attempt = await dbInternal.paymentProviderAttempt.findUnique({
-      where: { provider_providerObjectId: { provider, providerObjectId: parsed.objectId } },
-      select: { id: true, orgId: true },
+      where:
+        "objectId" in hook.ref
+          ? { provider_providerObjectId: { provider, providerObjectId: hook.ref.objectId } }
+          : { provider_providerPaymentRef: { provider, providerPaymentRef: hook.ref.paymentRef } },
+      select: { id: true, orgId: true, providerObjectId: true },
     });
-    if (!attempt || attempt.orgId !== orgId) {
+    if (!attempt || attempt.orgId !== orgId || !attempt.providerObjectId) {
       console.warn("Online-Zahlung: Benachrichtigung ohne passenden Vorgang ignoriert");
       return { status: 200 };
     }
+    const parsed = { objectId: attempt.providerObjectId };
 
     let secret: Awaited<ReturnType<typeof loadProviderSecret>> = null;
     try {
@@ -108,7 +146,7 @@ export async function handleProviderWebhook(
       await recordIgnored(orgId, provider, parsed.objectId, attempt.id, "missing", "Objekt beim Anbieter nicht gefunden", now);
       return { status: 200 };
     }
-    await reconcileAttempt(attempt.id, state, { createdBy: "webhook", actor: ONLINE_ACTOR, now });
+    await reconcileAttempt(attempt.id, state, { createdBy: "webhook", actor: onlineActor(provider), now });
     return { status: 200 };
   } catch (e) {
     console.error("Online-Zahlung: Benachrichtigung nicht verarbeitet:", describeError(e));

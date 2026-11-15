@@ -34,6 +34,8 @@ function account(patch: Partial<ProviderAccountView> = {}): ProviderAccountView 
     mode: null,
     hasApiKey: false,
     apiKeyLast4: null,
+    requiresWebhookSecret: false,
+    hasWebhookSecret: false,
     allowedMethods: null,
     currencies: ["EUR"],
     lastTestAt: null,

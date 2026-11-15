@@ -16,6 +16,8 @@ export type OnlinePaymentErrorCode =
   | "NOT_TESTED"
   | "KEY_UNREADABLE"
   | "INVALID_KEY"
+  | "NO_WEBHOOK_SECRET"
+  | "INVALID_METHOD"
   | "RATE_LIMITED";
 
 export class OnlinePaymentError extends Error {

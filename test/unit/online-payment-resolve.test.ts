@@ -1,11 +1,12 @@
 /** Aufloesung des Zahlungsanbieters (rein) und Schemas der Online-Zahlung. */
 import { describe, expect, it } from "vitest";
-import { resolveOnlineProvider, type ResolveInput } from "@/domain/online-payment/resolve";
+import { asProviderChoice, resolveOnlineProvider, type ResolveInput } from "@/domain/online-payment/resolve";
 import {
   onlinePaymentSettingsInputSchema,
   payLinkTokenSchema,
   providerApiKeySchema,
   providerOptionsInputSchema,
+  providerWebhookSecretSchema,
 } from "@/schemas/online-payment";
 
 const ON = new Map([["MOLLIE" as const, { enabled: true, hasKey: true, currencies: ["EUR"] }]]);
@@ -35,6 +36,18 @@ describe("resolveOnlineProvider", () => {
     expect(resolveOnlineProvider(input({ orgDefault: "NONE", customerChoice: "NONE", methodChoice: "MOLLIE" }))).toEqual({ provider: "MOLLIE" });
     expect(resolveOnlineProvider(input({ customerChoice: "NONE" }))).toEqual({ provider: null, reason: "NONE" });
     expect(resolveOnlineProvider(input({ methodChoice: "NONE", customerChoice: "MOLLIE" }))).toEqual({ provider: null, reason: "NONE" });
+  });
+
+  it("Stripe in der Kette: Zahlungsart schlaegt Kunde, Kunde NONE beendet", () => {
+    const both = new Map([
+      ["MOLLIE" as const, { enabled: true, hasKey: true, currencies: ["EUR"] }],
+      ["STRIPE" as const, { enabled: true, hasKey: true, currencies: ["EUR"] }],
+    ]);
+    expect(resolveOnlineProvider(input({ accounts: both, methodChoice: "STRIPE", customerChoice: "MOLLIE" }))).toEqual({ provider: "STRIPE" });
+    expect(resolveOnlineProvider(input({ accounts: both, orgDefault: "STRIPE" }))).toEqual({ provider: "STRIPE" });
+    expect(resolveOnlineProvider(input({ accounts: both, orgDefault: "STRIPE", customerChoice: "NONE" }))).toEqual({ provider: null, reason: "NONE" });
+    expect(asProviderChoice("STRIPE")).toBe("STRIPE");
+    expect(asProviderChoice("PAYPAL")).toBeNull();
   });
 
   it("NONE in der Organisation beendet die Kette", () => {
@@ -67,7 +80,12 @@ describe("resolveOnlineProvider", () => {
 describe("Schemas der Online-Zahlung", () => {
   it("Schluessel: Praefix, Laenge und Zeichensatz", () => {
     expect(providerApiKeySchema.safeParse("test_FAKEaaaaaaaaaaaaaaaaaaaaaaaaaaaa").success).toBe(true);
-    expect(providerApiKeySchema.safeParse("FAKEaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").success).toBe(false);
+    // Der Modus kommt allein vom Adapter; das Schema prueft nur Zeichensatz und Laenge.
+    expect(providerApiKeySchema.safeParse(["sk", "live", "FAKE" + "a".repeat(28)].join("_")).success).toBe(true);
+    expect(providerApiKeySchema.safeParse("test-FAKEaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").success).toBe(false);
+    expect(providerWebhookSecretSchema.safeParse(["whsec", "FAKE" + "b".repeat(28)].join("_")).success).toBe(true);
+    expect(providerWebhookSecretSchema.safeParse(["whsec", "kurz"].join("_")).success).toBe(false);
+    expect(providerWebhookSecretSchema.safeParse("FAKE" + "b".repeat(32)).success).toBe(false);
     expect(providerApiKeySchema.safeParse("test_kurz").success).toBe(false);
     expect(providerApiKeySchema.safeParse("test_FAKEaaaaaaaaaaaaaaaaaaaaaaaaaaa a").success).toBe(false);
   });

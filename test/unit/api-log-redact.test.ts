@@ -39,6 +39,10 @@ describe("redactJson", () => {
       wert: REDACTED, liste: [REDACTED, REDACTED, REDACTED, REDACTED, "kurz"], n: { x: REDACTED },
     });
   });
+  it("schwaerzt Signaturschluessel (whsec_) als Wert und als Feld", () => {
+    const whsec = ["whsec", "x".repeat(32)].join("_");
+    expect(redactJson({ wert: whsec, liste: [whsec], webhookSecret: "irgendwas" })).toEqual({ wert: REDACTED, liste: [REDACTED], webhookSecret: REDACTED });
+  });
   it("laesst harmlose Felder und Nicht-Objekte unveraendert", () => {
     expect(redactJson({ name: "Kunde AG", netTotalCents: 11900 })).toEqual({ name: "Kunde AG", netTotalCents: 11900 });
     expect(redactJson("text")).toBe("text");

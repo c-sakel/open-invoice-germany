@@ -28,7 +28,13 @@ export const providerApiKeySchema = z
   .trim()
   .min(30)
   .max(200)
-  .refine((v) => /^(test|live)_[A-Za-z0-9]+$/.test(v), "Schluessel hat kein gueltiges Format.");
+  .refine((v) => /^[A-Za-z0-9_]+$/.test(v), "Schluessel hat kein gueltiges Format.");
+
+/** Signaturschluessel fuer Benachrichtigungen (Praefix whsec_). */
+export const providerWebhookSecretSchema = z
+  .string()
+  .trim()
+  .refine((v) => /^whsec_[A-Za-z0-9]{20,200}$/.test(v), "Signaturschluessel hat kein gueltiges Format.");
 
 /** Methoden-Ids des Anbieters (z. B. "creditcard"); null/leer = alle aktiven Methoden des Anbieters. */
 const methodIdSchema = z.string().refine((v) => /^[a-z0-9_]{1,32}$/.test(v), "Ungueltige Methoden-Id.");

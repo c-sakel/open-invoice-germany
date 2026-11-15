@@ -2,7 +2,7 @@
  * Aufloesung des Zahlungsanbieters fuer eine Rechnung (rein, ohne Datenbank).
  * Vorrang: Zahlungsart (nicht NULL) > Kunde (nicht NULL) > Organisation; NONE beendet die Kette.
  */
-import type { OnlineProvider } from "@/lib/payment/types";
+import { ONLINE_PROVIDERS, type OnlineProvider } from "@/lib/payment/types";
 
 export type ProviderChoice = OnlineProvider | "NONE" | null;
 
@@ -37,6 +37,5 @@ export function resolveOnlineProvider(input: ResolveInput): ResolveResult {
 /** Normalisiert einen gespeicherten Textwert (NULL | NONE | Anbieter) zur Auswahl; Unbekanntes zaehlt als "keine Vorgabe". */
 export function asProviderChoice(v: string | null | undefined): ProviderChoice {
   if (v === "NONE") return "NONE";
-  if (v === "MOLLIE") return "MOLLIE";
-  return null;
+  return ONLINE_PROVIDERS.find((p) => p === v) ?? null;
 }

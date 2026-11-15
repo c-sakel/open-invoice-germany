@@ -37,6 +37,8 @@ export function OnlinePaymentSettingsForm({
     mode: null,
     hasApiKey: false,
     apiKeyLast4: null,
+    requiresWebhookSecret: false,
+    hasWebhookSecret: false,
     allowedMethods: null,
     currencies: ["EUR"],
     lastTestAt: null,

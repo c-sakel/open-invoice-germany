@@ -10,7 +10,7 @@
  */
 import { dbInternal } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
-import { decryptSecret, encryptSecret, PAYMENT_PROVIDER_KEY_PURPOSE } from "@/lib/crypto/secrets";
+import { decryptSecret, encryptSecret, PAYMENT_PROVIDER_KEY_PURPOSE, PAYMENT_WEBHOOK_SECRET_PURPOSE } from "@/lib/crypto/secrets";
 import { lockOrganization } from "@/lib/db-lock";
 import { appBaseUrlFromEnv } from "@/lib/http/base-url";
 import { adapterFor } from "@/lib/payment/registry";
@@ -22,6 +22,7 @@ import {
   onlinePaymentSettingsInputSchema,
   onlineProviderSchema,
   providerApiKeySchema,
+  providerWebhookSecretSchema,
   providerOptionsInputSchema,
 } from "@/schemas/online-payment";
 import { OnlinePaymentError } from "./errors";
@@ -34,6 +35,9 @@ export interface ProviderAccountView {
   mode: "TEST" | "LIVE" | null;
   hasApiKey: boolean;
   apiKeyLast4: string | null;
+  /** Anbieter signiert Benachrichtigungen: ohne Signaturschluessel kein Einschalten. */
+  requiresWebhookSecret: boolean;
+  hasWebhookSecret: boolean;
   allowedMethods: string[] | null;
   currencies: string[];
   lastTestAt: Date | null;
@@ -54,6 +58,7 @@ const ACCOUNT_SELECT = {
   enabled: true,
   mode: true,
   apiKeyEnc: true,
+  webhookSecretEnc: true,
   webhookPathId: true,
   allowedMethodsJson: true,
   currenciesJson: true,
@@ -67,6 +72,7 @@ interface AccountRow {
   enabled: boolean;
   mode: string | null;
   apiKeyEnc: string | null;
+  webhookSecretEnc: string | null;
   webhookPathId: string;
   allowedMethodsJson: string | null;
   currenciesJson: string | null;
@@ -110,6 +116,8 @@ function emptyAccount(provider: OnlineProvider): ProviderAccountView {
     mode: null,
     hasApiKey: false,
     apiKeyLast4: null,
+    requiresWebhookSecret: adapterFor(provider).webhookAuth === "signature",
+    hasWebhookSecret: false,
     allowedMethods: null,
     currencies: ["EUR"],
     lastTestAt: null,
@@ -126,6 +134,8 @@ function accountView(provider: OnlineProvider, row: AccountRow | undefined): Pro
     mode: asMode(row.mode),
     hasApiKey: row.apiKeyEnc !== null,
     apiKeyLast4: row.apiKeyEnc ? last4(row.apiKeyEnc) : null,
+    requiresWebhookSecret: adapterFor(provider).webhookAuth === "signature",
+    hasWebhookSecret: row.webhookSecretEnc !== null,
     allowedMethods: parseStringList(row.allowedMethodsJson),
     currencies: accountCurrencies(row.currenciesJson),
     lastTestAt: row.lastTestAt,
@@ -144,7 +154,7 @@ export async function loadOnlinePaymentSettings(orgId: string, db: Db = dbIntern
   ]);
   const byProvider = new Map(accounts.map((a) => [a.provider, a]));
   return {
-    defaultProvider: settings?.defaultProvider === "MOLLIE" ? "MOLLIE" : "NONE",
+    defaultProvider: ONLINE_PROVIDERS.find((p) => p === settings?.defaultProvider) ?? "NONE",
     showOnPdf: settings?.showOnPdf ?? true,
     showInMail: settings?.showInMail ?? true,
     showInPortal: settings?.showInPortal ?? true,
@@ -242,6 +252,9 @@ export async function setProviderEnabled(orgId: string, providerRaw: unknown, en
     const acc = await ensureAccount(tx, orgId, provider);
     if (enabled) {
       if (!acc.apiKeyEnc) throw new OnlinePaymentError("Zum Einschalten fehlt der API-Schluessel.", "NO_KEY");
+      if (adapterFor(provider).webhookAuth === "signature" && !acc.webhookSecretEnc) {
+        throw new OnlinePaymentError("Zum Einschalten fehlt der Signaturschluessel.", "NO_WEBHOOK_SECRET");
+      }
       if (!appBaseUrlFromEnv()) throw new OnlinePaymentError("Zum Einschalten muss APP_BASE_URL gesetzt sein.", "NO_BASE_URL");
       if (acc.lastTestOk !== true) throw new OnlinePaymentError("Zum Einschalten ist ein erfolgreicher Verbindungstest noetig.", "NOT_TESTED");
     }
@@ -266,11 +279,59 @@ export async function setProviderEnabled(orgId: string, providerRaw: unknown, en
   return loadOnlinePaymentSettings(orgId);
 }
 
+/**
+ * Nur Oberflaeche. Signaturschluessel der Benachrichtigungen (nur verschluesselt, nie in Antworten/Protokollen).
+ * Jede Aenderung schaltet die Anbindung aus (wie beim API-Schluessel); `null` entfernt den Schluessel.
+ */
+export async function setProviderWebhookSecret(orgId: string, providerRaw: unknown, secret: string | null, actor: string): Promise<OnlinePaymentSettingsView> {
+  const provider = onlineProviderSchema.parse(providerRaw);
+  if (adapterFor(provider).webhookAuth !== "signature") {
+    throw new OnlinePaymentError("Dieser Zahlungsanbieter verwendet keinen Signaturschluessel.", "INVALID_KEY");
+  }
+  let enc: string | null = null;
+  if (secret !== null) {
+    const parsed = providerWebhookSecretSchema.safeParse(secret);
+    if (!parsed.success) throw new OnlinePaymentError("Signaturschluessel hat kein gueltiges Format.", "INVALID_KEY");
+    // Verschluesseln VOR der Transaktion: ohne AUTH_SECRET wird nichts gespeichert.
+    enc = encryptSecret(parsed.data, PAYMENT_WEBHOOK_SECRET_PURPOSE);
+  }
+  await dbInternal.$transaction(async (tx) => {
+    await lockOrganization(tx, orgId);
+    const acc = await ensureAccount(tx, orgId, provider);
+    await tx.paymentProviderAccount.update({ where: { id: acc.id }, data: { webhookSecretEnc: enc, enabled: false } });
+    await logProvider(tx, orgId, acc.id, actor, { provider, changed: [enc === null ? "webhookSecretRemoved" : "webhookSecret"], mode: asMode(acc.mode) });
+  });
+  return loadOnlinePaymentSettings(orgId);
+}
+
+/** Nur server-intern. null: kein Signaturschluessel hinterlegt. Wirft KEY_UNREADABLE bei nicht entschluesselbarem Wert. */
+export async function loadWebhookSigningSecret(orgId: string, provider: OnlineProvider, db: Db = dbInternal): Promise<string | null> {
+  const row = await db.paymentProviderAccount.findUnique({ where: { orgId_provider: { orgId, provider } }, select: { webhookSecretEnc: true } });
+  if (!row?.webhookSecretEnc) return null;
+  try {
+    return decryptSecret(row.webhookSecretEnc, PAYMENT_WEBHOOK_SECRET_PURPOSE);
+  } catch {
+    throw new OnlinePaymentError("Signaturschluessel nicht lesbar (AUTH_SECRET gewechselt?).", "KEY_UNREADABLE");
+  }
+}
+
+/** Nur Einstellungsseite (admin), nie REST/MCP: Adresse fuer das Ereignisziel beim Anbieter. */
+export async function revealWebhookUrl(orgId: string, provider: OnlineProvider): Promise<string | null> {
+  const base = appBaseUrlFromEnv();
+  if (!base) return null;
+  const row = await dbInternal.paymentProviderAccount.findUnique({ where: { orgId_provider: { orgId, provider } }, select: { webhookPathId: true } });
+  if (!row) return null;
+  return `${base.replace(/\/+$/, "")}/api/public/payments/${provider.toLowerCase()}/${row.webhookPathId}`;
+}
+
 /** Anzeige-/Standardoptionen des Zugangs (auch ueber REST/MCP erlaubt). */
 export async function saveProviderOptions(orgId: string, providerRaw: unknown, raw: unknown, actor: string): Promise<OnlinePaymentSettingsView> {
   const provider = onlineProviderSchema.parse(providerRaw);
   const input = providerOptionsInputSchema.parse(raw);
   const adapter = adapterFor(provider);
+  if (input.allowedMethods && adapter.knownMethods && input.allowedMethods.some((m) => !adapter.knownMethods?.includes(m))) {
+    throw new OnlinePaymentError("Zahlungsmethode wird vom Zahlungsanbieter nicht unterstuetzt.", "INVALID_METHOD");
+  }
   if (input.currencies && input.currencies.some((c) => !adapter.supportsCurrency(c))) {
     throw new OnlinePaymentError("Waehrung wird vom Zahlungsanbieter nicht unterstuetzt.", "CURRENCY");
   }

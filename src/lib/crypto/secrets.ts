@@ -39,6 +39,9 @@ export const PORTAL_TOKEN_PURPOSE = "oig-portal-token-v1";
 /** Eigener HKDF-Info-String fuer API-Schluessel der Zahlungsanbieter. */
 export const PAYMENT_PROVIDER_KEY_PURPOSE = "oig-payment-provider-key-v1";
 
+/** Eigener HKDF-Info-String fuer Signaturschluessel der Zahlungsanbieter-Benachrichtigungen. */
+export const PAYMENT_WEBHOOK_SECRET_PURPOSE = "oig-payment-webhook-secret-v1";
+
 /** Eigener HKDF-Info-String fuer Bezahllink-Tokens (Wiederabruf des Links durch den Betreiber). */
 export const PAYLINK_TOKEN_PURPOSE = "oig-paylink-token-v1";
 
