@@ -8,7 +8,7 @@
  *                 Statuswechsel vornehmen.
  */
 import path from "node:path";
-import { PrismaClient } from "@/generated/prisma/client";
+import { PrismaClient, type Prisma } from "@/generated/prisma/client";
 
 /**
  * Löst einen relativen SQLite-`file:`-Pfad in einen ABSOLUTEN Pfad auf.
@@ -165,6 +165,93 @@ function assertDunningUpdateAllowed(data: unknown): void {
   const keys = Object.keys((data ?? {}) as Record<string, unknown>);
   const badKeys = keys.filter((k) => !DUNNING_MUTABLE_KEYS.has(k));
   if (badKeys.length > 0) throw new DunningImmutabilityError(badKeys);
+}
+
+/**
+ * `PaymentRuleRun` ist Outbox und Nachweis: nie loeschbar, Zuordnung und Schnappschuss
+ * (Regel, Zahlung, Rechnung, Kunde, Ausloeser, Quelle, Aktionen, Kontext, Org, Anlage) unveraenderlich.
+ * Fortschreibbar sind nur Ausfuehrungsstand und Fehler; `mailSentAt` ueber den geschuetzten Client genau einmal
+ * (NULL -> Wert). Die einzige Ruecknahme ist `releaseMailClaim` (nur wenn sicher nichts an den Mailanbieter ging).
+ */
+export class PaymentRuleRunImmutabilityError extends Error {
+  constructor(detail: string) {
+    super(`Regel-Lauf ist unveraenderlich: ${detail}`);
+    this.name = "PaymentRuleRunImmutabilityError";
+  }
+}
+
+const PAYMENT_RULE_RUN_MUTABLE_KEYS: ReadonlySet<string> = new Set([
+  "stepsJson",
+  "status",
+  "attempts",
+  "nextAttemptAt",
+  "lockedUntil",
+  "lastError",
+  "skipReason",
+  "mailSentAt",
+  "finishedAt",
+]);
+
+/** Status nur vorwaerts: PENDING -> RUNNING -> DONE|FAILED|SKIPPED; Rueckkehr nach PENDING (Wiederholung) und FAILED -> PENDING (Retry). DONE/SKIPPED sind endgueltig. */
+const PAYMENT_RULE_RUN_TRANSITIONS: Readonly<Record<string, readonly string[]>> = {
+  PENDING: ["PENDING", "RUNNING", "SKIPPED"],
+  RUNNING: ["RUNNING", "PENDING", "DONE", "FAILED", "SKIPPED"],
+  FAILED: ["PENDING"],
+  DONE: [],
+  SKIPPED: [],
+};
+
+function unwrapSet(v: unknown): unknown {
+  if (v !== null && typeof v === "object" && !(v instanceof Date) && "set" in v) return (v as { set: unknown }).set;
+  return v;
+}
+
+/**
+ * Gibt den Versand-Claim (`mailSentAt`) eines Regel-Laufs frei. Ausschliesslich fuer Faelle, in denen sicher
+ * nichts an den Mailanbieter uebergeben wurde (uebersprungen, verschoben, Fehler vor dem Senden) und fuer die
+ * bewusst manuelle Wiederholung eines fehlgeschlagenen Mail-Schritts. Der Guard erlaubt NULL -> Wert nur
+ * einmal, deshalb laeuft diese benannte Ausnahme ueber den ungeschuetzten Client; `claimedAt` begrenzt sie
+ * auf den eigenen Claim.
+ */
+export async function releaseMailClaim(
+  client: Pick<Prisma.TransactionClient, "paymentRuleRun">,
+  target: { id: string; orgId: string; claimedAt?: Date },
+): Promise<number> {
+  const res = await client.paymentRuleRun.updateMany({
+    where: { id: target.id, orgId: target.orgId, mailSentAt: target.claimedAt ?? { not: null } },
+    data: { mailSentAt: null },
+  });
+  return res.count;
+}
+
+async function guardPaymentRuleRunUpdate(where: unknown, data: unknown): Promise<void> {
+  const record = (data ?? {}) as Record<string, unknown>;
+  const badKeys = Object.keys(record).filter((k) => !PAYMENT_RULE_RUN_MUTABLE_KEYS.has(k));
+  if (badKeys.length > 0) throw new PaymentRuleRunImmutabilityError(badKeys.join(", "));
+  if ("status" in record) {
+    const nextStatus = unwrapSet(record.status);
+    if (typeof nextStatus !== "string") throw new PaymentRuleRunImmutabilityError("status");
+    const current = await base.paymentRuleRun.findMany({
+      where: where as Prisma.PaymentRuleRunWhereInput,
+      select: { status: true },
+    });
+    for (const row of current) {
+      if (!(PAYMENT_RULE_RUN_TRANSITIONS[row.status] ?? []).includes(nextStatus)) {
+        throw new PaymentRuleRunImmutabilityError(`Status ${row.status} -> ${nextStatus}`);
+      }
+    }
+  }
+  if ("mailSentAt" in record) {
+    const next = unwrapSet(record.mailSentAt);
+    if (!(next instanceof Date)) throw new PaymentRuleRunImmutabilityError("mailSentAt nur von NULL auf einen Wert");
+    const rows = await base.paymentRuleRun.findMany({
+      where: where as Prisma.PaymentRuleRunWhereInput,
+      select: { mailSentAt: true },
+    });
+    if (rows.some((r) => r.mailSentAt !== null)) {
+      throw new PaymentRuleRunImmutabilityError("mailSentAt nur von NULL auf einen Wert");
+    }
+  }
 }
 
 /**
@@ -681,6 +768,30 @@ export const prisma = base.$extends({
       },
       async deleteMany() {
         throw new PaymentImmutabilityError();
+      },
+    },
+    paymentRuleRun: {
+      async update({ args, query }) {
+        await guardPaymentRuleRunUpdate(args.where, args.data);
+        return query(args);
+      },
+      async updateMany({ args, query }) {
+        await guardPaymentRuleRunUpdate(args.where, args.data);
+        return query(args);
+      },
+      async updateManyAndReturn({ args, query }) {
+        await guardPaymentRuleRunUpdate(args.where, args.data);
+        return query(args);
+      },
+      async upsert({ args, query }) {
+        await guardPaymentRuleRunUpdate(args.where, args.update);
+        return query(args);
+      },
+      async delete() {
+        throw new PaymentRuleRunImmutabilityError("delete");
+      },
+      async deleteMany() {
+        throw new PaymentRuleRunImmutabilityError("deleteMany");
       },
     },
     dunning: {

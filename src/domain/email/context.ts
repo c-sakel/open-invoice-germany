@@ -13,7 +13,7 @@ import { parseCustomerCustomFields } from "@/domain/customer/custom-fields";
 import { formatDateDe, formatMoneyDe, formatDateLang, formatMoneyLang } from "@/lib/template/format";
 import { resolveDocLanguage, type DocLanguage } from "@/lib/i18n/doc";
 import type { TemplateContext } from "@/lib/template/render";
-import type { EmailDocType } from "@/schemas/email";
+import type { EmailDocType, EmailTemplateDocType } from "@/schemas/email";
 import type { BuyerSnapshot, SellerSnapshot, ContactSnapshot } from "@/schemas";
 import { DOC_TYPE_LABEL, docTypeLabel } from "@/lib/email/doc-type-labels";
 import { revealPortalUrl } from "@/domain/portal/link";
@@ -361,7 +361,7 @@ export async function buildTemplateContext(
  * Kein Datenbankzugriff — dient ausschliesslich der Anzeige im Vorlagen-Editor, bevor ein
  * echter Beleg gewaehlt wurde.
  */
-export function sampleTemplateContext(docType: EmailDocType): TemplateContext {
+export function sampleTemplateContext(docType: EmailTemplateDocType): TemplateContext {
   const today = new Date();
   const dueDate = new Date(today);
   dueDate.setDate(dueDate.getDate() + 14);
@@ -370,7 +370,7 @@ export function sampleTemplateContext(docType: EmailDocType): TemplateContext {
   const payment = { iban: company.iban, bic: company.bic };
   const customer = { name: "Beispiel AG", firstName: "Max", lastName: "Mustermann", number: "", email: "buchhaltung@beispiel-ag.de", customField: {} };
 
-  const documentByType: Record<EmailDocType, ReturnType<typeof docCtx>> = {
+  const documentByType: Record<EmailTemplateDocType, ReturnType<typeof docCtx>> = {
     ANGEBOT: docCtx("ANGEBOT", "AN-2026-0042", today, dueDate, 119000, 100000, 19000, "EUR"),
     AUFTRAGSBESTAETIGUNG: docCtx("AUFTRAGSBESTAETIGUNG", "AB-2026-0042", today, dueDate, 119000, 100000, 19000, "EUR"),
     PROFORMA: docCtx("PROFORMA", "PF-2026-0042", today, dueDate, 119000, 100000, 19000, "EUR"),
@@ -378,6 +378,7 @@ export function sampleTemplateContext(docType: EmailDocType): TemplateContext {
     CREDIT_NOTE: docCtx("CREDIT_NOTE", "GS-2026-0042", today, dueDate, 119000, 100000, 19000, "EUR"),
     DUNNING: docCtx("DUNNING", "MA-2026-0042", today, dueDate, 119000, null, null, "EUR"),
     DELIVERY_NOTE: docCtx("DELIVERY_NOTE", "LS-2026-0042", today, dueDate, null, null, null, "EUR"),
+    PAYMENT_CONFIRMATION: docCtx("INVOICE", "RE-2026-0042", today, dueDate, 119000, 100000, 19000, "EUR"),
   };
 
   return {
@@ -399,5 +400,6 @@ export function sampleTemplateContext(docType: EmailDocType): TemplateContext {
     },
     contact: { name: "Max Mustermann", firstName: "Max", lastName: "Mustermann", email: "max.mustermann@beispiel-ag.de", role: "Einkauf", phone: "+49 30 7654321" },
     portal: { url: "https://beispiel.invalid/portal/beispiel-token" },
+    paymentReceived: { amount: formatMoneyDe(59500, "EUR"), date: formatDateDe(today), openAmount: formatMoneyDe(59500, "EUR"), method: "Überweisung" },
   };
 }

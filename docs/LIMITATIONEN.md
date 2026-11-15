@@ -282,6 +282,16 @@ Datumsangaben zu Altbelegen beziehen sich auf den Programmstand; maßgeblich ist
 - **Grenzen:** Datei höchstens 10 MB, höchstens 50.000 gelesene Einträge und 20.000 neue Umsätze je Datei, XML mit DOCTYPE, Entities oder Verarbeitungsanweisungen wird abgelehnt. Die Bremse für Importe (10 je Minute und Organisation, 60 je Minute für den Upload-Pfad) liegt nur im Speicher und gilt je Instanz.
 - **Namensabgleich ist unscharf.** Er liefert höchstens „möglich"; „sicher" gilt nur bei genau einer vollständig genannten Rechnungsnummer mit passendem Betrag (offener Rest oder Skontobetrag) oder bei einer Sammelzahlung aus lauter vollständigen Nummern.
 
+## Aktionen nach Zahlungseingang
+- **Kein PDF-Anhang** an der Zahlungsbestätigung; sie ist eine Mitteilung, keine Rechnung und keine Quittung.
+- **Verrechnung mit einer Gutschrift löst nichts aus.** Nur erfasste Zahlungen (manuell, API, MCP, Bankabgleich) lösen Regeln aus.
+- **Ausführung mit dem nächsten Scheduler-Lauf.** Nach Ablauf der Wartezeit läuft eine Regel nicht sekundengenau; ohne laufenden Scheduler greift nur der Anstoß nach der Zahlung.
+- **Eine Mail im Zustand „unklar" wird nie automatisch wiederholt**, damit kein Kunde zwei Bestätigungen erhält. Der Betreiber prüft das E-Mail-Protokoll und wiederholt bei Bedarf von Hand.
+- **Versandgrenzen:** 5 Bestätigungen je Kunde und 100 je Firma und Stunde; darüber wird der Lauf verschoben.
+- **Abo-Fortsetzung nur bei Zahlungseingang.** Bleibt ein Abo wegen einer weiteren offenen Rechnung pausiert und wird diese Rechnung storniert statt bezahlt, wird das Abo nicht automatisch fortgesetzt.
+- **Nichts wird rückgängig gemacht.** Eine Gegenbuchung oder ein Storno nach der Ausführung nimmt versendete Mails, Tags, Benachrichtigungen und fortgesetzte Abos nicht zurück; davor überspringt es den Lauf.
+- **Höchstens 5 Aktionen je Regel**, jede Art einmal; höchstens 20 Läufe je Regel und Rechnung.
+
 ## Bewusst nicht umgesetzt
 Diese Punkte sind keine Lücken, sondern bewusste Projektentscheidungen (Abgrenzung: keine Buchhaltungssoftware):
 

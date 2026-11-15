@@ -14,6 +14,8 @@ import { parseBuyerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
 import { PaymentDialog } from "./PaymentDialog";
 import { ReversePaymentDialog } from "./ReversePaymentDialog";
 import { reversedCentsByPayment } from "@/domain/invoice/amounts";
+import type { InvoicePaymentRuleRun } from "@/domain/payment-rule/views";
+import { PaymentRuleRunLines } from "@/components/payment-rules/PaymentRuleRunLines";
 
 const XML_FORMAT_LABEL: Record<string, string> = { XRECHNUNG: "XRechnung", ZUGFERD: "ZUGFeRD" };
 
@@ -64,6 +66,7 @@ export function InvoiceStatusCard({
   tags,
   tagOptions,
   archive,
+  paymentRuleRuns = [],
 }: {
   invoice: InvoiceDetail;
   openCents: number;
@@ -88,6 +91,8 @@ export function InvoiceStatusCard({
   tagOptions: TagPickerItem[];
   /** Phase 16a: PDF-Eintrag des Belegarchivs (`null` = noch nicht archiviert). */
   archive: { createdAt: Date; sha256: string } | null;
+  /** Laeufe der Regeln nach Zahlungseingang dieser Rechnung (nur eigene Organisation). */
+  paymentRuleRuns?: InvoicePaymentRuleRun[];
 }) {
   // Fix 1 (Review): Bezahlt/Offen gehoerten frueher zum guarded "Zahlung & Mahnwesen"-
   // Abschnitt (isInvoiceType && !isDraft && !isCancelled) — fuer Entwuerfe, Gutschriften und
@@ -244,6 +249,7 @@ export function InvoiceStatusCard({
                         {p.reference && <span className="text-xs text-ink-muted">{p.reference}</span>}
                         {canReverse && <ReversePaymentDialog invoiceId={invoice.id} paymentId={p.id} restCents={restCents} currency={invoice.currency} />}
                       </span>
+                      <PaymentRuleRunLines runs={paymentRuleRuns.filter((x) => x.paymentId === p.id)} />
                     </div>
                   );
                 })}

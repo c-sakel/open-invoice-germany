@@ -185,6 +185,7 @@ export async function createPartialCreditNote(
     const openBefore = openAmountCents(original);
     const offsetCents = Math.min(creditGross, Math.max(openBefore, 0));
     if (offsetCents > 0) {
+      // Verrechnung ist keine Zahlung im Sinne der Regeln nach Zahlungseingang: es entstehen bewusst keine Laeufe.
       await tx.payment.create({
         data: {
           invoiceId: original.id,

@@ -3,12 +3,12 @@ import { z } from "zod";
 import { getActiveOrg } from "@/lib/org";
 import { buildTemplateContext, sampleTemplateContext, DocumentNotFoundError } from "@/domain/email/context";
 import { renderTemplate } from "@/lib/template/render";
-import { EmailDocType } from "@/schemas/email";
+import { EmailTemplateDocType } from "@/schemas/email";
 
 export const runtime = "nodejs";
 
 const bodySchema = z.object({
-  docType: EmailDocType,
+  docType: EmailTemplateDocType,
   docId: z.string().min(1).optional(),
   subject: z.string().default(""),
   body: z.string().default(""),
@@ -26,7 +26,7 @@ export async function POST(req: Request) {
 
   try {
     let ctx;
-    if (sample || !docId) {
+    if (sample || !docId || docType === "PAYMENT_CONFIRMATION") {
       ctx = sampleTemplateContext(docType);
     } else {
       const org = await getActiveOrg();

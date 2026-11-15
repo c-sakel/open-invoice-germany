@@ -16,6 +16,7 @@ import type { Prisma, Invoice, InvoiceLine, Payment } from "@/generated/prisma/c
 import { dbInternal } from "@/lib/db";
 import { lockOrganization } from "@/lib/db-lock";
 import { withChangeLogRetry } from "@/lib/chain-retry";
+import { kickPaymentRules } from "@/domain/payment-rule/kick";
 import { createDraftInvoiceWithinTx } from "@/domain/invoice/create";
 import { finalizeWithinTx } from "@/domain/invoice/finalize";
 import { recordPaymentWithinTx, PaymentError, type PaymentCreatedBy } from "@/domain/invoice/payment";
@@ -86,6 +87,7 @@ export async function createInvoiceComplete(
     { timeout: 20_000, maxWait: 10_000 },
   ));
 
+  if (result.paymentId !== null) kickPaymentRules(orgId);
   // Nach dem Commit (der Hook darf das Ergebnis nie kippen): OSS-Schwelle pruefen.
   try {
     await onInvoiceFinalizedOss(orgId, result.invoice.id, now);

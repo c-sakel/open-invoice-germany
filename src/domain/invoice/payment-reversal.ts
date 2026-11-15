@@ -16,6 +16,7 @@ import { logActivity } from "@/domain/activity/log";
 import { emitEvent } from "@/domain/webhook/emit";
 import { serializePayment } from "@/api/serializers/payment";
 import { NotFoundError } from "@/domain/errors";
+import { skipOpenRunsForPayment } from "@/domain/payment-rule/enqueue";
 import { payableBaseCents } from "@/domain/invoice/amounts";
 import { decrementPaidAmount } from "./paid-amount";
 import { PaymentError, type PaymentCreatedBy } from "./payment";
@@ -155,6 +156,9 @@ export async function reversePaymentWithinTx(
       }
     }
   }
+
+  // Offene Regel-Laeufe der Zahlung anhalten (laufende prueft der Ausfuehrer vor jedem Schritt).
+  await skipOpenRunsForPayment(tx, inv.orgId, payment.id, "Zahlung gegengebucht");
 
   const newPaid = await decrementPaidAmount(tx, inv.id, totalDelta);
   if (newPaid === null) throw new PaymentError("Die Gegenbuchung uebersteigt den gebuchten Zahlbetrag der Rechnung.");

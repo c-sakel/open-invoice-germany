@@ -3,7 +3,7 @@ import { getActiveOrg } from "@/lib/org";
 import { dbInternal } from "@/lib/db";
 import { SettingsTabs } from "@/components/SettingsTabs";
 import { DOC_TYPE_LABEL } from "@/lib/email/doc-type-labels";
-import { EMAIL_DOC_TYPES, type EmailDocType } from "@/schemas/email";
+import { EMAIL_TEMPLATE_DOC_TYPES, type EmailTemplateDocType } from "@/schemas/email";
 import { TemplateRowActions } from "@/components/forms/TemplateRowActions";
 import { LanguageFilter } from "@/components/forms/LanguageFilter";
 import { DOC_LANGUAGES, DOC_LANGUAGE_LABEL, type DocLanguage } from "@/lib/i18n/doc";
@@ -19,9 +19,9 @@ export default async function EmailTemplatesPage({ searchParams }: { searchParam
     orderBy: [{ docType: "asc" }, { name: "asc" }],
   });
 
-  const byDocType = new Map<EmailDocType, typeof templates>();
+  const byDocType = new Map<EmailTemplateDocType, typeof templates>();
   for (const t of templates) {
-    const key = t.docType as EmailDocType;
+    const key = t.docType as EmailTemplateDocType;
     byDocType.set(key, [...(byDocType.get(key) ?? []), t]);
   }
 
@@ -37,7 +37,7 @@ export default async function EmailTemplatesPage({ searchParams }: { searchParam
 
       <LanguageFilter active={language} />
 
-      {EMAIL_DOC_TYPES.map((docType) => {
+      {EMAIL_TEMPLATE_DOC_TYPES.map((docType) => {
         const items = byDocType.get(docType) ?? [];
         if (items.length === 0) return null;
         return (

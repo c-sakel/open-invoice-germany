@@ -6,7 +6,7 @@
  * ist nur UX; diese Funktion ist die eigentliche Durchsetzung.
  */
 import { dbInternal } from "@/lib/db";
-import { emailTemplateInputSchema, type EmailTemplateInput, type EmailDocType } from "@/schemas/email";
+import { emailTemplateInputSchema, type EmailTemplateInput, type EmailTemplateDocType } from "@/schemas/email";
 import { Prisma, type EmailTemplate } from "@/generated/prisma/client";
 
 export class TemplateNotFoundError extends Error {}
@@ -37,14 +37,14 @@ export async function saveEmailTemplate(orgId: string, rawInput: EmailTemplateIn
 async function saveEmailTemplateTx(orgId: string, input: EmailTemplateInput): Promise<EmailTemplate> {
   return dbInternal.$transaction(async (tx) => {
     let templateId = input.id;
-    let docType: EmailDocType = input.docType;
+    let docType: EmailTemplateDocType = input.docType;
     let language: string = input.language ?? "de";
 
     if (templateId) {
       const existing = await tx.emailTemplate.findFirst({ where: { id: templateId, orgId } });
       if (!existing) throw new Error("Vorlage nicht gefunden.");
       // docType ist unveraenderlich: der bestehende Wert gewinnt, der Eingabewert wird ignoriert.
-      docType = existing.docType as EmailDocType;
+      docType = existing.docType as EmailTemplateDocType;
       language = existing.language; // wie docType unveraenderlich
       await tx.emailTemplate.update({
         where: { id: templateId },

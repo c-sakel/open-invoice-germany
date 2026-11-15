@@ -32,6 +32,11 @@ export const TEMPLATE_PLACEHOLDERS: { path: string; label: string }[] = [
   { path: "offer.number", label: "Angebotsnummer" },
   { path: "offer.validUntil", label: "Angebot gültig bis" },
   { path: "portal.url", label: "Kundenportal-Link" },
+  // Nur in Vorlagen vom Typ Zahlungsbestaetigung (Zahlung, auf die sich die Regel bezieht).
+  { path: "paymentReceived.amount", label: "Eingegangener Zahlbetrag" },
+  { path: "paymentReceived.date", label: "Zahlungsdatum" },
+  { path: "paymentReceived.openAmount", label: "Offener Rest nach der Zahlung" },
+  { path: "paymentReceived.method", label: "Zahlungsart" },
   { path: "dunning.level", label: "Mahnstufe" },
   { path: "dunning.stageName", label: "Name der Mahnstufe" },
   { path: "dunning.number", label: "Mahnungsnummer" },

@@ -328,6 +328,20 @@ Kontoauszüge (CAMT.053/.054) importieren und Umsätze Rechnungen zuordnen. Dies
 | `revoke_api_key` | API-Schlüssel unwiderruflich widerrufen (idempotent) | „Widerrufe den API-Schlüssel ‚Buchhaltung'." |
 | `list_api_keys` | API-Schlüssel auflisten (Name, Präfix, Scopes, zuletzt genutzt, Ablauf, Widerruf) — nie das Klartext-Token | „Welche API-Schlüssel gibt es?" |
 
+### Regeln nach Zahlungseingang
+
+Dieselben Schemas und Domainfunktionen wie REST (`/api/v1/PaymentRule`, `/api/v1/PaymentRuleRun`). Der Trockenlauf ist rein lesend.
+Eine E-Mail-Vorlage vom Typ Zahlungsbestätigung lässt sich nur in der Oberfläche oder per REST anlegen; die Regel verweist über `templateId` darauf.
+
+| Tool | Zweck | Beispiel |
+|---|---|---|
+| `list_payment_rules` | Regeln nach Zahlungseingang auflisten (Ausloeser, Aktionen, aktiv; archivierte optional) | „Welche Regeln laufen nach einem Zahlungseingang?" |
+| `upsert_payment_rule` | Regel anlegen (ohne id) oder ändern (mit id, nur übergebene Felder) | „Lege eine Regel an: bei vollständiger Zahlung Tag ‚bezahlt' setzen." |
+| `archive_payment_rule` | Regel archivieren (nie hart gelöscht, Läufe bleiben) | „Archiviere die Regel ‚Dankesmail'." |
+| `test_payment_rule` | Trockenlauf einer Regel gegen eine Rechnung inkl. Mailvorschau, schreibt nichts | „Würde die Regel ‚Dankesmail' für RE-50012 greifen?" |
+| `list_payment_rule_runs` | Läufe mit Status und Schritten auflisten (Filter status, ruleId, invoiceId, paymentId) | „Welche Regel-Läufe sind fehlgeschlagen?" |
+| `retry_payment_rule_run` | Fehlgeschlagenen Lauf wiederholen (ein Mail-Schritt wird als Folgeversand erneut gesendet) | „Wiederhole den Lauf xyz." |
+
 ### Webhooks
 
 | Tool | Zweck | Beispiel |

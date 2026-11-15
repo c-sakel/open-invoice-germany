@@ -3,7 +3,7 @@
 import { useActionState, useState } from "react";
 import { saveEmailTemplateAction } from "@/app/actions/templates";
 import type { ActionResult } from "@/app/actions/result";
-import { EMAIL_DOC_TYPES, type EmailDocType } from "@/schemas/email";
+import { EMAIL_TEMPLATE_DOC_TYPES, type EmailTemplateDocType } from "@/schemas/email";
 import { DOC_TYPE_LABEL } from "@/lib/email/doc-type-labels";
 import { DOC_LANGUAGES, DOC_LANGUAGE_LABEL, type DocLanguage } from "@/lib/i18n/doc";
 import { TEMPLATE_PLACEHOLDERS } from "@/lib/template/placeholders";
@@ -12,7 +12,7 @@ import { TextField, SelectField, CheckboxField, SubmitButton, ErrorBanner } from
 export interface EmailTemplateFormData {
   id?: string;
   name: string;
-  docType: EmailDocType;
+  docType: EmailTemplateDocType;
   language?: string;
   subject: string;
   body: string;
@@ -29,7 +29,7 @@ export function EmailTemplateForm({
   customFieldPlaceholders?: { path: string; label: string }[];
 }) {
   const [state, action] = useActionState<ActionResult, FormData>(saveEmailTemplateAction, { ok: false });
-  const [docType, setDocType] = useState<EmailDocType>(template?.docType ?? "INVOICE");
+  const [docType, setDocType] = useState<EmailTemplateDocType>(template?.docType ?? "INVOICE");
   const [subject, setSubject] = useState(template?.subject ?? "");
   const [body, setBody] = useState(template?.body ?? "");
   const [signature, setSignature] = useState(template?.signature ?? "");
@@ -79,8 +79,8 @@ export function EmailTemplateForm({
               label="Dokumenttyp"
               name="docType"
               defaultValue={docType}
-              options={EMAIL_DOC_TYPES.map((t) => ({ value: t, label: DOC_TYPE_LABEL[t] }))}
-              onChange={(e) => setDocType(e.target.value as EmailDocType)}
+              options={EMAIL_TEMPLATE_DOC_TYPES.map((t) => ({ value: t, label: DOC_TYPE_LABEL[t] }))}
+              onChange={(e) => setDocType(e.target.value as EmailTemplateDocType)}
             />
           )}
         </div>

@@ -1344,3 +1344,6 @@ export * from "./portal";
 
 // ── Bankabgleich ─────────────────────────────────────────────────────────────
 export * from "./bank";
+
+// ── Regeln nach Zahlungseingang ──────────────────────────────────────────────
+export * from "./payment-rule";

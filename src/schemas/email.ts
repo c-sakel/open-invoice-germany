@@ -6,6 +6,11 @@ export const EMAIL_DOC_TYPES = ["ANGEBOT", "AUFTRAGSBESTAETIGUNG", "PROFORMA", "
 export const EmailDocType = z.enum(EMAIL_DOC_TYPES);
 export type EmailDocType = z.infer<typeof EmailDocType>;
 
+/** Vorlagentypen: Belegtypen des Versands plus Zahlungsbestaetigung (nur ueber Regeln nach Zahlungseingang, kein Belegversand). */
+export const EMAIL_TEMPLATE_DOC_TYPES = [...EMAIL_DOC_TYPES, "PAYMENT_CONFIRMATION"] as const;
+export const EmailTemplateDocType = z.enum(EMAIL_TEMPLATE_DOC_TYPES);
+export type EmailTemplateDocType = z.infer<typeof EmailTemplateDocType>;
+
 const email = z.string().trim().pipe(z.email("Ungültige E-Mail-Adresse"));
 
 /** Kommagetrennte Adressliste -> Array; leer erlaubt; max. 20. */
@@ -36,7 +41,7 @@ export type MailSettingsInput = z.infer<typeof mailSettingsInputSchema>;
 export const emailTemplateInputSchema = z.object({
   id: z.string().optional(),
   name: z.string().trim().min(1).max(120),
-  docType: EmailDocType,
+  docType: EmailTemplateDocType,
   subject: z.string().trim().min(1).max(300),
   body: z.string().min(1).max(20000),
   signature: z.string().max(5000).optional(),

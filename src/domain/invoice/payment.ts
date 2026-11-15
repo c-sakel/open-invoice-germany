@@ -23,6 +23,8 @@ import { skontoTerms, detectSkonto, type SkontoTerm } from "@/lib/pricing/skonto
 import { payableBaseCents } from "@/domain/invoice/amounts";
 import { incrementPaidAmount } from "./paid-amount";
 import { NotFoundError } from "@/domain/errors";
+import { enqueuePaymentRuleRuns } from "@/domain/payment-rule/enqueue";
+import { kickPaymentRules } from "@/domain/payment-rule/kick";
 import type { RecordPaymentInput } from "@/schemas";
 
 /** Herkunft einer Zahlungszeile (`Payment.createdBy`, Phase 16a). */
@@ -73,7 +75,10 @@ export async function recordPayment(
   input: RecordPaymentInput,
   opts: RecordPaymentOptions = {},
 ): Promise<RecordPaymentResult> {
-  return dbInternal.$transaction((tx) => recordPaymentWithinTx(tx, invoiceId, input, opts));
+  const result = await dbInternal.$transaction((tx) => recordPaymentWithinTx(tx, invoiceId, input, opts));
+  // Nach dem Commit: faellige Regel-Laeufe anstossen (Fehler beruehren die Zahlung nie).
+  kickPaymentRules(result.payment.orgId);
+  return result;
 }
 
 /** Rumpf von `recordPayment` in einer vom Aufrufer gehaltenen Transaktion (Phase 18d:
@@ -96,7 +101,7 @@ export async function recordPaymentWithinTx(
   const inv = await tx.invoice.findUnique({
     where: { id: invoiceId },
     select: {
-      id: true, status: true, type: true, orgId: true, number: true,
+      id: true, status: true, type: true, orgId: true, number: true, customerId: true, currency: true,
       issueDate: true, grossTotalCents: true, paidAmountCents: true, payableCents: true,
       skonto1Permille: true, skonto1Days: true, skonto2Permille: true, skonto2Days: true,
     },
@@ -279,6 +284,21 @@ export async function recordPaymentWithinTx(
       }
     }
   }
+
+  // Regeln nach Zahlungseingang: Lauf in derselben Transaktion wie die Zahlung (Outbox), angeknuepft an die
+  // Primaerzahlung; eine mitgebuchte Skontozahlung loest nichts eigenes aus. Die Verrechnung mit einer
+  // Gutschrift laeuft nicht ueber diese Funktion und loest bewusst nichts aus.
+  await enqueuePaymentRuleRuns(tx, {
+    orgId: inv.orgId,
+    invoiceId,
+    customerId: inv.customerId,
+    invoiceNumber: inv.number,
+    currency: inv.currency,
+    payment: { id: payment.id, amountCents: payment.amountCents, paidAt: payment.paidAt, createdBy, provider: opts.provider ?? null },
+    finalStatus: result.payment.status,
+    openAfterCents: baseCents - result.payment.paidAmountCents,
+    now,
+  });
 
   return result;
 }

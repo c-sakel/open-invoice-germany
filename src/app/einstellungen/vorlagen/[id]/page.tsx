@@ -6,7 +6,7 @@ import { SettingsTabs } from "@/components/SettingsTabs";
 import { EmailTemplateForm } from "@/components/forms/EmailTemplateForm";
 import { listCustomFieldDefinitions } from "@/domain/customer/custom-fields";
 import { customFieldPlaceholders } from "@/lib/template/placeholders";
-import type { EmailDocType } from "@/schemas/email";
+import type { EmailTemplateDocType } from "@/schemas/email";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +36,7 @@ export default async function EmailTemplateEditPage({ params }: { params: Promis
       </div>
 
       <EmailTemplateForm
-        template={template ? { ...template, docType: template.docType as EmailDocType } : null}
+        template={template ? { ...template, docType: template.docType as EmailTemplateDocType } : null}
         customFieldPlaceholders={customFieldPlaceholderList}
       />
     </div>

@@ -19,6 +19,8 @@ export default defineConfig({
       // Phase 16a: Belegarchiv der Tests nie unter ./data/archive ablegen.
       // Phase 16b: Wechselkurs-Abruf (EZB) nie aus der Testsuite heraus ins Netz.
       FX_AUTO_FETCH: "0",
+      // Regel-Laeufe nach Zahlungseingang fuehren Tests explizit aus, nie automatisch nach dem Commit.
+      PAYMENT_RULES_AFTER_COMMIT: "0",
       ARCHIVE_DIR: path.join(os.tmpdir(), "oig-test-archive"),
     },
     // SQLite verträgt keine parallelen Writer -> Test-Files seriell

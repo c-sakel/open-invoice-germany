@@ -10,6 +10,7 @@ import { withChangeLogRetry } from "@/lib/chain-retry";
 import { logActivity } from "@/domain/activity/log";
 import { NotFoundError } from "@/domain/errors";
 import { describeError } from "@/lib/safe-error";
+import { kickPaymentRules } from "@/domain/payment-rule/kick";
 import { PaymentError, recordPaymentWithinTx, type PaymentCreatedBy } from "@/domain/invoice/payment";
 import { reversePaymentWithinTx } from "@/domain/invoice/payment-reversal";
 import { bankConfirmInputSchema, bankConfirmUnambiguousInputSchema, bankIgnoreInputSchema, bankUndoInputSchema } from "@/schemas/bank";
@@ -61,6 +62,13 @@ export interface ConfirmResult {
 }
 
 export async function confirmBankMatch(orgId: string, txId: string, raw: unknown, opts: BankActionOptions): Promise<ConfirmResult> {
+  const result = await confirmBankMatchInTx(orgId, txId, raw, opts);
+  // Nach dem Commit: faellige Regel-Laeufe anstossen (Fehler beruehren die Buchung nie).
+  kickPaymentRules(orgId);
+  return result;
+}
+
+async function confirmBankMatchInTx(orgId: string, txId: string, raw: unknown, opts: BankActionOptions): Promise<ConfirmResult> {
   const input = bankConfirmInputSchema.parse(raw);
   const now = opts.now ?? new Date();
   const invoiceIds = input.allocations.map((a) => a.invoiceId);
