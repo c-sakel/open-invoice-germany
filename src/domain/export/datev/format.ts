@@ -8,7 +8,7 @@
  */
 import { berlinParts } from "@/lib/berlin-time";
 import { FORMULA_START } from "@/domain/export/csv-writer";
-import { encodeCp1252, unmappableChars } from "./cp1252";
+import { encodeCp1252, toCp1252Text, unmappableChars } from "./cp1252";
 import type { DatevField, FieldKind } from "./fields";
 
 export { encodeCp1252, unmappableChars };
@@ -68,14 +68,17 @@ export function ddmmyyyy(day: Date): string {
  * sind unzulaessig. Andere Zeichen werden je Zeichen zu "_", dann auf 36 gekuerzt.
  */
 export function belegfeld(s: string): string {
-  return Array.from(s)
+  const mapped = Array.from(s)
     .map((c) => (/^[A-Za-z0-9_$&%*+\-/]$/.test(c) ? c : "_"))
-    .slice(0, 36)
-    .join("");
+    .slice(0, 36);
+  // Kein Formelstart am Wertanfang (Apostroph ist im Belegfeld unzulaessig).
+  if (mapped.length > 0 && /^[+-]$/.test(mapped[0])) mapped[0] = "_";
+  return mapped.join("");
 }
 
 function cleanText(s: string): string {
-  return s.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").trim();
+  // Zuerst wie der Encoder abbilden, dann pruefen: sonst legt die Abbildung (U+00AD, U+2212, ...) einen Formelstart frei.
+  return toCp1252Text(s).replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").trim();
 }
 
 /** Wuerde `text` einen Apostroph voranstellen (Formelzeichen am Anfang, gleiche Regel wie der CSV-Schreiber)? */
@@ -99,6 +102,8 @@ export type CellValue = string | number;
 function textCell(v: CellValue | undefined): string {
   const s = v === undefined ? "" : String(v);
   if (/[\r\n]/.test(s)) throw new DatevFormatError("DATEV-Textzelle darf keine Zeilenumbrueche enthalten");
+  // Abschluss-Pruefung auf dem kodierten Wert: ein ungeschuetzter Formelstart ist ein Programmfehler.
+  if (FORMULA_START.test(toCp1252Text(s))) throw new DatevFormatError("DATEV-Textzelle beginnt mit einem ungeschuetzten Formelzeichen");
   return `"${s.replace(/"/g, '""')}"`;
 }
 

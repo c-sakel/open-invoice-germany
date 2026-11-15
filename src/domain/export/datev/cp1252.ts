@@ -24,7 +24,8 @@ const SPECIAL: ReadonlyMap<number, string> = new Map([
 ]);
 
 function direct(cp: number): boolean {
-  return cp < 0x80 || (cp >= 0xa0 && cp <= 0xff) || HIGH_BLOCK.has(cp) || cp === 0x20ac;
+  // U+00AD (weicher Trenner) ist unsichtbar und wird entfernt (SPECIAL), nicht als Byte 0xAD ausgegeben.
+  return cp < 0x80 || (cp >= 0xa0 && cp <= 0xff && cp !== 0xad) || HIGH_BLOCK.has(cp) || cp === 0x20ac;
 }
 
 /** Ersatz fuer ein Zeichen ausserhalb der Tabelle (Basisbuchstabe ohne Akzent, typografisches Zeichen) oder null. */
@@ -53,7 +54,7 @@ export function encodeCp1252(s: string): Buffer {
     const cp = ch.codePointAt(0) ?? 0x3f;
     if (cp === 0x20ac) {
       out.push(0x45, 0x55, 0x52);
-    } else if (cp < 0x80 || (cp >= 0xa0 && cp <= 0xff)) {
+    } else if (direct(cp) && cp < 0x100) {
       out.push(cp);
     } else if (HIGH_BLOCK.has(cp)) {
       out.push(HIGH_BLOCK.get(cp) ?? 0x3f);
@@ -64,4 +65,20 @@ export function encodeCp1252(s: string): Buffer {
     }
   }
   return Buffer.from(out);
+}
+
+/**
+ * Zeichenfolge, wie sie nach der Kodierung in der Datei steht (Euro -> "EUR", Transliteration, "?" je nicht
+ * darstellbarem Zeichen), wieder als Text. Prueffunktionen (Formelschutz) muessen auf DIESEM Text arbeiten,
+ * damit eine Abbildung (z. B. U+00AD -> "") keinen Formelstart freilegt.
+ */
+export function toCp1252Text(s: string): string {
+  let out = "";
+  for (const ch of s) {
+    const cp = ch.codePointAt(0) ?? 0x3f;
+    if (cp === 0x20ac) out += "EUR";
+    else if (direct(cp)) out += ch;
+    else out += transliterate(ch) ?? "?";
+  }
+  return out;
 }

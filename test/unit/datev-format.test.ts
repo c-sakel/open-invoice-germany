@@ -17,6 +17,7 @@ import {
   ddmm,
   ddmmyyyy,
   encodeCp1252,
+  startsWithFormula,
   unmappableChars,
   headerLine,
   text,
@@ -253,6 +254,23 @@ describe("Zellenregeln", () => {
     expect(text('  a"b;c\r\nd\te  ', 50)).toBe('a"b;c  d e');
     expect(text("abcdef", 3)).toBe("abc");
     expect(text("ab \n", 3)).toBe("ab");
+  });
+
+  it("text: Formelschutz nach der Zeichenabbildung (weicher Trenner, Minuszeichen, Vollbreite)", () => {
+    expect(text("\u00ad=HYPERLINK(\"http://x\")", 80)).toBe("'=HYPERLINK(\"http://x\")");
+    expect(text("\u2212SUM(1)", 20)).toBe("'-SUM(1)");
+    expect(text("\uff1d1+1", 20)).toBe("?1+1");
+    expect(text("\u200b\u00ad@x", 20)).toBe("'@x");
+    expect(startsWithFormula("\u00ad=1")).toBe(true);
+  });
+
+  it("dataLine: ungeschuetzter Formelstart in einer Textzelle wird abgelehnt, geschuetzte und Belegfelder nicht", () => {
+    const fields = [{ name: "a", kind: "text" as const }];
+    expect(() => dataLine(fields, new Map([[1, "=1+1"]]))).toThrow();
+    expect(() => dataLine(fields, new Map([[1, "\u00ad=1+1"]]))).toThrow();
+    expect(dataLine(fields, new Map([[1, text("\u00ad=1+1", 20)]]))).toBe('"\'=1+1"');
+    expect(belegfeld("-5")).toBe("_5");
+    expect(belegfeld("+5")).toBe("_5");
   });
 
   it("text: Formelzeichen am Anfang bekommen einen Apostroph, auch nach Leerraum, nie doppelt", () => {
