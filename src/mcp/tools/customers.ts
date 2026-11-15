@@ -23,6 +23,9 @@ import { checkVatId, listVatIdChecks, VatCheckDisabledError, VatCheckRateLimitEr
 import { serializeVatIdCheck } from "@/api/serializers/vat-check";
 import { archiveCustomer } from "@/domain/customer/archive";
 import { createCustomer, updateCustomer, CustomerValidationError } from "@/domain/customer/save";
+import { updateCustomerWithDatev } from "@/domain/customer/update-with-datev";
+import { DatevError } from "@/domain/export/datev/errors";
+import { datevAccountInputSchema } from "@/schemas/datev";
 import { CONTACTS_BULK_MAX, ContactsBulkRejectedError, createContactsBulk } from "@/domain/import/contacts-bulk";
 import { RateLimitError } from "@/lib/rate-limit";
 import { NotFoundError, InvalidOperationError } from "@/domain/errors";
@@ -183,6 +186,7 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
         customer: z.string().describe("Kunden-ID oder -Name"),
         ...customerFieldsSchema.partial().omit({ defaultPaymentMethodId: true }).shape,
         defaultPaymentMethod: z.string().optional().describe("Name oder Code der Standard-Zahlungsmethode"),
+        datevAccount: datevAccountInputSchema.optional().describe("DATEV-Debitorennummer (null = entfernen); nach dem ersten DATEV-Export gesperrt"),
       },
     },
     async (args): Promise<Result> => {
@@ -199,10 +203,11 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
           const method = await ctx.resolvePaymentMethod(org.id, defaultPaymentMethod);
           payload.defaultPaymentMethodId = method.id;
         }
-        const customer = await updateCustomer(org.id, existing.id, payload);
+        const customer = await updateCustomerWithDatev(org.id, existing.id, payload, "mcp");
         return ctx.ok(`Kunde aktualisiert: ${customer.name} (${customer.id}).`);
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+        if (e instanceof DatevError) return ctx.fail(`${e.message} (${e.code})`);
         if (e instanceof CustomerValidationError) return ctx.fail(e.message);
         if (e instanceof ToolError) return ctx.fail(e.message);
         return ctx.failUnknown(e);

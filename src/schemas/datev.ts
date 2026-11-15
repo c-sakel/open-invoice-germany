@@ -95,3 +95,30 @@ export const datevExportRequestSchema = z
   .strict();
 
 export type DatevExportRequest = z.infer<typeof datevExportRequestSchema>;
+
+/** Kontenzuordnung ersetzen (REST/MCP): gesamter Satz atomar. */
+export const datevMappingPutSchema = z.object({ rows: datevMappingInputSchema }).strict();
+
+/** Vorlage uebernehmen. */
+export const datevTemplateInputSchema = z.object({ chart: z.enum(DATEV_CHARTS), overwriteEdited: z.boolean().optional() }).strict();
+
+/** Debitorennummer eines Kunden (Bereich und Sperre prueft der Domain-Service). */
+export const datevAccountInputSchema = accountNumber.nullable();
+
+/** Seitenweise Posten eines Protokolls. */
+export const datevItemsQuerySchema = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(1000).default(200),
+    offset: z.coerce.number().int().min(0).default(0),
+  })
+  .strict();
+
+export const datevListQuerySchema = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(200).default(50),
+    offset: z.coerce.number().int().min(0).default(0),
+  })
+  .strict();
+
+/** Felder, die nur die Oberflaeche setzt (menschliche Bestaetigung). */
+export const DATEV_UI_ONLY_KEYS = ["confirmed", "confirmedNote", "confirmedHash", "confirmedAt"] as const;

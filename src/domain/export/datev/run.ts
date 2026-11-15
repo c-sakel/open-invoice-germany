@@ -225,3 +225,38 @@ export async function getDatevExport(orgId: string, exportId: string): Promise<D
   if (!row) throw new DatevExportError("NOT_FOUND", "Export nicht gefunden.");
   return toView(row);
 }
+
+export interface DatevExportItemView {
+  itemKey: string;
+  invoiceId: string | null;
+  paymentId: string | null;
+  customerId: string | null;
+  month: string;
+  status: string;
+  lineCount: number;
+  amountCents: number;
+  reason: string | null;
+  warning: string | null;
+}
+
+/** Posten eines Protokolls, seitenweise in stabiler Reihenfolge. Fremde oder unbekannte Laeufe: NOT_FOUND. */
+export async function listDatevExportItems(
+  orgId: string,
+  exportId: string,
+  page: { limit?: number; offset?: number } = {},
+): Promise<{ total: number; items: DatevExportItemView[] }> {
+  const owned = await dbInternal.datevExport.findFirst({ where: { id: exportId, orgId }, select: { id: true } });
+  if (!owned) throw new DatevExportError("NOT_FOUND", "Export nicht gefunden.");
+  const where = { orgId, exportId };
+  const [total, items] = await Promise.all([
+    dbInternal.datevExportItem.count({ where }),
+    dbInternal.datevExportItem.findMany({
+      where,
+      select: { itemKey: true, invoiceId: true, paymentId: true, customerId: true, month: true, status: true, lineCount: true, amountCents: true, reason: true, warning: true },
+      orderBy: [{ month: "asc" }, { itemKey: "asc" }, { id: "asc" }],
+      take: Math.min(Math.max(page.limit ?? 200, 1), 1000),
+      skip: Math.max(page.offset ?? 0, 0),
+    }),
+  ]);
+  return { total, items };
+}

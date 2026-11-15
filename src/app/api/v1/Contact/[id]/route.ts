@@ -5,7 +5,9 @@ import { apiDataResponseSchema, type RouteSpec } from "@/api/spec";
 import { serializeContact } from "@/api/serializers/contact";
 import { customerFieldsSchema } from "@/schemas";
 import { dbInternal } from "@/lib/db";
-import { updateCustomer, CustomerValidationError } from "@/domain/customer/save";
+import { CustomerValidationError } from "@/domain/customer/save";
+import { updateCustomerWithDatev } from "@/domain/customer/update-with-datev";
+import { datevAccountInputSchema } from "@/schemas/datev";
 import { NotFoundError } from "@/domain/errors";
 
 export const runtime = "nodejs";
@@ -19,7 +21,7 @@ export const GET = withApi<{ id: string }>(async (_req, ctx) => {
 
 export const PATCH = withApi<{ id: string }>(async (_req, ctx) => {
   try {
-    const updated = await updateCustomer(ctx.orgId, ctx.params.id, ctx.body);
+    const updated = await updateCustomerWithDatev(ctx.orgId, ctx.params.id, ctx.body, ctx.actor);
     return apiData(serializeContact(updated));
   } catch (e) {
     if (e instanceof CustomerValidationError) throw new z.ZodError([{ code: "custom", path: [e.path ?? "defaultPaymentMethodId"], message: e.message }]);
@@ -41,8 +43,8 @@ export const spec = {
     method: "PATCH",
     summary: "Kunden aktualisieren (Stammdaten)",
     scope: "write",
-    request: { body: customerFieldsSchema.partial() },
+    request: { body: customerFieldsSchema.partial().extend({ datevAccount: datevAccountInputSchema.optional().describe("DATEV-Debitorennummer (Bereich je Kontenlaenge, eindeutig); nach dem ersten Export gesperrt (409).") }) },
     response: apiDataResponseSchema(z.unknown()),
-    errors: [400, 401, 403, 404, 429],
+    errors: [400, 401, 403, 404, 409, 422, 429],
   },
 } satisfies Record<string, RouteSpec>;

@@ -84,6 +84,13 @@ Der Assistent ruft im Hintergrund die passenden Tools auf (`setup_company` → `
 | `setup_company` | Eigene Stammdaten anlegen/ändern (§ 14-Pflichtangaben: Name, Anschrift, Steuernummer/USt-IdNr., IBAN; optional `sepaCreditorId`, die SEPA-Gläubiger-ID für Lastschriften (BT-90) — wird geprüft und normalisiert; ohne Angabe bleibt der Bestand, das **Leeren geht nur in der Oberfläche**) | „Richte mein Unternehmen ein: Müller Handwerk GmbH, Lindenstr. 5, 21337 Lüneburg, Steuernummer 33/123/45678." |
 | `verify_audit_chain` | Hash-Kette des Änderungsprotokolls lückenlos prüfen, Prüfung protokollieren, bei Bruch alarmieren | „Prüfe die Hash-Kette des Änderungsprotokolls." |
 | `create_audit_export` | Prüfer-Export nach § 147 Abs. 6 AO (ZIP: CSV-Tabellen, `index.xml`, DTD, Kettenprüfung, archivierte Belege PDF/XML) für einen Zeitraum von höchstens drei Jahren in `exports/` schreiben | „Erzeuge den Prüfer-Export für 2025." |
+| `export_datev` | DATEV-Export (ZIP: Buchungsstapel je Monat, Debitoren, Protokoll; reine Datei) für Berliner Monate in `exports/` schreiben; `dryRun` liefert nur die Vorschau, bereits exportierte Monate nur mit `repeat`, `mode` `SUPPLEMENT` für Nachträge. Gesperrt, bis die Kontenzuordnung in der Oberfläche bestätigt ist | „Erzeuge den DATEV-Export für März 2025." |
+| `list_datev_exports` | Protokoll der DATEV-Exportläufe (Zeitraum, Zähler, SHA-256, Dateien, Handbuchungen) | „Zeig die DATEV-Exporte." |
+| `get_datev_status` | Bestätigungsstand, exportierte Monate und Nachträge in bereits exportierten Monaten | „Gibt es DATEV-Nachträge?" |
+| `get_datev_settings` | DATEV-Einstellungen mit Bestätigungsstand und Kontenzuordnung lesen | „Zeig die DATEV-Einstellungen." |
+| `update_datev_settings` | DATEV-Einstellungen im Teil-Update ändern; macht eine bestehende Bestätigung hinfällig (bestätigt wird nur in der Oberfläche) | „Setze die Beraternummer für DATEV." |
+| `update_datev_mapping` | Gesamte DATEV-Kontenzuordnung atomar ersetzen; macht eine bestehende Bestätigung hinfällig | „Ordne 19 % Umsatz dem Konto 8400 zu." |
+| `apply_datev_template` | Kontenrahmen SKR03/SKR04 als Vorschlag übernehmen (fehlende Zeilen ergänzen, keine Bestätigung) | „Übernimm die SKR03-Vorlage." |
 | `get_invoice_archive` | Archivstand einer Rechnung (PDF/CII/UBL mit SHA-256, Quelle, Zeitpunkt); archiviert nicht selbst | „Ist die Rechnung RE-50001 archiviert?" |
 | `reverse_payment` | Zahlung per Gegenbuchung korrigieren (negative Zahlungszeile mit Begründung; Zahlungen werden nie gelöscht) | „Storniere die Zahlung vom 03.03. bei RE-50001, falsch gebucht." |
 

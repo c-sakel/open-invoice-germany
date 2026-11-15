@@ -45,6 +45,7 @@ import { LxpAuthError, LxpRequestError, LxpUnavailableError } from "@/lib/postal
 import { PostalNetworkForbiddenError } from "@/lib/postal/transport";
 import { GrossDeviationError } from "@/domain/document/price-input";
 import { UsageError, type UsageErrorCode } from "@/domain/recurring/usage-error";
+import { DatevError, DatevExportError } from "@/domain/export/datev/errors";
 import { describeError } from "@/lib/safe-error";
 
 /**
@@ -248,6 +249,17 @@ export function mapApiError(e: unknown): { status: number; body: ApiErrorBody } 
   // Regeln nach Zahlungseingang: Fachfehler der Verwaltung (Limit, Referenzen, Wiederholen) als 422.
   if (e instanceof PaymentRuleError) {
     return { status: 422, body: { error: { code: "UNPROCESSABLE", message: e.message } } };
+  }
+  // DATEV-Export: fester fachlicher Code in `reason`, Liste fehlender Angaben in `details`.
+  if (e instanceof DatevExportError) {
+    const code: ApiErrorCode = e.status === 404 ? "NOT_FOUND" : e.status === 409 ? "CONFLICT" : e.status === 500 ? "INTERNAL" : "UNPROCESSABLE";
+    const hasDetails = e.details.months !== undefined || e.details.issues !== undefined;
+    return { status: e.status, body: { error: { code, message: e.message, reason: e.code, ...(hasDetails ? { details: e.details } : {}) } } };
+  }
+  if (e instanceof DatevError) {
+    const status = e.code === "VALIDATION" ? 400 : e.code === "NOT_FOUND" ? 404 : e.code === "DEBTOR_LOCKED" || e.code === "DEBTOR_DUPLICATE" ? 409 : 422;
+    const code: ApiErrorCode = status === 400 ? "VALIDATION" : status === 404 ? "NOT_FOUND" : status === 409 ? "CONFLICT" : "UNPROCESSABLE";
+    return { status, body: { error: { code, message: e.message, reason: e.code } } };
   }
   if (e instanceof RateLimitError || e instanceof VatCheckRateLimitError) {
     return { status: 429, body: { error: { code: "RATE_LIMITED", message: e.message } } };
