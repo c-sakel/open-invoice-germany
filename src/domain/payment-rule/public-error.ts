@@ -28,7 +28,8 @@ export function publicSteps(steps: unknown): unknown {
   return steps.map((s: unknown) => {
     if (typeof s !== "object" || s === null || !("error" in s)) return s;
     const { error, ...withNote } = s as { error?: unknown } & Record<string, unknown>;
-    const rest = withNote.status === "FAILED" ? (({ note: _n, ...r }) => r)(withNote) : withNote;
+    const rest: Record<string, unknown> = { ...withNote };
+    if (withNote.status === "FAILED") delete rest.note;
     return typeof error === "string" ? { ...rest, error: publicErrorText(error) } : rest;
   });
 }
