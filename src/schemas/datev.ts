@@ -78,3 +78,20 @@ export const datevConfirmNoteSchema = z
   .min(3)
   .max(200)
   .refine((s) => !/[\u0000-\u001f\u007f]/.test(s), "Keine Steuerzeichen");
+
+const monthKey = z
+  .string()
+  .refine((s) => /^20\d{2}-(0[1-9]|1[0-2])$/.test(s), "Monat im Format JJJJ-MM (Jahre 2000 bis 2099)");
+
+/** Exportauftrag: Zeitraum in Berliner Monaten, Modus, Wiederholungsfreigabe und Vorschau. */
+export const datevExportRequestSchema = z
+  .object({
+    from: monthKey,
+    to: monthKey,
+    mode: z.enum(["PERIOD", "SUPPLEMENT"]),
+    repeat: z.boolean().optional(),
+    dryRun: z.boolean().optional(),
+  })
+  .strict();
+
+export type DatevExportRequest = z.infer<typeof datevExportRequestSchema>;
