@@ -222,6 +222,7 @@ export function mapApiError(e: unknown): { status: number; body: ApiErrorBody } 
   // Online-Zahlung: feste Texte, nie Anbietertexte. Unbekannte Rechnung 404, Fachfehler 422 mit Code in `reason`.
   if (e instanceof OnlinePaymentError) {
     if (e.code === "NOT_FOUND") return { status: 404, body: { error: { code: "NOT_FOUND", message: e.message } } };
+    if (e.code === "RATE_LIMITED") return { status: 429, body: { error: { code: "RATE_LIMITED", message: e.message } } };
     return { status: 422, body: { error: { code: "UNPROCESSABLE", message: e.message, reason: e.code } } };
   }
   // Phase 16d: Postversand. Feste Texte, nie die Meldung des Anbieters (kein Schluessel in Antworten).

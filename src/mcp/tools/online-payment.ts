@@ -11,11 +11,12 @@ import {
   serializeRefresh,
 } from "@/api/serializers/online-payment";
 import { OnlinePaymentError } from "@/domain/online-payment/errors";
-import { loadOnlinePaymentSettings, saveOnlinePaymentSettings, testProviderConnection } from "@/domain/online-payment/settings";
+import { assertConnectionTestCooldown, loadOnlinePaymentSettings, saveOnlinePaymentSettings, testProviderConnection } from "@/domain/online-payment/settings";
 import {
   createInvoicePayLink,
   disableInvoicePayLink,
   loadInvoicePayLink,
+  ONLINE_PAYMENT_UI_ONLY_KEYS,
   parseOnlinePaymentSettingsInput,
   refreshInvoicePayLink,
 } from "@/domain/online-payment/views";
@@ -55,7 +56,11 @@ export function registerOnlinePaymentTools(server: McpServer, ctx: McpToolsConte
       title: "Anzeigeoptionen der Online-Zahlung setzen",
       description:
         "Teil-Update von defaultProvider (NONE|MOLLIE), showOnPdf, showInMail, showInPortal. Schluessel, Einschalter, Methoden und Waehrungen lassen sich nur in der Oberflaeche aendern.",
-      inputSchema: onlinePaymentSettingsInputSchema.shape,
+      // Verbotene Felder muessen im Schema stehen, sonst entfernt das SDK sie vor dem Handler still.
+      inputSchema: {
+        ...onlinePaymentSettingsInputSchema.shape,
+        ...Object.fromEntries(ONLINE_PAYMENT_UI_ONLY_KEYS.map((k) => [k, z.unknown().optional()])),
+      },
     },
     async (args): Promise<Result> => {
       try {
@@ -78,6 +83,7 @@ export function registerOnlinePaymentTools(server: McpServer, ctx: McpToolsConte
     async ({ provider }): Promise<Result> => {
       try {
         const org = await ctx.requireOrg();
+        await assertConnectionTestCooldown(org.id, provider);
         return ctx.ok(JSON.stringify(await testProviderConnection(org.id, provider, "mcp"), null, 2));
       } catch (e) {
         return fail(ctx, e);

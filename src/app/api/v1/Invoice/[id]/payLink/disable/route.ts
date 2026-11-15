@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 
 export const POST = withApi<{ id: string }>(async (_req, ctx) => {
   return apiData(serializePayLink(await disableInvoicePayLink(ctx.orgId, ctx.params.id, ctx.actor)));
-}, { scope: "write" });
+}, { scope: "write", noIdempotency: true });
 
 export const spec = {
   disable: {

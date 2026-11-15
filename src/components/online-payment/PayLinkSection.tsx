@@ -126,6 +126,9 @@ export function PayLinkSection({
                     {t.error === "Anlage unklar" && (
                       <span className="mt-0.5 block text-xs text-stamp">Anlage unklar: Beim Anbieter prüfen, ob dort eine Zahlung entstanden ist, bevor der Kunde es erneut versucht.</span>
                     )}
+                    {t.error !== null && t.error !== "Anlage unklar" && (
+                      <span className="mt-0.5 block text-xs text-stamp">{t.error}</span>
+                    )}
                     {t.overpaidCents !== null && t.overpaidCents > 0 && (
                       <span className="mt-0.5 block text-xs text-seal">Überzahlung {formatCents(t.overpaidCents, t.currency)}: nicht gebucht, beim Anbieter von Hand zu erstatten.</span>
                     )}

@@ -57,6 +57,11 @@ function callTool(name: string, args: Record<string, unknown> = {}): Promise<Too
 
 const NOW = new Date("2218-03-10T10:00:00.000Z");
 const BASE = "https://rechnung.example.test";
+
+/** Der Verbindungstest hat einen Mindestabstand; Tests, die ihn mehrfach aufrufen, setzen ihn zurueck. */
+async function clearTestCooldown(): Promise<void> {
+  await dbInternal.paymentProviderAccount.updateMany({ data: { lastTestAt: null } });
+}
 const prevSecret = process.env.AUTH_SECRET;
 const prevBase = process.env.APP_BASE_URL;
 
@@ -189,25 +194,31 @@ describe("REST Einstellungen", () => {
 
   it("Verbindungstest: ok, 401 mit festem Text, ohne Schluessel 422, falscher Anbieter 400, Scope write 403", async () => {
     fake.handler = () => ({ status: 200, text: mollieFixture("methods") });
+    await clearTestCooldown();
     const res = await testPost(req(`${SETTINGS}/MOLLIE/test`, adminToken, "POST"), pp("MOLLIE"));
     expect(res.status).toBe(200);
     expect(((await res.json()) as { data: { ok: boolean; methods: string[] } }).data).toMatchObject({ ok: true, methods: ["ideal", "creditcard"] });
     fake.handler = () => ({ status: 401, text: mollieFixture("error-401") });
+    await clearTestCooldown();
     const bad = await testPost(req(`${SETTINGS}/MOLLIE/test`, adminToken, "POST"), pp("MOLLIE"));
     const badText = await bad.text();
     expect(JSON.parse(badText).data.ok).toBe(false);
     expect(badText).not.toContain("Missing authentication");
     expect(badText).not.toContain(FAKE_TEST_KEY);
+    await clearTestCooldown();
     expect((await testPost(req(`${SETTINGS}/MOLLIE/test`, writeToken, "POST"), pp("MOLLIE"))).status).toBe(403);
+    await clearTestCooldown();
     expect((await testPost(req(`${SETTINGS}/UNBEKANNT/test`, adminToken, "POST"), pp("UNBEKANNT"))).status).toBe(400);
     // Ergebnis des 401 steht gespeichert; wiederherstellen.
     fake.handler = () => ({ status: 200, text: mollieFixture("methods") });
+    await clearTestCooldown();
     await testPost(req(`${SETTINGS}/MOLLIE/test`, adminToken, "POST"), pp("MOLLIE"));
   });
 
   it("Verbindungstest ohne Schluessel -> 422 NO_KEY", async () => {
     const other = await newOrg("Ohne Schluessel GmbH");
     const token = (await createApiKey(other, { name: "x", scopes: ["admin"] })).token;
+    await clearTestCooldown();
     const res = await testPost(req(`${SETTINGS}/MOLLIE/test`, token, "POST"), pp("MOLLIE"));
     expect(res.status).toBe(422);
     expect(((await res.json()) as { error: { reason: string } }).error.reason).toBe("NO_KEY");
@@ -326,18 +337,41 @@ describe("MCP", () => {
     expect((await callTool("update_online_payment_settings", {})).isError).toBe(true);
     const enabled = await callTool("update_online_payment_settings", { enabled: false });
     expect(enabled.isError).toBe(true);
+    // Erlaubtes Feld zusammen mit verbotenem: abgelehnt, nichts gespeichert.
+    const mixed = await callTool("update_online_payment_settings", { showOnPdf: false, apiKey: "test_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" });
+    expect(mixed.isError).toBe(true);
+    expect(mixed.content[0]!.text).not.toContain("test_xxxx");
+    const after = await callTool("get_online_payment_settings");
+    expect(JSON.parse(after.content[0]!.text)).toMatchObject({ showOnPdf: true });
+    const mixed2 = await callTool("update_online_payment_settings", { showInMail: false, enabled: true });
+    expect(mixed2.isError).toBe(true);
   });
 
   it("Verbindungstest", async () => {
     fake.handler = () => ({ status: 200, text: mollieFixture("methods") });
+    await clearTestCooldown();
     const ok = await callTool("test_online_payment_connection", { provider: "MOLLIE" });
     expect(JSON.parse(ok.content[0]!.text)).toMatchObject({ ok: true });
     fake.handler = () => ({ status: 401, text: mollieFixture("error-401") });
+    await clearTestCooldown();
     const bad = await callTool("test_online_payment_connection", { provider: "MOLLIE" });
     expect(JSON.parse(bad.content[0]!.text)).toMatchObject({ ok: false });
     expect(bad.content[0]!.text).not.toContain(FAKE_TEST_KEY);
     fake.handler = () => ({ status: 200, text: mollieFixture("methods") });
+    await clearTestCooldown();
     await callTool("test_online_payment_connection", { provider: "MOLLIE" });
+  });
+
+  it("Verbindungstest: Mindestabstand je Organisation (REST 429, MCP Fehler)", async () => {
+    fake.handler = () => ({ status: 200, text: mollieFixture("methods") });
+    await clearTestCooldown();
+    expect((await testPost(req(`${SETTINGS}/MOLLIE/test`, adminToken, "POST"), pp("MOLLIE"))).status).toBe(200);
+    const again = await testPost(req(`${SETTINGS}/MOLLIE/test`, adminToken, "POST"), pp("MOLLIE"));
+    expect(again.status).toBe(429);
+    expect(JSON.stringify(await again.json())).toContain("Verbindungstest zu schnell hintereinander");
+    const mcp = await callTool("test_online_payment_connection", { provider: "MOLLIE" });
+    expect(mcp.isError).toBe(true);
+    expect(mcp.content[0]!.text).toContain("zu schnell");
   });
 
   it("Bezahllink: lesen (Adresse), Fehler wie REST, deaktivieren (ohne Adresse), anlegen, abgleichen", async () => {

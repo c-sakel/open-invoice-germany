@@ -297,6 +297,19 @@ export async function loadProviderSecret(
 }
 
 /** Verbindungstest; speichert das Ergebnis (fester Fehlertext, nie Anbietertext). */
+/** Mindestabstand zwischen zwei Verbindungstests je Organisation und Anbieter. */
+export const CONNECTION_TEST_COOLDOWN_MS = 10_000;
+export const CONNECTION_TEST_COOLDOWN_TEXT = "Verbindungstest zu schnell hintereinander. Bitte einen Moment warten.";
+
+/** Wirft RATE_LIMITED, wenn der letzte Test dieses Zugangs weniger als CONNECTION_TEST_COOLDOWN_MS zurueckliegt. */
+export async function assertConnectionTestCooldown(orgId: string, providerRaw: unknown, now: Date = new Date()): Promise<void> {
+  const provider = onlineProviderSchema.parse(providerRaw);
+  const row = await dbInternal.paymentProviderAccount.findUnique({ where: { orgId_provider: { orgId, provider } }, select: { lastTestAt: true } });
+  if (row?.lastTestAt && now.getTime() - row.lastTestAt.getTime() < CONNECTION_TEST_COOLDOWN_MS) {
+    throw new OnlinePaymentError(CONNECTION_TEST_COOLDOWN_TEXT, "RATE_LIMITED");
+  }
+}
+
 export async function testProviderConnection(
   orgId: string,
   providerRaw: unknown,

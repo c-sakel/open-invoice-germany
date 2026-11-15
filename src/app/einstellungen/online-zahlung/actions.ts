@@ -16,6 +16,7 @@ import {
   saveProviderOptions,
   setProviderApiKey,
   setProviderEnabled,
+  assertConnectionTestCooldown,
   testProviderConnection,
   type OnlinePaymentSettingsView,
 } from "@/domain/online-payment/settings";
@@ -95,6 +96,7 @@ export async function testProviderConnectionAction(input: unknown): Promise<Conn
   try {
     const { provider } = providerEnvelope.parse(input);
     const { orgId, actor } = await ctx();
+    await assertConnectionTestCooldown(orgId, provider);
     const res = await testProviderConnection(orgId, provider, actor);
     revalidatePath(PATH);
     const settings = await loadOnlinePaymentSettings(orgId);

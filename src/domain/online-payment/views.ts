@@ -38,11 +38,11 @@ const ATTEMPT_LIMIT = 20;
 const REFRESH_LIMIT = 5;
 
 /** Teil-Update der Anzeigeoptionen; Schluessel, Einschalter, Methoden und Waehrungen nur in der Oberflaeche. */
-const UI_ONLY_KEYS = ["apiKey", "key", "enabled", "mode", "allowedMethods", "currencies"];
+export const ONLINE_PAYMENT_UI_ONLY_KEYS = ["apiKey", "key", "enabled", "mode", "allowedMethods", "currencies"];
 
 export function parseOnlinePaymentSettingsInput(raw: unknown): OnlinePaymentSettingsInput {
   const obj = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
-  for (const k of UI_ONLY_KEYS) {
+  for (const k of ONLINE_PAYMENT_UI_ONLY_KEYS) {
     if (k in obj) {
       throw new ZodError([{ code: "custom", path: [k], message: "Dieses Feld kann nur in der Oberflaeche geaendert werden." }]);
     }
@@ -66,6 +66,17 @@ async function overpaidByAttempt(orgId: string, attemptIds: string[]): Promise<M
     if (e.attemptId && m) out.set(e.attemptId, Number(m[1]));
   }
   return out;
+}
+
+/** Feste Hinweistexte, die an Vorgaengen stehen duerfen; alles andere wird nach aussen zu einem allgemeinen Hinweis. */
+export const ATTEMPT_ERROR_UNCLEAR = "Anlage unklar";
+export const ATTEMPT_ERROR_CREATE_FAILED = "Anlage beim Zahlungsanbieter fehlgeschlagen.";
+export const ATTEMPT_ERROR_GENERIC = "Vorgang fehlgeschlagen – Details im Server-Protokoll";
+const KNOWN_ATTEMPT_ERRORS = new Set<string>([ATTEMPT_ERROR_UNCLEAR, ATTEMPT_ERROR_CREATE_FAILED]);
+
+export function publicAttemptError(raw: string | null): string | null {
+  if (raw === null) return null;
+  return KNOWN_ATTEMPT_ERRORS.has(raw) ? raw : ATTEMPT_ERROR_GENERIC;
 }
 
 /** Link-Ansicht; fremde oder unbekannte Rechnung -> NOT_FOUND. */
@@ -99,7 +110,7 @@ export async function loadInvoicePayLink(orgId: string, invoiceId: string, opts:
   const link: PayLinkView = {
     id: l.id,
     invoiceId: l.invoiceId,
-    provider: ONLINE_PROVIDERS.find((p) => p === l.provider) ?? "MOLLIE",
+    provider: ONLINE_PROVIDERS.find((p) => p === l.provider) ?? (() => { throw new OnlinePaymentError("Unbekannter Anbieter am Bezahllink.", "NONE"); })(),
     status: l.status === "ACTIVE" ? "ACTIVE" : "DISABLED",
     onDocument: l.onDocument,
     disabledAt: l.disabledAt,
@@ -109,7 +120,7 @@ export async function loadInvoicePayLink(orgId: string, invoiceId: string, opts:
   const base = appBaseUrlFromEnv();
   const url = opts.withUrl && base && link.status === "ACTIVE" ? await revealPayLinkUrl(orgId, inv.id, base) : null;
   const overpaid = await overpaidByAttempt(orgId, l.attempts.map((a) => a.id));
-  return { invoiceId: inv.id, link, url, attempts: l.attempts.map((a) => ({ ...a, overpaidCents: overpaid.get(a.id) ?? null })) };
+  return { invoiceId: inv.id, link, url, attempts: l.attempts.map((a) => ({ ...a, error: publicAttemptError(a.error), overpaidCents: overpaid.get(a.id) ?? null })) };
 }
 
 /** Legt den Link an oder reaktiviert ihn; `created` = vorher gab es keinen. */

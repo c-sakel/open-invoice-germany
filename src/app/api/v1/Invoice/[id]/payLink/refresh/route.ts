@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 
 export const POST = withApi<{ id: string }>(async (_req, ctx) => {
   return apiData(serializeRefresh(await refreshInvoicePayLink(ctx.orgId, ctx.params.id, { createdBy: "api", actor: ctx.actor })));
-}, { scope: "write" });
+}, { scope: "write", noIdempotency: true });
 
 export const spec = {
   refresh: {

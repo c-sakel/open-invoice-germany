@@ -15,7 +15,8 @@ export type OnlinePaymentErrorCode =
   | "NO_BASE_URL"
   | "NOT_TESTED"
   | "KEY_UNREADABLE"
-  | "INVALID_KEY";
+  | "INVALID_KEY"
+  | "RATE_LIMITED";
 
 export class OnlinePaymentError extends Error {
   constructor(
