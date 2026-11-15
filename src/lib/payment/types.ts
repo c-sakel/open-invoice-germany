@@ -45,7 +45,7 @@ export type WebhookParse =
   | { kind: "REF"; ref: WebhookRef; livemode: boolean | null }
   /** Gueltig, aber ohne Bedeutung fuer uns -> 200 ohne Netz. */
   | { kind: "IRRELEVANT" }
-  | { kind: "REJECT"; reason: "FORMAT" | "SIGNATURE" | "STALE" | "UNSUPPORTED_FORMAT" | "NO_SECRET" };
+  | { kind: "REJECT"; reason: "FORMAT" | "PAYLOAD" | "SIGNATURE" | "STALE" | "UNSUPPORTED_FORMAT" | "NO_SECRET" };
 
 export interface PaymentProviderAdapter {
   provider: OnlineProvider;

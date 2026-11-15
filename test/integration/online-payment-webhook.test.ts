@@ -273,6 +273,26 @@ describe("Webhook: Buchung", () => {
   });
 });
 
+describe("Webhook: Wiederkehr des Erstattungsstands", () => {
+  it("3000 -> 1000 -> 3000 -> 1000 mit Replays: genau eine Gegenbuchung, je Stufe nur ein Ereignis", async () => {
+    const s = await setup("Hook Wiederkehr GmbH");
+    const a = await newAttempt(s);
+    const states = new Map([[a.objectId, paymentJson(a.objectId, a.id)]]);
+    const fake = fakeFor(states);
+    await hook(s, a.objectId, fake);
+    for (const refunded of [3000, 1000, 3000, 1000]) {
+      states.set(a.objectId, paymentJson(a.objectId, a.id, { refunded }));
+      await hook(s, a.objectId, fake);
+      await hook(s, a.objectId, fake);
+    }
+    const pays = await paymentsOf(s.invoiceId);
+    expect(pays.filter((p) => p.kind === "REVERSAL").map((p) => p.amountCents)).toEqual([-3000]);
+    const ids = (await eventsOf(s.orgId)).map((e) => e.eventId).filter((id) => /:3000:0|:1000:0/.test(id));
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).toHaveLength(4);
+  });
+});
+
 describe("Webhook: Ueberzahlung und Wettlauf", () => {
   it("Rest kleiner als Vorgang: bis zum Rest gebucht, Ueberzahlung gemeldet", async () => {
     const s = await setup("Hook Ueber GmbH");

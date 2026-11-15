@@ -31,7 +31,11 @@ export interface ReconcileOpts {
   createdBy: PaymentCreatedBy;
   actor: string;
   now?: Date;
+  /** Transport fuer den zweiten Abruf zur Bestaetigung einer verringerten Erstattung (Standard: echter Transport). */
+  transport?: PaymentTransport;
 }
+
+const NEEDS_CONFIRM = Symbol("needsConfirm");
 
 export interface ReconcileResult {
   result: string;
@@ -71,8 +75,60 @@ function detailFor(plan: ReconcilePlan, state: ProviderPaymentState): string {
   return parts.join("; ").slice(0, 500);
 }
 
+/**
+ * Gleicht ab. Eine Verringerung der Erstattung/Rueckbuchung wird nur gemeldet, wenn ein zweiter, frischer Abruf
+ * (ausserhalb der Transaktion) den verringerten Stand bestaetigt; sonst gilt der Abruf als veraltet und wird verworfen.
+ */
 export async function reconcileAttempt(attemptId: string, state: ProviderPaymentState, opts: ReconcileOpts): Promise<ReconcileResult> {
+  const first = await reconcileOnce(attemptId, state, opts, false);
+  if (first !== NEEDS_CONFIRM) return first;
+  const meta = await dbInternal.paymentProviderAttempt.findUnique({ where: { id: attemptId }, select: { orgId: true, provider: true } });
+  const provider = ONLINE_PROVIDERS.find((p) => p === meta?.provider);
+  let fresh: ProviderPaymentState | null = null;
+  if (meta && provider) {
+    try {
+      const secret = await loadProviderSecret(meta.orgId, provider);
+      if (secret) fresh = await adapterFor(provider).fetchPayment(secret.key, state.objectId, opts.transport ?? defaultPaymentTransport());
+    } catch (e) {
+      console.error("reconcileAttempt: Bestaetigungsabruf fehlgeschlagen", describeError(e));
+    }
+  }
+  if (meta && provider && fresh && fresh.objectId === state.objectId) {
+    const again = await reconcileOnce(attemptId, fresh, opts, true);
+    if (again !== NEEDS_CONFIRM) return again;
+  }
+  // Nicht bestaetigt: veralteter Abruf, nur protokollieren (Wiederholung beim naechsten Abgleich).
+  if (meta && provider) {
+    try {
+      await dbInternal.paymentProviderEvent.create({
+        data: {
+          orgId: meta.orgId,
+          provider,
+          eventId: `${eventIdFor(state)}#stale-${randomUUID()}`,
+          type: "payment.status",
+          objectId: state.objectId,
+          attemptId,
+          receivedAt: opts.now ?? new Date(),
+          result: "IGNORED",
+          detail: "Verringerte Erstattung/Rueckbuchung nicht bestaetigt; Abruf als veraltet verworfen",
+        },
+        select: { id: true },
+      });
+    } catch (e) {
+      console.error("reconcileAttempt: Protokoll nicht gespeichert", describeError(e));
+    }
+  }
+  return { result: "IGNORED", paymentId: null, duplicate: false };
+}
+
+async function reconcileOnce(
+  attemptId: string,
+  state: ProviderPaymentState,
+  opts: ReconcileOpts,
+  decreaseConfirmed: boolean,
+): Promise<ReconcileResult | typeof NEEDS_CONFIRM> {
   const now = opts.now ?? new Date();
+  let attemptedEventId: string | null = null;
   const attempt = await dbInternal.paymentProviderAttempt.findUnique({
     where: { id: attemptId },
     select: { id: true, orgId: true, provider: true, providerObjectId: true, amountCents: true, currency: true, payLink: { select: { orgId: true, invoiceId: true } } },
@@ -100,7 +156,10 @@ export async function reconcileAttempt(attemptId: string, state: ProviderPayment
             select: { id: true },
           });
           // Dieselbe Zahlungs-Id gehoert schon zu einem anderen Vorgang: nichts buchen, nur protokollieren und melden.
-          if (clash) return { duplicate: false as const, refConflict: true as const };
+          if (clash) {
+            await tx.paymentProviderAttempt.updateMany({ where: { id: attempt.id, orgId }, data: { lastCheckedAt: now } });
+            return { duplicate: false as const, refConflict: true as const };
+          }
           await tx.paymentProviderAttempt.updateMany({ where: { id: attempt.id, orgId, providerPaymentRef: null }, data: { providerPaymentRef: paymentRef } });
         }
         const prev = await tx.paymentProviderEvent.findFirst({
@@ -114,7 +173,7 @@ export async function reconcileAttempt(attemptId: string, state: ProviderPayment
           where: { provider, objectId: state.objectId },
           orderBy: [{ receivedAt: "desc" }, { id: "desc" }],
           take: 10,
-          select: { eventId: true },
+          select: { eventId: true, receivedAt: true },
         });
         const latest = recent.find((e) => /:\d+:\d+(#r\d+)?$/.test(e.eventId)) ?? null;
         const known = await tx.paymentProviderEvent.findUnique({ where: { provider_eventId: { provider, eventId } }, select: { id: true } });
@@ -125,6 +184,10 @@ export async function reconcileAttempt(attemptId: string, state: ProviderPayment
         }
         const revisits = known ? await tx.paymentProviderEvent.count({ where: { provider, eventId: { startsWith: `${eventId}#r` } } }) : 0;
         const evId = known ? `${eventId}#r${revisits + 1}` : eventId;
+        attemptedEventId = evId;
+        // Reihenfolge der Ereignisse: Zeitpunkt unter der Sperre, nie vor dem juengsten vorhandenen Ereignis.
+        const newest = recent[0]?.receivedAt;
+        const eventAt = opts.now ? now : new Date(Math.max(Date.now(), newest ? newest.getTime() + 1 : 0));
 
         const inv = await tx.invoice.findFirst({
           where: { id: invoiceId, orgId },
@@ -155,6 +218,8 @@ export async function reconcileAttempt(attemptId: string, state: ProviderPayment
           previousRefundedCents: prev ? (providerSplitFromEventId(prev.eventId)?.refunded ?? null) : null,
           hasCreditNote: creditNotes > 0,
         });
+
+        if (plan.review === "REVERSAL_DECREASED" && !decreaseConfirmed) return { needsConfirm: true as const };
 
         let paymentId = booked?.paymentId ?? null;
         let changed = false;
@@ -246,7 +311,7 @@ export async function reconcileAttempt(attemptId: string, state: ProviderPayment
             type: "payment.status",
             objectId: state.objectId,
             attemptId: attempt.id,
-            receivedAt: now,
+            receivedAt: eventAt,
             result: plan.result,
             detail: detailFor(plan, state),
           },
@@ -256,6 +321,7 @@ export async function reconcileAttempt(attemptId: string, state: ProviderPayment
         return { duplicate: false as const, paymentId, changed, plan, invoiceStatus: after.status };
       }),
     );
+    if ("needsConfirm" in out) return NEEDS_CONFIRM;
     if (out.duplicate) return { result: "IGNORED", paymentId: null, duplicate: true };
     if ("refConflict" in out) {
       try {
@@ -276,11 +342,15 @@ export async function reconcileAttempt(attemptId: string, state: ProviderPayment
     return { result: out.plan.result, paymentId: out.paymentId, duplicate: false };
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
-      const dupEvent = await dbInternal.paymentProviderEvent.findUnique({ where: { provider_eventId: { provider, eventId } }, select: { id: true } });
+      // Nur ein Konflikt auf der Ereignis-Id gilt als Duplikat; jede andere Unique-Verletzung wird als Fehler behandelt.
+      const dupEvent = attemptedEventId
+        ? await dbInternal.paymentProviderEvent.findUnique({ where: { provider_eventId: { provider, eventId: attemptedEventId } }, select: { id: true } })
+        : null;
       if (dupEvent) {
         await dbInternal.paymentProviderAttempt.updateMany({ where: { id: attempt.id, orgId }, data: { lastCheckedAt: now } });
         return { result: "IGNORED", paymentId: null, duplicate: true };
       }
+      console.error("reconcileAttempt: Unique-Verletzung ausserhalb der Ereignis-Id", describeError(e));
     }
     // Fehlerzeile ausserhalb der Transaktion (eigene Id, blockiert keine Wiederholung); Schluessel/Details nie im Text.
     try {

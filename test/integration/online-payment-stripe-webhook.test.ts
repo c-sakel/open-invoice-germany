@@ -12,7 +12,8 @@ import { finalizeInvoice } from "@/domain/invoice/finalize";
 import { createPartialCreditNote } from "@/domain/invoice/credit";
 import { revealPayLinkUrl } from "@/domain/online-payment/pay-link";
 import { handleProviderWebhook } from "@/domain/online-payment/webhook";
-import { refreshAttempt } from "@/domain/online-payment/reconcile";
+import { reconcileAttempt, refreshAttempt } from "@/domain/online-payment/reconcile";
+import { adapterFor } from "@/lib/payment/registry";
 import { onlinePaymentCancelIdle, setOnlinePaymentTransportOverride } from "@/domain/online-payment/cancel-open";
 import { createPaymentRule } from "@/domain/payment-rule/rules";
 import { createWebhookEndpoint } from "@/domain/webhook/endpoints";
@@ -266,6 +267,14 @@ describe("Stripe-Webhook: Signatur und Zuordnung", () => {
     expect((await notesOf(s.orgId)).filter((n) => n.title.includes("Signatur"))).toHaveLength(1);
   });
 
+  it("gueltig signierter, aber kaputter Inhalt: 400 ohne Signatur-Meldung", async () => {
+    const s = await setup("Stripe Hook Inhalt GmbH");
+    const a = await newAttempt(s);
+    const fake = fakeFor(a, sessionJson("session-paid", a));
+    expect((await hook(s, "{kaputt", fake)).status).toBe(400);
+    expect((await notesOf(s.orgId)).filter((n) => n.title.includes("Signatur"))).toHaveLength(0);
+  });
+
   it("Fehler beim Schreiben der Signaturmeldung aendert die Antwort nicht (immer 400)", async () => {
     const s = await setup("Stripe Hook Meldefehler GmbH");
     const a = await newAttempt(s);
@@ -372,6 +381,56 @@ describe("Stripe-Webhook: Erstattung und Streitfall", () => {
     await hook(s, eventJson("event-dispute-funds-withdrawn", { pi: a.pi, type: "charge.dispute.funds_reinstated" }), fake);
     expect(await paymentsOf(s.invoiceId)).toHaveLength(2);
     expect((await notesOf(s.orgId)).some((n) => n.body?.includes("verringert oder aufgehoben"))).toBe(true);
+  });
+
+  it("Erstattungsstand A -> B -> A -> B mit Replays: genau eine Gegenbuchung, jede Stufe nur einmal protokolliert", async () => {
+    const { s, a, session, fake } = await paidSetup("Stripe Hook Wiederkehr GmbH");
+    const refunded = (cents: number) =>
+      sessionJson("session-paid-refunded-partial", a).replace('"amount_refunded": 5000', `"amount_refunded": ${cents}`).replace('"amount_refunded":5000', `"amount_refunded":${cents}`);
+    const body = eventJson("event-charge-refunded", { pi: a.pi });
+    for (const cents of [1900, 500, 1900, 500]) {
+      session.text = refunded(cents);
+      await hook(s, body, fake);
+      await hook(s, body, fake);
+    }
+    expect((await paymentsOf(s.invoiceId)).filter((p) => p.kind === "REVERSAL").map((p) => p.amountCents)).toEqual([-1900]);
+    const ids = (await eventsOf(s.orgId)).map((e) => e.eventId).filter((id) => /:(1900|500):0/.test(id));
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).toHaveLength(4);
+  });
+
+  it("veralteter Abruf nach neuerem Stand: keine Verringerungsmeldung, Ereignis als veraltet protokolliert", async () => {
+    const { s, a, session, fake } = await paidSetup("Stripe Hook Veraltet GmbH");
+    const secret = FAKE_STRIPE_LIVE_KEY;
+    const stale = await adapterFor("STRIPE").fetchPayment(secret, a.sessionId, fake.transport);
+    if (!stale) throw new Error("Zustand fehlt");
+    session.text = sessionJson("session-paid-refunded-partial", a).replace('"amount_refunded": 5000', '"amount_refunded": 1900').replace('"amount_refunded":5000', '"amount_refunded":1900');
+    await refreshAttempt(s.orgId, a.id, { createdBy: "scheduler", actor: "t", transport: fake.transport, now: NOW });
+    expect((await paymentsOf(s.invoiceId)).filter((p) => p.kind === "REVERSAL")).toHaveLength(1);
+    // Der Abruf `stale` (Erstattung 0) ist aelter als der gebuchte Stand; der Bestaetigungsabruf zeigt 1900.
+    const res = await reconcileAttempt(a.id, stale, { createdBy: "webhook", actor: "t", now: NOW, transport: fake.transport });
+    expect(res.paymentId).toBeNull();
+    expect((await paymentsOf(s.invoiceId)).filter((p) => p.kind === "REVERSAL")).toHaveLength(1);
+    expect((await notesOf(s.orgId)).some((n) => n.body?.includes("verringert oder aufgehoben"))).toBe(false);
+  });
+
+  it("verringerter Stand, den der zweite Abruf nicht bestaetigt: verworfen, Protokollzeile", async () => {
+    const { s, a, session, fake } = await paidSetup("Stripe Hook Unbestaetigt GmbH");
+    session.text = sessionJson("session-paid-refunded-partial", a).replace('"amount_refunded": 5000', '"amount_refunded": 1900').replace('"amount_refunded":5000', '"amount_refunded":1900');
+    await refreshAttempt(s.orgId, a.id, { createdBy: "scheduler", actor: "t", transport: fake.transport, now: NOW });
+    const dead = createStripeFake({ [`GET /checkout/sessions/${a.sessionId}`]: () => ({ status: 500, text: "{}" }) });
+    const lower = { ...(await adapterFor("STRIPE").fetchPayment(FAKE_STRIPE_LIVE_KEY, a.sessionId, fake.transport))!, refundedCents: 0 };
+    await reconcileAttempt(a.id, lower, { createdBy: "webhook", actor: "t", now: NOW, transport: dead.transport });
+    expect((await eventsOf(s.orgId)).some((e) => e.eventId.includes("#stale-"))).toBe(true);
+    expect((await notesOf(s.orgId)).some((n) => n.body?.includes("verringert oder aufgehoben"))).toBe(false);
+  });
+
+  it("Dispute-Liste mit has_more: unbrauchbar gemeldet, nichts gegengebucht", async () => {
+    const { s, a, session, disputes, fake } = await paidSetup("Stripe Hook Seiten GmbH");
+    session.text = sessionJson("session-paid-disputed", a);
+    disputes.text = JSON.stringify({ ...(JSON.parse(disputesJson("disputes-withdrawn", a)) as object), has_more: true });
+    expect(await hook(s, eventJson("event-dispute-funds-withdrawn", { pi: a.pi }), fake)).toEqual({ status: 200 });
+    expect(await paymentsOf(s.invoiceId)).toHaveLength(1);
   });
 
   it("Dispute mit Warnung ohne Saldobuchung: keine Gegenbuchung", async () => {

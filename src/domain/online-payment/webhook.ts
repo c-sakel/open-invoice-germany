@@ -94,6 +94,9 @@ export async function handleProviderWebhook(
       if (hook.reason === "NO_SECRET") return { status: 503 };
       if (hook.reason === "UNSUPPORTED_FORMAT") {
         await reportQuietly(orgId, "Online-Zahlung: Ereignisziel pruefen", `${label}: Ereignisziel im Format Snapshot anlegen.`, now, `fmt:${provider}`);
+      } else if (hook.reason === "PAYLOAD") {
+        // Signatur war gueltig, der Inhalt ist unbrauchbar: nur Protokoll, keine Signatur-Meldung.
+        console.warn("Online-Zahlung: signierte Benachrichtigung mit unbrauchbarem Inhalt verworfen");
       } else if (adapter.webhookAuth === "signature") {
         // Vor gueltiger Signatur hoechstens eine Tagesmeldung (dedupe), Fehler darin ohne Wirkung auf die Antwort.
         await reportQuietly(orgId, "Online-Zahlung: Signatur ungueltig", `${label}-Benachrichtigung mit ungueltiger Signatur — Signaturschluessel pruefen.`, now, `sig:${provider}`);
@@ -147,7 +150,7 @@ export async function handleProviderWebhook(
       await recordIgnored(orgId, provider, parsed.objectId, attempt.id, "missing", "Objekt beim Anbieter nicht gefunden", now);
       return { status: 200 };
     }
-    await reconcileAttempt(attempt.id, state, { createdBy: "webhook", actor: onlineActor(provider), now });
+    await reconcileAttempt(attempt.id, state, { createdBy: "webhook", actor: onlineActor(provider), now, ...(deps.transport ? { transport: deps.transport } : {}) });
     return { status: 200 };
   } catch (e) {
     console.error("Online-Zahlung: Benachrichtigung nicht verarbeitet:", describeError(e));

@@ -172,7 +172,7 @@ describe("Stripe-Adapter", () => {
     const disputes = (name: string) => createStripeFake(getRoutes("session-paid-disputed", { "GET /disputes": { status: 200, text: stripeFixture(name) } }));
     const w = disputes("disputes-withdrawn");
     expect((await stripeAdapter.fetchPayment(LIVE, SID, w.transport))?.chargedBackCents).toBe(11900);
-    expect(w.calls[1]!.url).toBe("https://api.stripe.com/v1/disputes?payment_intent=pi_FAKEaaaa0001&limit=10");
+    expect(w.calls[1]!.url).toBe("https://api.stripe.com/v1/disputes?payment_intent=pi_FAKEaaaa0001&limit=100");
     expect((await stripeAdapter.fetchPayment(LIVE, SID, disputes("disputes-reinstated").transport))?.chargedBackCents).toBe(0);
     expect((await stripeAdapter.fetchPayment(LIVE, SID, disputes("disputes-warning").transport))?.chargedBackCents).toBe(0);
     const failing = createStripeFake(getRoutes("session-paid-disputed", { "GET /disputes": { status: 500, text: "boom" } }));
@@ -279,9 +279,9 @@ describe("Stripe-Ereignisse", () => {
     expect(parse(noPi)).toEqual({ kind: "IRRELEVANT" });
     expect(parse(stripeFixtureWith("event-charge-refunded", { type: "customer.created" }))).toEqual({ kind: "IRRELEVANT" });
     const badPi = JSON.stringify({ ...JSON.parse(stripeFixture("event-charge-refunded")), data: { object: { payment_intent: "../x" } } });
-    expect(parse(badPi)).toEqual({ kind: "REJECT", reason: "FORMAT" });
+    expect(parse(badPi)).toEqual({ kind: "REJECT", reason: "PAYLOAD" });
     const badSession = JSON.stringify({ ...JSON.parse(stripeFixture("event-checkout-completed")), data: { object: { id: "x" } } });
-    expect(parse(badSession)).toEqual({ kind: "REJECT", reason: "FORMAT" });
+    expect(parse(badSession)).toEqual({ kind: "REJECT", reason: "PAYLOAD" });
   });
   it("Thin-Ereignisse, fehlendes Secret, schlechte Signatur, kaputtes JSON", () => {
     expect(parse(stripeFixture("event-thin"))).toEqual({ kind: "REJECT", reason: "UNSUPPORTED_FORMAT" });
@@ -289,8 +289,8 @@ describe("Stripe-Ereignisse", () => {
     expect(parse(stripeFixture("event-charge-refunded"), SECRET, null)).toEqual({ kind: "REJECT", reason: "FORMAT" });
     expect(parse(stripeFixture("event-charge-refunded"), SECRET, `t=${T},v1=${"0".repeat(64)}`)).toEqual({ kind: "REJECT", reason: "SIGNATURE" });
     expect(parse(stripeFixture("event-charge-refunded"), SECRET, signStripeEvent(stripeFixture("event-charge-refunded"), SECRET, T - 400))).toEqual({ kind: "REJECT", reason: "STALE" });
-    expect(parse("kein json")).toEqual({ kind: "REJECT", reason: "FORMAT" });
-    expect(parse('{"object":"event"}')).toEqual({ kind: "REJECT", reason: "FORMAT" });
+    expect(parse("kein json")).toEqual({ kind: "REJECT", reason: "PAYLOAD" });
+    expect(parse('{"object":"event"}')).toEqual({ kind: "REJECT", reason: "PAYLOAD" });
   });
   it("Signatur wird vor dem JSON-Parse geprueft (kaputtes JSON mit falscher Signatur -> SIGNATURE)", () => {
     expect(parse("kein json", SECRET, `t=${T},v1=${"0".repeat(64)}`)).toEqual({ kind: "REJECT", reason: "SIGNATURE" });

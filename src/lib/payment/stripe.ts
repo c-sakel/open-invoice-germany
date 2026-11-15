@@ -66,6 +66,7 @@ export const stripeDisputeListSchema = z.object({
       balance_transactions: z.array(z.object({ amount: z.number().int() })).default([]),
     }),
   ),
+  has_more: z.boolean().default(false),
 });
 
 const sessionListSchema = z.object({ data: z.array(z.unknown()) });
@@ -290,9 +291,12 @@ export const stripeAdapter: PaymentProviderAdapter = {
     const { id: pi, charge } = paymentIntentOf(s);
     let chargedBack = 0;
     if (charge?.disputed && pi) {
-      const dres = await call(t, key, "GET", `/disputes?payment_intent=${encodeURIComponent(pi)}&limit=10`);
+      const dres = await call(t, key, "GET", `/disputes?payment_intent=${encodeURIComponent(pi)}&limit=100`);
       if (dres.status !== 200) fail(dres.status);
-      chargedBack = chargedBackOf(parseJson(stripeDisputeListSchema, dres.text));
+      const disputes = parseJson(stripeDisputeListSchema, dres.text);
+      // Unvollstaendige Liste nie als vollstaendig werten: lieber unbrauchbar melden als zu wenig gegenbuchen.
+      if (disputes.has_more) throw new PaymentProviderError("invalid", "Unvollstaendige Antwort des Zahlungsanbieters.");
+      chargedBack = chargedBackOf(disputes);
     }
     const state = toState(s, chargedBack);
     assertMode(state, key);
@@ -323,23 +327,23 @@ export const stripeAdapter: PaymentProviderAdapter = {
     try {
       json = JSON.parse(raw.toString("utf8"));
     } catch {
-      return { kind: "REJECT", reason: "FORMAT" };
+      return { kind: "REJECT", reason: "PAYLOAD" };
     }
     if (json !== null && typeof json === "object" && (json as { object?: unknown }).object === "v2.core.event") {
       return { kind: "REJECT", reason: "UNSUPPORTED_FORMAT" };
     }
     const ev = eventSchema.safeParse(json);
-    if (!ev.success) return { kind: "REJECT", reason: "FORMAT" };
+    if (!ev.success) return { kind: "REJECT", reason: "PAYLOAD" };
     const { type, livemode, data } = ev.data;
     if (SESSION_EVENTS.has(type)) {
       const id = data.object.id;
-      if (typeof id !== "string" || !SESSION_ID.test(id)) return { kind: "REJECT", reason: "FORMAT" };
+      if (typeof id !== "string" || !SESSION_ID.test(id)) return { kind: "REJECT", reason: "PAYLOAD" };
       return { kind: "REF", ref: { objectId: id }, livemode };
     }
     if (PAYMENT_REF_EVENTS.has(type)) {
       const pi = data.object.payment_intent;
       if (typeof pi !== "string") return { kind: "IRRELEVANT" };
-      if (!PAYMENT_INTENT_ID.test(pi)) return { kind: "REJECT", reason: "FORMAT" };
+      if (!PAYMENT_INTENT_ID.test(pi)) return { kind: "REJECT", reason: "PAYLOAD" };
       return { kind: "REF", ref: { paymentRef: pi }, livemode };
     }
     return { kind: "IRRELEVANT" };
