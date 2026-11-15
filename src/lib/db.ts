@@ -509,6 +509,23 @@ export class DatevExportImmutableError extends Error {
   }
 }
 
+/**
+ * Debitorennummer (`Customer.datevAccount`): nach dem ersten Export unveraenderlich. Die einzige Schreibstelle ist
+ * `setCustomerDatevAccount` (src/domain/export/datev/debtors.ts) ueber `dbInternal`; ueber den geschuetzten
+ * Client darf das Feld nie geschrieben werden.
+ */
+export class DatevAccountWriteError extends Error {
+  constructor() {
+    super("Die DATEV-Debitorennummer wird nur ueber den Domain-Service gesetzt.");
+    this.name = "DatevAccountWriteError";
+  }
+}
+
+function writesDatevAccount(data: unknown): boolean {
+  const rows = Array.isArray(data) ? data : [data];
+  return rows.some((d) => typeof d === "object" && d !== null && "datevAccount" in d && (d as { datevAccount?: unknown }).datevAccount !== undefined);
+}
+
 export class DatevSettingsDeleteError extends Error {
   constructor() {
     super("DATEV-Einstellungen duerfen nicht geloescht werden.");
@@ -972,6 +989,28 @@ export const prisma = base.$extends({
       },
       async deleteMany() {
         throw new DatevExportImmutableError();
+      },
+    },
+    customer: {
+      async create({ args, query }) {
+        if (writesDatevAccount(args.data)) throw new DatevAccountWriteError();
+        return query(args);
+      },
+      async createMany({ args, query }) {
+        if (writesDatevAccount(args.data)) throw new DatevAccountWriteError();
+        return query(args);
+      },
+      async update({ args, query }) {
+        if (writesDatevAccount(args.data)) throw new DatevAccountWriteError();
+        return query(args);
+      },
+      async updateMany({ args, query }) {
+        if (writesDatevAccount(args.data)) throw new DatevAccountWriteError();
+        return query(args);
+      },
+      async upsert({ args, query }) {
+        if (writesDatevAccount(args.create) || writesDatevAccount(args.update)) throw new DatevAccountWriteError();
+        return query(args);
       },
     },
     datevSettings: {

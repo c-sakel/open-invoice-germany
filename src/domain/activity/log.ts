@@ -31,7 +31,7 @@ export type ActivityDbClient = Prisma.TransactionClient | PrismaClient;
 // keine entityId und der Versuch waere ohnehin nur ueber die E-Mail identifizierbar,
 // die laut R12 nie ins Protokoll darf; die IP-Bremse (src/lib/rate-limit.ts) deckt das
 // Durchprobieren unbekannter Adressen ab.
-export type ActivityEntityType = "INVOICE" | "QUOTE" | "DELIVERY_NOTE" | "CUSTOMER" | "RECURRING" | "API_KEY" | "TAG" | "TEMPLATE" | "USER" | "EXCHANGE_RATE" | "LAYOUT_DESIGN" | "POSTAL" | "IMPORT" | "INVOICE_BATCH" | "PORTAL" | "BANK_IMPORT" | "BANK_TRANSACTION" | "PAYMENT_RULE" | "PAYMENT_PROVIDER";
+export type ActivityEntityType = "INVOICE" | "QUOTE" | "DELIVERY_NOTE" | "CUSTOMER" | "RECURRING" | "API_KEY" | "TAG" | "TEMPLATE" | "USER" | "EXCHANGE_RATE" | "LAYOUT_DESIGN" | "POSTAL" | "IMPORT" | "INVOICE_BATCH" | "PORTAL" | "BANK_IMPORT" | "BANK_TRANSACTION" | "PAYMENT_RULE" | "PAYMENT_PROVIDER" | "DATEV";
 
 /** Aktivitaetstypen (`ActivityLog.type`) mit deutschem Anzeigetext (Task-3-Brief). */
 export const ACTIVITY_TYPES = {
@@ -129,6 +129,12 @@ export const ACTIVITY_TYPES = {
   PAY_LINK_DISABLED: "Bezahllink deaktiviert",
   PAY_LINK_REACTIVATED: "Bezahllink reaktiviert",
   ONLINE_PAYMENT_SETTINGS_SAVED: "Online-Zahlung: Einstellungen gespeichert",
+  // DATEV-Export (entityType DATEV; Daten nennen nur Feldnamen und Anzahlen, nie Werte).
+  DATEV_SETTINGS_SAVED: "DATEV: Einstellungen gespeichert",
+  DATEV_MAPPING_SAVED: "DATEV: Kontenzuordnung gespeichert",
+  DATEV_TEMPLATE_APPLIED: "DATEV: Kontenvorlage uebernommen",
+  DATEV_MAPPING_CONFIRMED: "DATEV: Kontenzuordnung bestaetigt",
+  DATEV_DEBTOR_ACCOUNT_SET: "DATEV: Debitorennummer geaendert",
 } as const;
 
 export type ActivityType = keyof typeof ACTIVITY_TYPES;
