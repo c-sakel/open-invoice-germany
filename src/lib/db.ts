@@ -362,6 +362,54 @@ function assertPostalJobUpdateAllowed(data: unknown): void {
 }
 
 /**
+ * Online-Zahlung: Ereignisprotokoll ist append-only (nur `create`). Bezahllinks und Bezahlvorgaenge werden nie
+ * geloescht; ihre Zuordnung (Rechnung, Anbieter, Betrag, Token) bleibt unveraenderlich, nur Status- und
+ * Zeitfelder sind fortschreibbar. Dass `providerObjectId`/`checkoutUrl` nur von NULL auf einen Wert wechseln,
+ * erzwingt der Service per bedingtem `updateMany`.
+ */
+export class PaymentProviderEventImmutableError extends Error {
+  constructor() {
+    super("Anbieter-Ereignisse sind unveraenderlich (append-only).");
+    this.name = "PaymentProviderEventImmutableError";
+  }
+}
+
+export class PaymentProviderAttemptImmutableError extends Error {
+  constructor(detail: string) {
+    super(`Bezahlvorgang ist ein Nachweis und nicht aenderbar: ${detail}`);
+    this.name = "PaymentProviderAttemptImmutableError";
+  }
+}
+
+export class InvoicePayLinkImmutableError extends Error {
+  constructor(detail: string) {
+    super(`Bezahllink ist ein Nachweis und nicht aenderbar: ${detail}`);
+    this.name = "InvoicePayLinkImmutableError";
+  }
+}
+
+const PAYMENT_ATTEMPT_MUTABLE_KEYS: ReadonlySet<string> = new Set([
+  "providerObjectId",
+  "checkoutUrl",
+  "expiresAt",
+  "status",
+  "error",
+  "lastCheckedAt",
+  "updatedAt",
+]);
+
+const INVOICE_PAY_LINK_MUTABLE_KEYS: ReadonlySet<string> = new Set(["status", "disabledAt", "disabledReason"]);
+
+function assertOnlyKeys(data: unknown, allowed: ReadonlySet<string>, make: (detail: string) => Error): void {
+  const keys = Object.keys((data ?? {}) as Record<string, unknown>);
+  const bad = keys.filter((k) => !allowed.has(k));
+  if (bad.length > 0) throw make(bad.join(", "));
+}
+
+const attemptErr = (d: string): Error => new PaymentProviderAttemptImmutableError(d);
+const payLinkErr = (d: string): Error => new InvoicePayLinkImmutableError(d);
+
+/**
  * Bankabgleich: `BankStatementImport` und `BankMatch` sind Nachweise und append-only (nur `create`).
  * `BankTransaction` wird nie geloescht; nach dem Anlegen sind nur Status- und Zuordnungsfelder
  * fortschreibbar — Betrag, Fingerabdruck und Gegenkonto bleiben unveraenderlich.
@@ -1087,6 +1135,74 @@ export const prisma = base.$extends({
       },
       async deleteMany() {
         throw new PaymentImmutabilityError();
+      },
+    },
+    paymentProviderEvent: {
+      async update() {
+        throw new PaymentProviderEventImmutableError();
+      },
+      async updateMany() {
+        throw new PaymentProviderEventImmutableError();
+      },
+      async updateManyAndReturn() {
+        throw new PaymentProviderEventImmutableError();
+      },
+      async upsert() {
+        throw new PaymentProviderEventImmutableError();
+      },
+      async delete() {
+        throw new PaymentProviderEventImmutableError();
+      },
+      async deleteMany() {
+        throw new PaymentProviderEventImmutableError();
+      },
+    },
+    paymentProviderAttempt: {
+      async update({ args, query }) {
+        assertOnlyKeys(args.data, PAYMENT_ATTEMPT_MUTABLE_KEYS, attemptErr);
+        return query(args);
+      },
+      async updateMany({ args, query }) {
+        assertOnlyKeys(args.data, PAYMENT_ATTEMPT_MUTABLE_KEYS, attemptErr);
+        return query(args);
+      },
+      async updateManyAndReturn({ args, query }) {
+        assertOnlyKeys(args.data, PAYMENT_ATTEMPT_MUTABLE_KEYS, attemptErr);
+        return query(args);
+      },
+      async upsert({ args, query }) {
+        assertOnlyKeys(args.update, PAYMENT_ATTEMPT_MUTABLE_KEYS, attemptErr);
+        return query(args);
+      },
+      async delete() {
+        throw new PaymentProviderAttemptImmutableError("delete");
+      },
+      async deleteMany() {
+        throw new PaymentProviderAttemptImmutableError("deleteMany");
+      },
+    },
+    invoicePayLink: {
+      async update({ args, query }) {
+        assertOnlyKeys(args.data, INVOICE_PAY_LINK_MUTABLE_KEYS, payLinkErr);
+        return query(args);
+      },
+      async updateMany({ args, query }) {
+        assertOnlyKeys(args.data, INVOICE_PAY_LINK_MUTABLE_KEYS, payLinkErr);
+        return query(args);
+      },
+      async updateManyAndReturn({ args, query }) {
+        assertOnlyKeys(args.data, INVOICE_PAY_LINK_MUTABLE_KEYS, payLinkErr);
+        return query(args);
+      },
+      async upsert({ args, query }) {
+        assertOnlyKeys(args.update, INVOICE_PAY_LINK_MUTABLE_KEYS, payLinkErr);
+        return query(args);
+      },
+      async delete() {
+        throw new InvoicePayLinkImmutableError("delete");
+      },
+      async deleteMany() {
+        throw new InvoicePayLinkImmutableError("deleteMany");
       },
     },
     paymentRuleRun: {
