@@ -107,6 +107,8 @@ export interface MapInput {
   // Phase 12b — § 14 Abs. 4 Nr. 9 / § 14b Abs. 1 S. 5 UStG. Fehlt das Feld (Alt-Belege
   // vor Phase 12b), wird false angenommen -> kein Hinweis, byte-identisch zum Bestand.
   consumerRetentionHint?: boolean;
+  // § 286 Abs. 3 BGB: aufgeloester Verzugshinweis (Entwurf: Vorgabe/automatisch; sonst eingefrorener Wert).
+  consumerDefaultNotice?: boolean | null;
   id?: string;
   org: {
     legalName: string;
@@ -309,7 +311,11 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
   // Online-Bezahllink: Satz am Ende von BT-20, nach den #SKONTO#-Zeilen.
   const payLinkUrl = invoice.payLinkUrl ?? null;
   const payLinkSentence = payLinkUrl ? docStrings(lang).paymentMeans.payOnline(payLinkUrl) : null;
-  const paymentTermsNote = payLinkSentence ? (baseTermsNote ? `${baseTermsNote}\n${payLinkSentence}` : payLinkSentence) : baseTermsNote;
+  const termsWithPayLink = payLinkSentence ? (baseTermsNote ? `${baseTermsNote}\n${payLinkSentence}` : payLinkSentence) : baseTermsNote;
+  // § 286 Abs. 3 BGB: Verzugshinweis als letzte BT-20-Zeile (nie bei Gutschriften).
+  const consumerDefaultNotice = invoice.consumerDefaultNotice === true && invoice.type !== "CREDIT_NOTE";
+  const defaultNoticeSentence = consumerDefaultNotice ? docStrings(lang).notes.consumerDefaultNotice : null;
+  const paymentTermsNote = defaultNoticeSentence ? (termsWithPayLink ? `${termsWithPayLink}\n${defaultNoticeSentence}` : defaultNoticeSentence) : termsWithPayLink;
 
   // Phase 4a — Zahlungsweg aus dem Zahlungsmethoden-Snapshot; Fallback Org-Konto,
   // Code 58 (SEPA-Überweisung).
@@ -534,5 +540,6 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
     headerText,
     footerText,
     consumerRetentionHint: invoice.consumerRetentionHint ?? false,
+    ...(consumerDefaultNotice ? { consumerDefaultNotice: true } : {}),
   };
 }

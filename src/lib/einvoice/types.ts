@@ -221,6 +221,9 @@ export interface EInvoiceData {
    * Grundstueck (Phase 12b, Task 5). Geht als eigener Note/IncludedNote ins XML UND
    * ins PDF, wenn gesetzt. */
   consumerRetentionHint?: boolean;
+  /** § 286 Abs. 3 BGB — Verzugshinweis fuer Verbraucher: letzte Zeile von BT-20 und eigener PDF-Absatz.
+   * Fehlt das Feld oder ist es false, bleibt die Ausgabe unveraendert. */
+  consumerDefaultNotice?: boolean;
   /** Phase 12b (COMPLIANCE.md § 11) — unterscheidet die zwei Wege, auf denen ein
    * CREDIT_NOTE entsteht: Vollstorno (`cancel.ts`) vs. Teilgutschrift/Korrektur
    * (`credit.ts`). Nur von `loadEInvoiceData` gesetzt, wenn ein Original aufloesbar

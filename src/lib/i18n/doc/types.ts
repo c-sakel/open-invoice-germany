@@ -156,6 +156,8 @@ export interface DocStrings {
     proformaHint: string;
     /** § 14b Abs. 1 Satz 5 UStG (PDF und XML). */
     consumerRetentionHint: string;
+    /** § 286 Abs. 3 BGB: Verzugshinweis fuer Verbraucher (PDF und BT-20). */
+    consumerDefaultNotice: string;
     /** BG-20/BG-27 Grund eines Rabatts. */
     allowanceReason: string;
     /** BG-21 Grund eines Aufschlags ohne eigenen Freitext. */

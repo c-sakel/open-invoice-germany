@@ -726,6 +726,12 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
       y += 5; // entspricht in etwa dem vorherigen `doc.moveDown(0.4)` bei 9pt Schrift
       y = renderPlainTextPdf(doc, paymentTermsHuman, y, { x: left, width: right - left, fontSize: base - 1, ensureSpace: ensurePlainSpace, color: ink });
     }
+    // § 286 Abs. 3 BGB: Verzugshinweis fuer Verbraucher, unabhaengig von showPaymentTermsText.
+    if (data.consumerDefaultNotice) {
+      y = ensurePlainSpace(y, 30);
+      y += 5;
+      y = renderPlainTextPdf(doc, t.notes.consumerDefaultNotice, y, { x: left, width: right - left, fontSize: base - 1, ensureSpace: ensurePlainSpace, color: ink });
+    }
     if (data.paymentMethodText) {
       y = ensurePlainSpace(y, 30);
       y += 5;
