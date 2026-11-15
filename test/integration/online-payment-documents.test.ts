@@ -17,6 +17,11 @@ import { buildTemplateContext } from "@/domain/email/context";
 import { savePortalSettings } from "@/domain/portal/settings";
 import { createPortalLink, resolvePortalToken } from "@/domain/portal/link";
 import { loadPortalView } from "@/domain/portal/view";
+import { saveMailSettings } from "@/domain/email/settings";
+import { prefillEmail } from "@/domain/email/compose";
+import { sendDocumentEmail } from "@/domain/email/send";
+import { createMemoryProvider } from "@/lib/mail/memory";
+import { documentPayLinkUrl } from "@/domain/online-payment/document-link";
 import { loadEInvoiceData } from "@/lib/einvoice/load";
 import { buildFacturXCII } from "@/lib/einvoice/cii";
 import { buildXRechnungUBL } from "@/lib/einvoice/xrechnung";
@@ -222,6 +227,38 @@ describe("Mail-Platzhalter invoice.paymentLink", () => {
     const cancelled = await invoice(s);
     await cancelInvoice(cancelled.id, { orgId: s.orgId, now: LATER });
     expect(await link(s, "INVOICE", cancelled.id)).toBe("");
+  });
+
+  it("Link in der Mail unabhaengig von showOnPdf; Entwurf ohne Link", async () => {
+    const s = await setup();
+    await dbInternal.paymentProviderSettings.update({ where: { orgId: s.orgId }, data: { showOnPdf: false } });
+    const a = await invoice(s);
+    expect(await link(s, "INVOICE", a.id)).toBe(a.url);
+    expect(await documentPayLinkUrl(s.orgId, { id: a.id, status: "FINALIZED" })).toBeNull();
+    expect(await documentPayLinkUrl(s.orgId, { id: a.id, status: "DRAFT" })).toBeNull();
+  });
+
+  it("Mail mit Platzhalter: kein Token in EmailLog/ChangeLog, Wiederversand mit gueltigem Link", async () => {
+    const s = await setup();
+    await saveMailSettings(s.orgId, { host: "localhost", port: 2525, security: "NONE", fromName: "Beleg GmbH", fromEmail: "rechnung@example.org", copyToSelf: false, defaultCc: "", defaultBcc: "" });
+    await dbInternal.customer.update({ where: { id: s.customerId }, data: { email: "kunde@example.org" } });
+    const a = await invoice(s);
+    const token = a.url!.split("/zahlen/")[1]!;
+    await dbInternal.emailTemplate.updateMany({ where: { orgId: s.orgId, docType: "INVOICE", language: "de", isDefault: true }, data: { body: "Bezahlen: {{invoice.paymentLink}}", subject: "Rechnung {{invoice.paymentLink}}" } });
+    const pre = await prefillEmail(s.orgId, { docType: "INVOICE", docId: a.id });
+    const prov = createMemoryProvider();
+    const res = await sendDocumentEmail(s.orgId, "tester", { ...pre, to: pre.to.join(","), cc: "", bcc: "", standardAttachments: [] }, [], prov);
+    expect(res.status).toBe("SENT");
+    expect(prov.sent[0]!.text).toContain(a.url!);
+    const log = await dbInternal.emailLog.findUniqueOrThrow({ where: { id: res.logId }, select: { bodySnapshot: true, subject: true } });
+    expect(log.bodySnapshot).toContain("[Zahlungslink]");
+    expect(log.bodySnapshot + log.subject).not.toContain(token);
+    const cl = await dbInternal.changeLog.findMany({ where: { orgId: s.orgId, entity: "EMAIL", entityId: res.logId }, select: { diffJson: true } });
+    expect(cl.length).toBeGreaterThan(0);
+    for (const c of cl) expect(JSON.stringify(c)).not.toContain(token);
+    const again = await prefillEmail(s.orgId, { logId: res.logId });
+    expect(again.body).toContain(`Bezahlen: ${a.url}`);
+    expect(again.subject).toContain(a.url!);
   });
 
   it("Testmodus: leer", async () => {

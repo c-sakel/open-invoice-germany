@@ -10,9 +10,19 @@ export const PORTAL_TOKEN_LENGTH = Math.ceil((32 * 8) / 6);
 
 const PORTAL_URL = new RegExp(`(?:https?:\\/\\/[^\\s"'<>]*?)?\\/portal\\/[A-Za-z0-9_-]{${PORTAL_TOKEN_LENGTH}}(?![A-Za-z0-9_-])`, "g");
 
-/** Ersetzt jede Portal-URL (mit oder ohne Basis) im Text durch den Platzhalter. */
+/** Bezahllinks (/zahlen/<token>) sind ebenso Zugangsgeheimnisse und werden genauso maskiert. */
+export const PAY_LINK_MARKER = "[Zahlungslink]";
+const PAY_URL = new RegExp(`(?:https?:\\/\\/[^\\s"'<>]*?)?\\/zahlen\\/[A-Za-z0-9_-]{${PORTAL_TOKEN_LENGTH}}(?![A-Za-z0-9_-])`, "g");
+
+/** Ersetzt jede Portal- und Bezahl-URL (mit oder ohne Basis) im Text durch den jeweiligen Platzhalter. */
 export function maskPortalLinks(text: string): string {
-  return text.replace(PORTAL_URL, PORTAL_LINK_MARKER);
+  return text.replace(PORTAL_URL, PORTAL_LINK_MARKER).replace(PAY_URL, PAY_LINK_MARKER);
+}
+
+/** Setzt den Bezahllink-Platzhalter wieder gegen eine URL ein (Wiederversand). */
+export function restorePayLinks(text: string, url: string | null): string {
+  if (!url || !text.includes(PAY_LINK_MARKER)) return text;
+  return text.split(PAY_LINK_MARKER).join(url);
 }
 
 /** Setzt den Platzhalter wieder gegen eine URL ein (Wiederversand); ohne URL bleibt der Text unveraendert. */

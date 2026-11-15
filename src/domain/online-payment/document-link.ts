@@ -5,7 +5,8 @@
  * Regeln:
  * - PDF/XML: Link genau dann, wenn der Link `onDocument` traegt (nur Live-Konto), die Rechnung kein Entwurf ist und
  *   `APP_BASE_URL` gesetzt ist. Ein spaeteres Deaktivieren aendert den Beleg nicht (Archivstand bleibt reproduzierbar).
- * - Mail: zusaetzlich nur bei aktivem Link, Einstellung "in Mail zeigen", offenem Rest und nicht stornierter Rechnung.
+ * - Mail: genau dann, wenn ein aktives Live-Konto, Einstellung "in Mail zeigen", aktiver Link, offener Rest und nicht
+ *   stornierte Rechnung vorliegen — unabhaengig von `onDocument` (das steuert nur PDF/E-Rechnung).
  * - Portal: relative Adresse der Bezahlseite, nur bei aktivem Link, Einstellung "im Portal zeigen", offenem Rest,
  *   nicht stornierter Rechnung und aktivem Live-Konto.
  */
@@ -34,14 +35,13 @@ export async function mailPayLinkUrl(orgId: string, invoice: { id: string; statu
   if (invoice.status === "DRAFT" || invoice.status === "CANCELLED" || openCents <= 0) return "";
   const baseUrl = appBaseUrlFromEnv();
   if (!baseUrl) return "";
-  const [link, settings] = await Promise.all([
-    dbInternal.invoicePayLink.findFirst({
-      where: { invoiceId: invoice.id, orgId, status: "ACTIVE", onDocument: true },
-      select: { tokenEnc: true },
-    }),
+  const [link, settings, liveAccount] = await Promise.all([
+    dbInternal.invoicePayLink.findFirst({ where: { invoiceId: invoice.id, orgId, status: "ACTIVE" }, select: { tokenEnc: true, provider: true } }),
     dbInternal.paymentProviderSettings.findUnique({ where: { orgId }, select: { showInMail: true } }),
+    dbInternal.paymentProviderAccount.findMany({ where: { orgId, enabled: true, mode: "LIVE", apiKeyEnc: { not: null } }, select: { provider: true } }),
   ]);
   if (!link || !(settings?.showInMail ?? true)) return "";
+  if (!liveAccount.some((a) => a.provider === link.provider)) return "";
   return payUrl(baseUrl, link.tokenEnc);
 }
 

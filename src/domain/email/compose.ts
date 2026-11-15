@@ -16,7 +16,7 @@ import { renderTemplate } from "@/lib/template/render";
 import { revealShareLinkToken, createShareLink } from "@/domain/quote-share/link";
 import { effectiveQuoteStatus } from "@/domain/document/status";
 import { appBaseUrlFromEnv } from "@/lib/http/base-url";
-import { PORTAL_LINK_MARKER, restorePortalLinks } from "@/domain/portal/mask";
+import { PAY_LINK_MARKER, PORTAL_LINK_MARKER, restorePayLinks, restorePortalLinks } from "@/domain/portal/mask";
 import { PortalError } from "@/domain/portal/errors";
 import type { EmailDocType } from "@/schemas/email";
 
@@ -117,6 +117,16 @@ async function portalUrlForLog(orgId: string, docType: EmailDocType, docId: stri
   }
 }
 
+async function payUrlForLog(orgId: string, docType: EmailDocType, docId: string, text: string): Promise<string | null> {
+  if (!text.includes(PAY_LINK_MARKER)) return null;
+  try {
+    const { ctx } = await buildTemplateContext(orgId, docType, docId);
+    return (ctx.invoice as { paymentLink?: string } | undefined)?.paymentLink || null;
+  } catch {
+    return null;
+  }
+}
+
 async function templatesOf(orgId: string, docType: EmailDocType) {
   return dbInternal.emailTemplate.findMany({
     where: { orgId, docType },
@@ -210,6 +220,9 @@ export async function prefillEmail(orgId: string, source: PrefillSource | { logI
     if (!portalUrl && (log.subject + log.bodySnapshot).includes(PORTAL_LINK_MARKER)) {
       throw new PortalError("Kein aktiver Portal-Link – bitte neuen Link anlegen.", "NO_ACTIVE_LINK");
     }
+    const payUrl = await payUrlForLog(orgId, docType, log.docId, log.subject + log.bodySnapshot);
+    // Ohne gueltigen Bezahllink darf der Platzhalter nicht woertlich an den Kunden gehen: Zeile mit Marker entfaellt.
+    const dropPayMarker = (t: string): string => (payUrl ? restorePayLinks(t, payUrl) : t.split("\n").filter((l) => !l.includes(PAY_LINK_MARKER)).join("\n").split(PAY_LINK_MARKER).join(""));
     const attachments = await buildStandardAttachments(orgId, docType, log.docId);
     const documentAttachments = (await listAttachments(orgId, attachmentDocTypeFor(docType), log.docId)).map((a) => ({
       id: a.id,
@@ -225,8 +238,8 @@ export async function prefillEmail(orgId: string, source: PrefillSource | { logI
       to: JSON.parse(log.toJson) as string[],
       cc: JSON.parse(log.ccJson) as string[],
       bcc: JSON.parse(log.bccJson) as string[],
-      subject: restorePortalLinks(log.subject, portalUrl),
-      body: restorePortalLinks(log.bodySnapshot, portalUrl),
+      subject: dropPayMarker(restorePortalLinks(log.subject, portalUrl)),
+      body: dropPayMarker(restorePortalLinks(log.bodySnapshot, portalUrl)),
       signature: "",
       copyToSelf: settings.copyToSelf,
       attachments: attachments.map((a) => ({ filename: a.filename, size: a.content.length })),
