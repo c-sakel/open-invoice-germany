@@ -13,6 +13,7 @@ import { reversePayment } from "@/domain/invoice/payment-reversal";
 import { revealPayLinkUrl } from "@/domain/online-payment/pay-link";
 import { startCheckout } from "@/domain/online-payment/checkout";
 import { reconcileAttempt } from "@/domain/online-payment/reconcile";
+import { documentPayLinkUrl, mailPayLinkUrl, portalPayPaths } from "@/domain/online-payment/document-link";
 import { setProviderEnabled } from "@/domain/online-payment/settings";
 import { createInvoiceSchema } from "@/schemas";
 import type { ProviderPaymentState } from "@/lib/payment/types";
@@ -162,6 +163,40 @@ describe("Testkonto und live ausgegebene Links", () => {
     await dbInternal.paymentProviderAccount.updateMany({ where: { orgId: o.orgId }, data: { enabled: false } });
     await setProviderEnabled(o.orgId, "MOLLIE", true, "tester");
     expect((await dbInternal.invoicePayLink.findUniqueOrThrow({ where: { id: link!.id }, select: { liveIssued: true } })).liveIssued).toBe(false);
+  });
+});
+
+describe("liveIssued bei der Ausgabe", () => {
+  const issued = async (linkId: string): Promise<boolean> =>
+    (await dbInternal.invoicePayLink.findUniqueOrThrow({ where: { id: linkId }, select: { liveIssued: true } })).liveIssued;
+
+  it("Mail und Portal im Live-Konto markieren den Link, Beleg-Ausgabe ebenfalls", async () => {
+    const o = await makeOrg("Ausgabe Live GmbH", "LIVE");
+    const inv = (await invoiceFor(o)) as { invoiceId: string; link: { id: string } };
+    const unmark = () => dbInternal.invoicePayLink.update({ where: { id: inv.link.id }, data: { liveIssued: false } });
+    const ref = { id: inv.invoiceId, status: "FINALIZED" };
+
+    await unmark();
+    expect(await mailPayLinkUrl(o.orgId, ref, 11900)).toContain("/zahlen/");
+    expect(await issued(inv.link.id)).toBe(true);
+
+    await unmark();
+    expect((await portalPayPaths(o.orgId, [{ ...ref, openCents: 11900 }])).get(inv.invoiceId)).toContain("/zahlen/");
+    expect(await issued(inv.link.id)).toBe(true);
+
+    await unmark();
+    await dbInternal.invoicePayLink.update({ where: { id: inv.link.id }, data: { onDocument: true } });
+    expect(await documentPayLinkUrl(o.orgId, ref, 11900)).toContain("/zahlen/");
+    expect(await issued(inv.link.id)).toBe(true);
+  });
+
+  it("Testkonto: Mail und Portal geben nichts aus und markieren nicht", async () => {
+    const o = await makeOrg("Ausgabe Test GmbH", "TEST");
+    const inv = (await invoiceFor(o)) as { invoiceId: string; link: { id: string } };
+    const ref = { id: inv.invoiceId, status: "FINALIZED" };
+    expect(await mailPayLinkUrl(o.orgId, ref, 11900)).toBe("");
+    expect((await portalPayPaths(o.orgId, [{ ...ref, openCents: 11900 }])).size).toBe(0);
+    expect(await issued(inv.link.id)).toBe(false);
   });
 });
 

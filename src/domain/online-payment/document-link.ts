@@ -15,6 +15,15 @@ import { dbInternal } from "@/lib/db";
 import { decryptSecret, PAYLINK_TOKEN_PURPOSE } from "@/lib/crypto/secrets";
 import { appBaseUrlFromEnv } from "@/lib/http/base-url";
 
+/**
+ * Markiert Links im Moment der Ausgabe als im Livebetrieb ausgegeben (nur false -> true, bedingt und idempotent,
+ * ohne Sperren). Damit gilt: jeder Link, den ein Kunde im Livebetrieb sehen konnte, ist liveIssued.
+ */
+async function markLiveIssued(orgId: string, linkIds: string[]): Promise<void> {
+  if (linkIds.length === 0) return;
+  await dbInternal.invoicePayLink.updateMany({ where: { orgId, id: { in: linkIds }, liveIssued: false }, data: { liveIssued: true } });
+}
+
 function payUrl(baseUrl: string, tokenEnc: string): string {
   return `${baseUrl}/zahlen/${decryptSecret(tokenEnc, PAYLINK_TOKEN_PURPOSE)}`;
 }
@@ -26,9 +35,11 @@ export async function documentPayLinkUrl(orgId: string, invoice: { id: string; s
   if (!baseUrl) return null;
   const link = await dbInternal.invoicePayLink.findFirst({
     where: { invoiceId: invoice.id, orgId, onDocument: true, status: "ACTIVE" },
-    select: { tokenEnc: true },
+    select: { id: true, tokenEnc: true },
   });
-  return link ? payUrl(baseUrl, link.tokenEnc) : null;
+  if (!link) return null;
+  await markLiveIssued(orgId, [link.id]);
+  return payUrl(baseUrl, link.tokenEnc);
 }
 
 /** Link fuer den Mail-Platzhalter `{{invoice.paymentLink}}`; leer, wenn die Regeln ihn ausschliessen. */
@@ -37,12 +48,13 @@ export async function mailPayLinkUrl(orgId: string, invoice: { id: string; statu
   const baseUrl = appBaseUrlFromEnv();
   if (!baseUrl) return "";
   const [link, settings, liveAccount] = await Promise.all([
-    dbInternal.invoicePayLink.findFirst({ where: { invoiceId: invoice.id, orgId, status: "ACTIVE" }, select: { tokenEnc: true, provider: true } }),
+    dbInternal.invoicePayLink.findFirst({ where: { invoiceId: invoice.id, orgId, status: "ACTIVE" }, select: { id: true, tokenEnc: true, provider: true } }),
     dbInternal.paymentProviderSettings.findUnique({ where: { orgId }, select: { showInMail: true } }),
     dbInternal.paymentProviderAccount.findMany({ where: { orgId, enabled: true, mode: "LIVE", apiKeyEnc: { not: null } }, select: { provider: true } }),
   ]);
   if (!link || !(settings?.showInMail ?? true)) return "";
   if (!liveAccount.some((a) => a.provider === link.provider)) return "";
+  await markLiveIssued(orgId, [link.id]);
   return payUrl(baseUrl, link.tokenEnc);
 }
 
@@ -63,8 +75,9 @@ export async function portalPayPaths(orgId: string, invoices: Array<{ id: string
   for (let i = 0; i < ids.length; i += 500) {
     const links = await dbInternal.invoicePayLink.findMany({
       where: { orgId, invoiceId: { in: ids.slice(i, i + 500) }, status: "ACTIVE", provider: { in: providers } },
-      select: { invoiceId: true, tokenEnc: true },
+      select: { id: true, invoiceId: true, tokenEnc: true },
     });
+    await markLiveIssued(orgId, links.map((l) => l.id));
     for (const l of links) out.set(l.invoiceId, `/zahlen/${decryptSecret(l.tokenEnc, PAYLINK_TOKEN_PURPOSE)}`);
   }
   return out;

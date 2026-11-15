@@ -124,7 +124,7 @@ export async function createPayLinkWithinTx(
   if (!owner) throw new OnlinePaymentError("Rechnung nicht gefunden.", "NOT_FOUND");
   // Keine Organisationssperre hier: dieser Aufruf liegt mitten in der Festschreibe-Transaktion, die Sperrreihenfolge
   // "Organisation zuerst" wuerde verletzt (Deadlock-Risiko). Restrisiko bei exakt parallelem Einschalten eines Live-Kontos:
-  // der Link behaelt liveIssued=false; setProviderEnabled hebt nach dem Commit erneut. Ein im Testmodus angelegter Link
+  // der Link behaelt liveIssued=false; spaetestens die Ausgabe (Mail, Portal, Beleg) markiert ihn, zusaetzlich hebt setProviderEnabled nach dem Commit. Ein im Testmodus angelegter Link
   // gilt nie als live ausgegeben (Standard der Spalte ist true).
   const account = await tx.paymentProviderAccount.findUnique({
     where: { orgId_provider: { orgId: input.orgId, provider: input.provider } },
@@ -139,7 +139,7 @@ export async function createPayLinkWithinTx(
       tokenHash: hashToken(token),
       tokenEnc: encryptSecret(token, PAYLINK_TOKEN_PURPOSE),
       onDocument: input.onDocument,
-      liveIssued: account?.mode === "LIVE",
+      liveIssued: account?.mode === "LIVE" || input.onDocument,
       createdBy: input.actor,
       createdAt: input.now,
     },
