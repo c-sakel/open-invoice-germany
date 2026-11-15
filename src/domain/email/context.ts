@@ -8,6 +8,7 @@
  */
 import { dbInternal } from "@/lib/db";
 import { payableBaseCents } from "@/domain/invoice/amounts";
+import { mailPayLinkUrl } from "@/domain/online-payment/document-link";
 import { parseSellerSnapshot, parseBuyerSnapshot, parseContactSnapshot, buildSellerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
 import { parseCustomerCustomFields } from "@/domain/customer/custom-fields";
 import { formatDateDe, formatMoneyDe, formatDateLang, formatMoneyLang } from "@/lib/template/format";
@@ -237,6 +238,7 @@ export async function buildTemplateContext(
           total: formatMoneyLang(inv.grossTotalCents, inv.currency, lang),
           dueDate: formatDateLang(inv.dueDate, lang),
           openAmount: formatMoneyLang(open, inv.currency, lang),
+          paymentLink: docType === "INVOICE" ? await mailPayLinkUrl(orgId, inv, open) : "",
         },
         contact: contactCtx(contact, buyer),
         portal: await portalCtx(orgId, inv.customerId),
@@ -286,6 +288,7 @@ export async function buildTemplateContext(
           total: formatMoneyLang(inv.grossTotalCents, inv.currency, lang),
           dueDate: formatDateLang(inv.dueDate, lang),
           openAmount: formatMoneyLang(open, inv.currency, lang),
+          paymentLink: await mailPayLinkUrl(orgId, inv, payableBaseCents(inv) - inv.paidAmountCents),
         },
         dunning: {
           level: d.level,
@@ -387,7 +390,7 @@ export function sampleTemplateContext(docType: EmailTemplateDocType): TemplateCo
     company,
     payment,
     document: documentByType[docType],
-    invoice: { number: "RE-2026-0042", date: formatDateDe(today), total: formatMoneyDe(119000, "EUR"), dueDate: formatDateDe(dueDate), openAmount: formatMoneyDe(119000, "EUR") },
+    invoice: { number: "RE-2026-0042", date: formatDateDe(today), total: formatMoneyDe(119000, "EUR"), dueDate: formatDateDe(dueDate), openAmount: formatMoneyDe(119000, "EUR"), paymentLink: "https://beispiel.invalid/zahlen/beispiel-token" },
     offer: { number: "AN-2026-0042", validUntil: formatDateDe(dueDate), link: "https://beispiel.invalid/angebot/beispiel-token" },
     dunning: {
       level: 1,

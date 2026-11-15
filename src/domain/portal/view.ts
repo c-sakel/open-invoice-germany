@@ -6,6 +6,7 @@
 import { dbInternal } from "@/lib/db";
 import { berlinDateKey } from "@/lib/berlin-time";
 import { sellerSnapshotSchema } from "@/schemas";
+import { portalPayPaths } from "@/domain/online-payment/document-link";
 import type { ResolvedPortalLink } from "@/domain/portal/link";
 
 export type PortalPublicStatus = "OPEN" | "PARTIALLY_PAID" | "PAID" | "OVERDUE" | "CANCELLED" | "CREDIT" | "DUNNING";
@@ -22,6 +23,8 @@ export interface PortalDocument {
   openCents: number;
   publicStatus: PortalPublicStatus;
   files: Array<"PDF" | "UBL">;
+  /** Relative Adresse der Bezahlseite; nur bei offener Rechnung mit aktivem Online-Zahlungslink. */
+  payUrl?: string;
   relatedInvoiceNumber?: string;
 }
 
@@ -112,6 +115,10 @@ export async function loadPortalView(link: ResolvedPortalLink, now: Date = new D
 
   const documents: PortalDocument[] = [];
   const openByCurrency = new Map<string, { openCents: number; overdueCents: number }>();
+  const payPaths = await portalPayPaths(
+    link.orgId,
+    invoices.map((inv) => ({ id: inv.id, status: inv.status, openCents: openAmountCents(inv) })),
+  );
   const invoiceFiles: PortalDocument["files"] = link.showEInvoice ? ["PDF", "UBL"] : ["PDF"];
   for (const inv of invoices) {
     if (inv.number === null) continue;
@@ -129,6 +136,7 @@ export async function loadPortalView(link: ResolvedPortalLink, now: Date = new D
       openCents: open,
       publicStatus,
       files: [...invoiceFiles],
+      ...(payPaths.has(inv.id) ? { payUrl: payPaths.get(inv.id) } : {}),
     });
     if (open > 0) {
       const agg = openByCurrency.get(inv.currency) ?? { openCents: 0, overdueCents: 0 };

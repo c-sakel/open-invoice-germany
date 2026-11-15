@@ -174,6 +174,7 @@ export const en: DocStrings = {
     directDebit: (amount, date, ibanMasked, mandateReference, creditorId) =>
       `We will collect ${amount} ${date ? `on ${date}` : "on the due date"} by SEPA direct debit from your account ${ibanMasked}. Mandate reference: ${mandateReference}, creditor ID: ${creditorId}.`,
     card: (network, last4) => `Payment by card (${network}) **** ${last4}.`,
+    payOnline: (url) => `Pay online: ${url}`,
   },
   page: (n, total) => `Page ${n} of ${total}`,
   dunning: {
@@ -204,6 +205,7 @@ export const en: DocStrings = {
     columns: { number: "Number", type: "Type", date: "Date", due: "Due", amount: "Amount", open: "Open", status: "Status", download: "Download" },
     kinds: { INVOICE: "Invoice", CREDIT_NOTE: "Credit note", CORRECTION: "Invoice correction", DUNNING: "Reminder" },
     status: { OPEN: "Open", PARTIALLY_PAID: "Partially paid", PAID: "Paid", OVERDUE: "Overdue", CANCELLED: "Cancelled", CREDIT: "Credit note", DUNNING: "Reminder" },
+    payNow: "Pay now",
     downloadPdf: "PDF",
     downloadXml: "E-invoice (XML)",
     relatedTo: (number) => `re ${number}`,

@@ -15,6 +15,17 @@ const TONE: Record<PortalPublicStatus, string> = {
 export function PortalDocumentTable({ documents, token, lang }: { documents: PortalDocument[]; token: string; lang: DocLanguage }) {
   const t = docStrings(lang).publicPortal;
   const base = `/api/public/portal/${token}`;
+  const payButton = (d: PortalDocument) =>
+    d.payUrl ? (
+      <a
+        key="pay"
+        href={d.payUrl}
+        rel="noreferrer"
+        className="whitespace-nowrap rounded-md bg-pen px-2 py-1 text-xs font-medium text-on-accent hover:bg-pen-strong"
+      >
+        {t.payNow}
+      </a>
+    ) : null;
   const downloads = (d: PortalDocument) =>
     d.files.map((f) => (
       <a
@@ -58,7 +69,12 @@ export function PortalDocumentTable({ documents, token, lang }: { documents: Por
               </>
             )}
           </dl>
-          {d.files.length > 0 && <div className="flex gap-2">{downloads(d)}</div>}
+          {(d.files.length > 0 || d.payUrl) && (
+            <div className="flex gap-2">
+              {payButton(d)}
+              {downloads(d)}
+            </div>
+          )}
         </li>
       ))}
     </ul>
@@ -92,7 +108,10 @@ export function PortalDocumentTable({ documents, token, lang }: { documents: Por
                 <span className={`inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${TONE[d.publicStatus]}`}>{t.status[d.publicStatus]}</span>
               </td>
               <td className="px-3 py-2">
-                <div className="flex flex-nowrap gap-2">{downloads(d)}</div>
+                <div className="flex flex-nowrap gap-2">
+                  {payButton(d)}
+                  {downloads(d)}
+                </div>
               </td>
             </tr>
           ))}

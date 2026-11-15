@@ -163,6 +163,8 @@ function buildSample(opts: {
   documentChargeReason?: string | null;
   skonto1?: { permille: number; days: number };
   skonto2?: { permille: number; days: number };
+  /** Online-Bezahllink (Satz in BT-20). */
+  payLinkUrl?: string;
   paymentMethod?: {
     code: string;
     name: string;
@@ -260,6 +262,7 @@ function buildSample(opts: {
     paymentTerms: opts.paymentTerms ?? (opts.skonto1 || opts.noPaymentTerms ? null : "Zahlbar innerhalb von 30 Tagen ohne Abzug."),
     notes: opts.notes ?? "Vielen Dank für Ihren Auftrag.",
     subject: opts.subject ?? null,
+    payLinkUrl: opts.payLinkUrl ?? null,
     netTotalCents: totals.netTotalCents,
     taxTotalCents: totals.taxTotalCents,
     grossTotalCents: totals.grossTotalCents,
@@ -784,6 +787,30 @@ const sammelrechnungAbo = () =>
     ],
   });
 
+// Online-Bezahllink: Satz am Ende von BT-20, nach den Skonto-Zeilen; BT-81 bleibt 58 mit BG-17.
+const onlineZahlungBt20 = () =>
+  buildSample({
+    number: "RE-2220-0001",
+    issueDate: new Date("2220-06-09"),
+    dueDate: new Date("2220-07-09"),
+    deliveryDate: new Date("2220-06-01"),
+    skonto1: { permille: 20, days: 10 },
+    payLinkUrl: "https://rechnung.example.invalid/zahlen/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    lines: [{ description: "Beratung", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S" }],
+  });
+
+// Zahlungsart ONLINE: BT-81 = 68 ohne BG-17 (Zahlungsempfaenger-Konto).
+const online68 = () =>
+  buildSample({
+    number: "RE-2220-0002",
+    issueDate: new Date("2220-06-09"),
+    dueDate: new Date("2220-07-09"),
+    deliveryDate: new Date("2220-06-01"),
+    paymentMethod: { code: "ONLINE", name: "Online-Zahlung", invoiceText: null, untdidCode: "68", bankIban: null, bankBic: null, bankName: null },
+    payLinkUrl: "https://rechnung.example.invalid/zahlen/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    lines: [{ description: "Beratung", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S" }],
+  });
+
 // Namensraum aller Beispiele. "base" bleibt die reine Bestandsregression.
 const SAMPLES: Record<string, () => EInvoiceData> = {
   base: () => base,
@@ -820,6 +847,8 @@ const SAMPLES: Record<string, () => EInvoiceData> = {
   "abo-verbrauch-subcent": aboVerbrauchSubcent,
   "abo-verbrauch-subcent-storno": aboVerbrauchSubcentStorno,
   "sammelrechnung-abo": sammelrechnungAbo,
+  "online-zahlung-bt20": onlineZahlungBt20,
+  "online-68": online68,
 };
 
 export const SAMPLE_NAMES = Object.keys(SAMPLES);
