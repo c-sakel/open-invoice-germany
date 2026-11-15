@@ -5,5 +5,8 @@
   "dependencies": {
     "dotenv": "17.4.2",
     "prisma": "6.19.3"
+  },
+  "overrides": {
+    "deepmerge-ts": "8.0.2"
   }
 }
