@@ -24,7 +24,7 @@ export const REDACTED = "[redaktiert]";
 // Fix-Welle (m7): nicht mehr `export` — wird ausserhalb dieses Moduls nirgends importiert
 // (weder von redactJson noch von der neuen redactQuery, beide bleiben innerhalb der Datei).
 // `csv`: Import-Bodies (`{ csv }`) enthalten ganze Kunden-/Produktlisten und sind personenbezogen; `contentbase64`: Kontoauszug-Upload.
-const SECRET_KEY_PATTERN = /(secret|token|password|passwort|api[_-]?key|authorization|iban|bic|cardpan|cardholdername|sepadebitaccountname|mandate|^csv$|^contentbase64$|(^|[_-])key$|[a-z]Key$)/i;
+const SECRET_KEY_PATTERN = /(secret|token|password|passwort|api[_-]?key|authorization|iban|bic|cardpan|cardholdername|sepadebitaccountname|mandate|^csv$|^contentbase64$|(^|[_-])key$|(mollie|stripe|paypal|provider|secret|private|access|auth|signing|encryption|live|test)Key$)/i;
 /** Wertbasiert: Zeichenketten im Muster von Anbieter-Schluesseln (live_/test_ bzw. sk_/rk_/pk_), unabhaengig vom Feldnamen. */
 const SECRET_VALUE_PATTERN = /^((live|test)_[A-Za-z0-9]{20,}|(sk|rk|pk)_(live|test)?_?[A-Za-z0-9]{20,})$/;
 /** Zusaetzlich zu SECRET_KEY_PATTERN nur fuer Query-Parameter (I1): E-Mail-Adressen sind

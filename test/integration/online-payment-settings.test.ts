@@ -33,7 +33,9 @@ afterAll(() => {
   if (prevBase === undefined) delete process.env.APP_BASE_URL;
   else process.env.APP_BASE_URL = prevBase;
 });
-beforeEach(() => {
+const resetCooldown = () => dbInternal.paymentProviderAccount.updateMany({ where: { orgId }, data: { lastTestAt: null } });
+beforeEach(async () => {
+  await resetCooldown();
   process.env.AUTH_SECRET = "test-auth-secret-mindestens-16-zeichen";
   process.env.APP_BASE_URL = "https://rechnung.example.org";
   httpsSpy = vi.spyOn(https, "request");
@@ -125,10 +127,21 @@ describe("Zugang", () => {
     expect(res.error).not.toContain("Missing authentication");
     const v = await loadOnlinePaymentSettings(orgId);
     expect(v.accounts[0]).toMatchObject({ lastTestOk: false });
+    await resetCooldown();
     // Der Standard-Transport ist unter Vitest gesperrt -> fester Text, kein Netz.
     const blocked = await testProviderConnection(orgId, "MOLLIE", "tester");
     expect(blocked.ok).toBe(false);
     expect(blocked.error).toBe("Zahlungsanbieter nicht erreichbar.");
+  });
+
+  it("Verbindungstest: Mindestabstand wird atomar beansprucht, nur ein gleichzeitiger Aufruf laeuft", async () => {
+    await setProviderApiKey(orgId, "MOLLIE", FAKE_TEST_KEY, "tester");
+    await resetCooldown();
+    const results = await Promise.allSettled([1, 2, 3].map(() => testProviderConnection(orgId, "MOLLIE", "tester", { transport: okFake().transport })));
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    const rejected = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
+    expect(rejected).toHaveLength(2);
+    for (const r of rejected) expect(r.reason).toMatchObject({ code: "RATE_LIMITED" });
   });
 
   it("Optionen: Methoden und Waehrungen speichern, ungueltige Eingaben ablehnen", async () => {
@@ -153,6 +166,7 @@ describe("Geheimnisse", () => {
     const spies = (["log", "info", "warn", "error", "debug"] as const).map((m) => vi.spyOn(console, m));
     await setProviderApiKey(orgId, "MOLLIE", FAKE_TEST_KEY, "tester");
     await testProviderConnection(orgId, "MOLLIE", "tester", { transport: okFake().transport });
+    await resetCooldown();
     await testProviderConnection(orgId, "MOLLIE", "tester").catch(() => undefined);
     await setProviderApiKey(orgId, "MOLLIE", null, "tester");
     const needle = FAKE_TEST_KEY.slice(5);

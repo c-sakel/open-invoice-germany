@@ -279,7 +279,7 @@ export async function loadProviderSecret(
   orgId: string,
   provider: OnlineProvider,
   db: Db = dbInternal,
-): Promise<{ key: string; mode: "TEST" | "LIVE"; webhookPathId: string; enabled: boolean } | null> {
+): Promise<{ key: string; keyEnc: string; mode: "TEST" | "LIVE"; webhookPathId: string; enabled: boolean } | null> {
   const row = await db.paymentProviderAccount.findUnique({
     where: { orgId_provider: { orgId, provider } },
     select: { apiKeyEnc: true, mode: true, webhookPathId: true, enabled: true },
@@ -293,7 +293,7 @@ export async function loadProviderSecret(
   }
   const mode = adapterFor(provider).modeFromKey(key);
   if (!mode) throw new OnlinePaymentError("Schluessel nicht lesbar (AUTH_SECRET gewechselt?).", "KEY_UNREADABLE");
-  return { key, mode, webhookPathId: row.webhookPathId, enabled: row.enabled };
+  return { key, keyEnc: row.apiKeyEnc, mode, webhookPathId: row.webhookPathId, enabled: row.enabled };
 }
 
 /** Verbindungstest; speichert das Ergebnis (fester Fehlertext, nie Anbietertext). */
@@ -319,8 +319,19 @@ export async function testProviderConnection(
   const provider = onlineProviderSchema.parse(providerRaw);
   const secret = await loadProviderSecret(orgId, provider);
   if (!secret) throw new OnlinePaymentError("Kein API-Schluessel hinterlegt.", "NO_KEY");
-  const testedRow = await dbInternal.paymentProviderAccount.findUnique({ where: { orgId_provider: { orgId, provider } }, select: { apiKeyEnc: true } });
-  const testedKeyEnc = testedRow?.apiKeyEnc ?? null;
+  // Schluessel und verschluesselter Wert stammen aus einer einzigen Abfrage.
+  const testedKeyEnc = secret.keyEnc;
+  // Abstand atomar beanspruchen: nur ein gleichzeitiger Aufruf gewinnt.
+  const claimedAt = new Date();
+  const claim = await dbInternal.paymentProviderAccount.updateMany({
+    where: {
+      orgId,
+      provider,
+      OR: [{ lastTestAt: null }, { lastTestAt: { lt: new Date(claimedAt.getTime() - CONNECTION_TEST_COOLDOWN_MS) } }],
+    },
+    data: { lastTestAt: claimedAt },
+  });
+  if (claim.count === 0) throw new OnlinePaymentError(CONNECTION_TEST_COOLDOWN_TEXT, "RATE_LIMITED");
   let discarded = false;
   let ok = false;
   let methods: string[] = [];

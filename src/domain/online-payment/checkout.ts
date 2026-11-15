@@ -95,8 +95,9 @@ async function evaluate(token: string): Promise<Evaluated | null> {
       account.apiKeyEnc !== null &&
       accountCurrencies(account.currenciesJson).includes(inv.currency) &&
       appBaseUrlFromEnv() !== null;
-    verdict = usable ? { ok: true } : { ok: false, kind: "UNAVAILABLE" };
     testMode = account?.mode === "TEST";
+    // Ein im Livebetrieb ausgegebener Link (auf dem Beleg) fuehrt nie in einen Test-Checkout.
+    verdict = usable && !(testMode && link.onDocument) ? { ok: true } : { ok: false, kind: "UNAVAILABLE" };
   }
   return { link, invoice, verdict, testMode };
 }

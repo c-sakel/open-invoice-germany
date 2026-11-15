@@ -141,6 +141,15 @@ describe("loadPayPage", () => {
     expect(await loadPayPage(s.token)).toMatchObject({ kind: "PAYABLE", testMode: false });
   });
 
+  it("Testkonto und im Livebetrieb ausgegebener Link (onDocument): Bezahlseite nicht verfuegbar", async () => {
+    const s = await setup("Pay Testlive GmbH");
+    await dbInternal.invoicePayLink.updateMany({ where: { invoiceId: s.invoiceId }, data: { onDocument: true } });
+    expect(await loadPayPage(s.token)).toMatchObject({ kind: "UNAVAILABLE" });
+    expect(await startCheckout(s.token, { now: NOW })).toMatchObject({ kind: "PAGE", state: { kind: "UNAVAILABLE" } });
+    await dbInternal.paymentProviderAccount.updateMany({ where: { orgId: s.orgId }, data: { mode: "LIVE" } });
+    expect(await loadPayPage(s.token)).toMatchObject({ kind: "PAYABLE", testMode: false });
+  });
+
   it("Bezahlt, storniert, deaktiviert, Konto aus -> ohne Netz", async () => {
     const paid = await setup("Pay Bezahlt GmbH");
     await recordPayment(paid.invoiceId, { amountCents: 11900, method: "TRANSFER", isSkonto: false, applySkonto: false }, { orgId: paid.orgId, now: NOW });

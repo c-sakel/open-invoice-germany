@@ -12,6 +12,7 @@ import { logActivity } from "@/domain/activity/log";
 import { ONLINE_PROVIDERS, type OnlineProvider } from "@/lib/payment/types";
 import { payLinkTokenSchema } from "@/schemas/online-payment";
 import { OnlinePaymentError } from "./errors";
+import { appBaseUrlFromEnv } from "@/lib/http/base-url";
 import { asProviderChoice, resolveOnlineProvider, type ProviderChoice } from "./resolve";
 import { accountCurrencies } from "./settings";
 
@@ -100,7 +101,7 @@ export async function resolveProviderWithinTx(
   if (res.provider === null) return res;
   // Testmodus-Links erscheinen nie auf Beleg/E-Rechnung/Mail; nur intern in der Belegansicht.
   const mode = accounts.find((a) => a.provider === res.provider)?.mode ?? null;
-  return { provider: res.provider, onDocument: mode === "LIVE" && (settings?.showOnPdf ?? true) };
+  return { provider: res.provider, onDocument: mode === "LIVE" && (settings?.showOnPdf ?? true) && appBaseUrlFromEnv() !== null };
 }
 
 /** Beim Festschreiben: Anbieter aufloesen; null = kein Link. */

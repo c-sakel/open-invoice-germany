@@ -20,13 +20,17 @@ import { createInvoiceSchema, createRecurringSchema, type CreateInvoiceInput } f
 const NOW = new Date("2215-03-10T10:00:00.000Z");
 const KEY = "test_FAKEaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const prevSecret = process.env.AUTH_SECRET;
+const prevBase = process.env.APP_BASE_URL;
 
 beforeAll(() => {
   process.env.AUTH_SECRET = "test-auth-secret-mindestens-16-zeichen";
+  process.env.APP_BASE_URL = "https://rechnung.example.org";
 });
 afterAll(() => {
   if (prevSecret === undefined) delete process.env.AUTH_SECRET;
   else process.env.AUTH_SECRET = prevSecret;
+  if (prevBase === undefined) delete process.env.APP_BASE_URL;
+  else process.env.APP_BASE_URL = prevBase;
 });
 
 interface Setup {

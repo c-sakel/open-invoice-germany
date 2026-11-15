@@ -31,7 +31,7 @@ export const providerApiKeySchema = z
   .refine((v) => /^(test|live)_[A-Za-z0-9]+$/.test(v), "Schluessel hat kein gueltiges Format.");
 
 /** Methoden-Ids des Anbieters (z. B. "creditcard"); null/leer = alle aktiven Methoden des Anbieters. */
-const methodIdSchema = z.string().refine((v) => /^[a-z0-9_]{2,40}$/.test(v), "Ungueltige Methoden-Id.");
+const methodIdSchema = z.string().refine((v) => /^[a-z0-9_]{1,32}$/.test(v), "Ungueltige Methoden-Id.");
 
 export const providerOptionsInputSchema = z
   .strictObject({
