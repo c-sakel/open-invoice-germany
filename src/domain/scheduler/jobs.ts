@@ -13,6 +13,7 @@ import { runFxJob } from "@/domain/fx/job";
 import { runCleanupJob } from "./cleanup";
 import { pollPostalJobs } from "@/domain/postal/poll";
 import { runArchiveJob } from "./archive-job";
+import { processOnlinePaymentPolls } from "@/domain/online-payment/poll";
 import { processPaymentRuleRuns } from "@/domain/payment-rule/execute";
 import type { SchedulerJob } from "./runner";
 
@@ -35,6 +36,10 @@ export const jobs: Record<SchedulerJob, (now: Date) => Promise<Record<string, un
   },
   archive: async (now) => {
     const result = await runArchiveJob(now);
+    return { ...result };
+  },
+  "online-payments": async (now) => {
+    const result = await processOnlinePaymentPolls({ now });
     return { ...result };
   },
   "payment-rules": async (now) => {

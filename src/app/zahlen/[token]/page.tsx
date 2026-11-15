@@ -2,6 +2,7 @@ import { z } from "zod";
 import { notFound } from "next/navigation";
 import { headers } from "next/headers";
 import { loadPayPage } from "@/domain/online-payment/checkout";
+import { refreshLatestAttempt } from "@/domain/online-payment/poll";
 import { enforcePayRateLimit } from "@/domain/online-payment/rate-limit";
 import { formatDocDate, formatDocMoney } from "@/lib/i18n/doc";
 import { RateLimitError } from "@/lib/rate-limit";
@@ -64,6 +65,8 @@ export default async function PayPage({ params, searchParams }: { params: Promis
     throw e;
   }
 
+  // Rueckkehr vom Anbieter: Status sofort nachladen (nie dem Aufruf vertrauen; kein Netzaufruf ohne offenen Vorgang).
+  if (zurueck === "1") await refreshLatestAttempt(token);
   const state = await loadPayPage(token);
   if (!state) notFound();
   const t = TEXTS[state.language];

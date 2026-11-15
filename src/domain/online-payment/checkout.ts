@@ -80,8 +80,9 @@ async function evaluate(token: string): Promise<Evaluated | null> {
   };
   let verdict: Evaluated["verdict"];
   let testMode = false;
-  if (link.status === "DISABLED" || inv.status === "CANCELLED") verdict = { ok: false, kind: "CANCELLED" };
+  if (inv.status === "CANCELLED" || (link.status === "DISABLED" && link.disabledReason !== "INVOICE_PAID")) verdict = { ok: false, kind: "CANCELLED" };
   else if (inv.status === "PAID" || openCents <= 0) verdict = { ok: false, kind: "PAID" };
+  else if (link.status === "DISABLED") verdict = { ok: false, kind: "UNAVAILABLE" };
   else if (inv.type === "CREDIT_NOTE" || !PAYABLE_STATES.has(inv.status)) verdict = { ok: false, kind: "UNAVAILABLE" };
   else {
     const account = await dbInternal.paymentProviderAccount.findUnique({
@@ -171,10 +172,11 @@ export async function startCheckout(
       select: { status: true, type: true, currency: true, grossTotalCents: true, payableCents: true, paidAmountCents: true },
     });
     if (!inv) throw new OnlinePaymentError("Rechnung nicht gefunden.", "NOT_FOUND");
-    const currentLink = await tx.invoicePayLink.findFirst({ where: { id: link.id, orgId: link.orgId }, select: { status: true } });
-    if (!currentLink || currentLink.status !== "ACTIVE" || inv.status === "CANCELLED") return { kind: "STATE", state: "CANCELLED" };
+    const currentLink = await tx.invoicePayLink.findFirst({ where: { id: link.id, orgId: link.orgId }, select: { status: true, disabledReason: true } });
+    if (!currentLink || inv.status === "CANCELLED" || (currentLink.status !== "ACTIVE" && currentLink.disabledReason !== "INVOICE_PAID")) return { kind: "STATE", state: "CANCELLED" };
     const openCents = (inv.payableCents ?? inv.grossTotalCents) - inv.paidAmountCents;
     if (inv.status === "PAID" || openCents <= 0) return { kind: "STATE", state: "PAID" };
+    if (currentLink.status !== "ACTIVE") return { kind: "STATE", state: "UNAVAILABLE" };
     if (inv.type === "CREDIT_NOTE" || !PAYABLE_STATES.has(inv.status)) return { kind: "STATE", state: "UNAVAILABLE" };
 
     const since = new Date(now.getTime() - DAY_MS);

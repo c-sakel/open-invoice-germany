@@ -11,6 +11,7 @@ import { logActivity } from "@/domain/activity/log";
 import { NotFoundError } from "@/domain/errors";
 import { describeError } from "@/lib/safe-error";
 import { kickPaymentRules } from "@/domain/payment-rule/kick";
+import { cancelOpenAttemptsAfterCommit } from "@/domain/online-payment/cancel-open";
 import { PaymentError, recordPaymentWithinTx, type PaymentCreatedBy } from "@/domain/invoice/payment";
 import { reversePaymentWithinTx } from "@/domain/invoice/payment-reversal";
 import { bankConfirmInputSchema, bankConfirmUnambiguousInputSchema, bankIgnoreInputSchema, bankUndoInputSchema } from "@/schemas/bank";
@@ -65,6 +66,7 @@ export async function confirmBankMatch(orgId: string, txId: string, raw: unknown
   const result = await confirmBankMatchInTx(orgId, txId, raw, opts);
   // Nach dem Commit: faellige Regel-Laeufe anstossen (Fehler beruehren die Buchung nie).
   kickPaymentRules(orgId);
+  for (const pay of result.payments) cancelOpenAttemptsAfterCommit(orgId, pay.invoiceId);
   return result;
 }
 

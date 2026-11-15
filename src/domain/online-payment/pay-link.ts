@@ -252,6 +252,20 @@ export async function disablePayLinkWithinTx(
   await logActivity(tx, { orgId, entityType: "INVOICE", entityId: invoiceId, type: "PAY_LINK_DISABLED", actor, at: now, data: { reason } });
 }
 
+/** In der Gegenbuchungs-Transaktion: war der Link wegen Vollzahlung aus und ist die Rechnung wieder offen, reaktivieren. */
+export async function reactivatePayLinkAfterReopenWithinTx(
+  tx: Prisma.TransactionClient,
+  orgId: string,
+  invoiceId: string,
+  actor: string,
+  now: Date,
+): Promise<void> {
+  const link = await tx.invoicePayLink.findFirst({ where: { invoiceId, orgId }, select: { id: true, status: true, disabledReason: true } });
+  if (!link || link.status !== "DISABLED" || link.disabledReason !== "INVOICE_PAID") return;
+  await tx.invoicePayLink.update({ where: { id: link.id }, data: { status: "ACTIVE", disabledAt: null, disabledReason: null } });
+  await logActivity(tx, { orgId, entityType: "INVOICE", entityId: invoiceId, type: "PAY_LINK_REACTIVATED", actor, at: now, data: { reason: "INVOICE_REOPENED" } });
+}
+
 /** Voller Link fuer den Betreiber; nur ACTIVE. */
 export async function revealPayLinkUrl(orgId: string, invoiceId: string, baseUrl: string): Promise<string | null> {
   const link = await dbInternal.invoicePayLink.findFirst({ where: { invoiceId, orgId }, select: { status: true, tokenEnc: true } });
@@ -265,6 +279,7 @@ export interface ResolvedPayLink {
   invoiceId: string;
   provider: OnlineProvider;
   status: "ACTIVE" | "DISABLED";
+  disabledReason: string | null;
   onDocument: boolean;
 }
 
@@ -273,8 +288,8 @@ export async function resolvePayLinkByToken(token: string): Promise<ResolvedPayL
   if (!payLinkTokenSchema.safeParse(token).success) return null;
   const row = await dbInternal.invoicePayLink.findUnique({
     where: { tokenHash: hashToken(token) },
-    select: { id: true, orgId: true, invoiceId: true, provider: true, status: true, onDocument: true },
+    select: { id: true, orgId: true, invoiceId: true, provider: true, status: true, disabledReason: true, onDocument: true },
   });
   if (!row) return null;
-  return { id: row.id, orgId: row.orgId, invoiceId: row.invoiceId, provider: asProvider(row.provider), status: row.status === "ACTIVE" ? "ACTIVE" : "DISABLED", onDocument: row.onDocument };
+  return { id: row.id, orgId: row.orgId, invoiceId: row.invoiceId, provider: asProvider(row.provider), status: row.status === "ACTIVE" ? "ACTIVE" : "DISABLED", disabledReason: row.disabledReason, onDocument: row.onDocument };
 }

@@ -25,6 +25,8 @@ import { incrementPaidAmount } from "./paid-amount";
 import { NotFoundError } from "@/domain/errors";
 import { enqueuePaymentRuleRuns } from "@/domain/payment-rule/enqueue";
 import { kickPaymentRules } from "@/domain/payment-rule/kick";
+import { disablePayLinkWithinTx } from "@/domain/online-payment/pay-link";
+import { cancelOpenAttemptsAfterCommit } from "@/domain/online-payment/cancel-open";
 import type { RecordPaymentInput } from "@/schemas";
 
 /** Herkunft einer Zahlungszeile (`Payment.createdBy`, Phase 16a). */
@@ -78,6 +80,8 @@ export async function recordPayment(
   const result = await dbInternal.$transaction((tx) => recordPaymentWithinTx(tx, invoiceId, input, opts));
   // Nach dem Commit: faellige Regel-Laeufe anstossen (Fehler beruehren die Zahlung nie).
   kickPaymentRules(result.payment.orgId);
+  // Vollstaendig bezahlt (auch aus anderer Quelle): offene Online-Vorgaenge beim Anbieter beenden.
+  if (result.payment.status === "PAID") cancelOpenAttemptsAfterCommit(result.payment.orgId, invoiceId);
   return result;
 }
 
@@ -284,6 +288,9 @@ export async function recordPaymentWithinTx(
       }
     }
   }
+
+  // Vollstaendig bezahlt (aus beliebiger Quelle): Bezahllink deaktivieren; eine Gegenbuchung oeffnet ihn wieder.
+  if (result.payment.status === "PAID") await disablePayLinkWithinTx(tx, inv.orgId, invoiceId, "INVOICE_PAID", actor, now);
 
   // Regeln nach Zahlungseingang: Lauf in derselben Transaktion wie die Zahlung (Outbox), angeknuepft an die
   // Primaerzahlung; eine mitgebuchte Skontozahlung loest nichts eigenes aus. Die Verrechnung mit einer

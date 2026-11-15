@@ -85,6 +85,7 @@ function BankRow({ row, exec }: { row: BankRowView; exec: Exec }) {
             {row.returnReason && <span className="ml-2 text-ink-muted">Code {row.returnReason}</span>}
           </p>
         )}
+        {row.payoutHint && <p className="text-xs text-ink-muted">{row.payoutHint}</p>}
         {row.status === "IGNORED" && row.ignoredReason && <p className="text-xs text-ink-muted">Ignoriert: {row.ignoredReason}</p>}
         {openForMatch && top && (
           <p className="text-xs text-ink-muted">

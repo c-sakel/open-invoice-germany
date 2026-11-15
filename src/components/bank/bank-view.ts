@@ -4,7 +4,7 @@
  */
 import { maskIban } from "@/lib/iban";
 import type { BankMatchRow, BankTransactionRow } from "@/domain/bank/list";
-import type { Suggestion } from "@/domain/bank/match";
+import { providerPayoutHint, type Suggestion } from "@/domain/bank/match";
 import type { ReturnSuggestion } from "@/domain/bank/return";
 
 export type BankActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
@@ -47,6 +47,8 @@ export interface BankRowView {
   matches: BankMatchView[];
   suggestions: BankSuggestionView[];
   returnSuggestions: ReturnSuggestion[];
+  /** Auszahlung eines Zahlungsanbieters: keine Rechnungsvorschlaege. */
+  payoutHint: string | null;
 }
 
 export function toBankRowView(
@@ -87,6 +89,7 @@ export function toBankRowView(
     })),
     suggestions: suggestions.map((s) => ({ allocations: s.allocations, confidence: s.confidence, reasons: s.reasons, restCents: s.restCents })),
     returnSuggestions,
+    payoutHint: row.direction === "CRDT" ? providerPayoutHint(row) : null,
   };
 }
 
