@@ -23,6 +23,8 @@ const input = (o: Partial<ReconcileInput> = {}): ReconcileInput => ({
   booked: null,
   invoice: { status: "FINALIZED", openCents: 11900 },
   previousProviderCents: null,
+  previousRefundedCents: null,
+  hasCreditNote: false,
   ...o,
 });
 
@@ -40,6 +42,16 @@ describe("planReconcile", () => {
   it("nichts offen oder storniert: nicht buchen", () => {
     expect(planReconcile(input({ invoice: { status: "PAID", openCents: 0 } }))).toMatchObject({ book: null, unassigned: "NOTHING_OPEN", attemptStatus: "PAID" });
     expect(planReconcile(input({ invoice: { status: "CANCELLED", openCents: 11900 } }))).toMatchObject({ book: null, unassigned: "CANCELLED" });
+  });
+
+  it("Erstattung bei vorhandener Gutschrift: keine Gegenbuchung, einmal melden; Rueckbuchung weiter automatisch", () => {
+    const booked = { paymentId: "p1", amountCents: 11900, reversedCents: 0 };
+    const p = planReconcile(input({ booked, hasCreditNote: true, state: state({ refundedCents: 3000 }) }));
+    expect(p).toMatchObject({ reverse: null, review: "REFUND_WITH_CREDIT_NOTE", refundNoticeCents: 3000, result: "APPLIED" });
+    const again = planReconcile(input({ booked, hasCreditNote: true, previousRefundedCents: 3000, previousProviderCents: 3000, state: state({ refundedCents: 3000 }) }));
+    expect(again).toMatchObject({ reverse: null, review: null });
+    const cb = planReconcile(input({ booked, hasCreditNote: true, state: state({ refundedCents: 3000, chargedBackCents: 2000 }) }));
+    expect(cb.reverse?.cents).toBe(2000);
   });
 
   it("Buchung und Erstattung im selben Abruf", () => {

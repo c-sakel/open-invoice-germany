@@ -293,9 +293,10 @@ Datumsangaben zu Altbelegen beziehen sich auf den Programmstand; maßgeblich ist
 
 ## Online-Zahlung
 - **Nur Mollie.** Weitere Zahlungsanbieter folgen nicht automatisch; die Schnittstelle ist darauf vorbereitet, ein weiterer Anbieter ist aber ein eigener Auftrag. Eine Anbindung von Stripe gibt es nicht.
-- **Testmodus bucht nie.** Zahlungen mit einem Testschlüssel erzeugen nur eine Benachrichtigung und ein Protokoll; Testlinks erscheinen nie auf PDF, E-Rechnung, in Mails oder im Portal.
+- **Testmodus bucht nie.** Zahlungen mit einem Testschlüssel erzeugen nur eine Benachrichtigung und ein Protokoll; Testlinks erscheinen nie auf PDF, E-Rechnung, in Mails oder im Portal; ein im Livebetrieb auf den Beleg gedruckter Link führt bei einem später auf Test umgestellten Zugang zu „nicht verfügbar“ statt in einen Test-Checkout.
 - **Kein Skonto online.** Gebucht wird immer der volle offene Rest.
 - **Überzahlung und Erstattung beim Anbieter von Hand.** Ein Mehrbetrag wird nur gemeldet, nie als Zahlung gebucht; die Erstattung an den Kunden löst der Betreiber bei Mollie aus.
+- **Erstattung bei vorhandener Gutschrift nur als Hinweis.** Gibt es zur Rechnung eine gebuchte Gutschrift oder Teilgutschrift, bucht die Anwendung eine Erstattung beim Anbieter nicht gegen, sondern meldet sie zur manuellen Zuordnung; Rückbuchungen werden weiter automatisch gegengebucht.
 - **Aufgehobene Rückbuchung nur als Hinweis.** Wird eine Erstattung oder Rückbuchung beim Anbieter später verringert oder aufgehoben, bucht die Anwendung nichts neu; die Buchung korrigiert der Betreiber von Hand.
 - **Gebühren des Anbieters werden nicht gebucht.**
 - **Nachprüfung zeitlich begrenzt.** Der Scheduler gleicht offene Vorgänge bis 14 Tage und bezahlte bis 180 Tage nach Anlage nach (Erstattung, Rückbuchung); danach nur noch über „Status abrufen" an der Rechnung. Ohne laufenden Scheduler und bei verlorenem Webhook gibt es keine Buchung.

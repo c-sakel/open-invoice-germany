@@ -20,7 +20,7 @@ import { notifyOnlinePaymentWithinTx, onOnlinePaymentNotice } from "@/domain/not
 import { payableBaseCents } from "@/domain/invoice/amounts";
 import { OnlinePaymentError } from "./errors";
 import { cancelOpenAttemptsAfterCommit } from "./cancel-open";
-import { eventIdFor, planReconcile, providerCentsFromEventId, type AttemptStatus, type ReconcilePlan } from "./reconcile-plan";
+import { eventIdFor, planReconcile, providerCentsFromEventId, providerSplitFromEventId, type AttemptStatus, type ReconcilePlan } from "./reconcile-plan";
 import { loadProviderSecret } from "./settings";
 
 export const ONLINE_ACTOR = "online-payment:mollie";
@@ -107,6 +107,9 @@ export async function reconcileAttempt(attemptId: string, state: ProviderPayment
           select: { eventId: true },
         });
         const openCents = payableBaseCents(inv) - inv.paidAmountCents;
+        const creditNotes = await tx.invoice.count({
+          where: { orgId, correctsInvoiceId: invoiceId, type: "CREDIT_NOTE", status: { not: "DRAFT" } },
+        });
         const plan = planReconcile({
           state,
           accountTestMode,
@@ -114,6 +117,8 @@ export async function reconcileAttempt(attemptId: string, state: ProviderPayment
           booked,
           invoice: { status: inv.status, openCents },
           previousProviderCents: prev ? providerCentsFromEventId(prev.eventId) : null,
+          previousRefundedCents: prev ? (providerSplitFromEventId(prev.eventId)?.refunded ?? null) : null,
+          hasCreditNote: creditNotes > 0,
         });
 
         let paymentId = booked?.paymentId ?? null;
@@ -162,14 +167,16 @@ export async function reconcileAttempt(attemptId: string, state: ProviderPayment
         }
         if (plan.review) {
           const why =
-            plan.review === "REVERSAL_DECREASED"
+            plan.review === "REFUND_WITH_CREDIT_NOTE"
+              ? `Erstattung beim Zahlungsanbieter (${money(plan.refundNoticeCents, inv.currency)}) – bitte manuell zuordnen. Zur Rechnung${num ? ` ${num}` : ""} existiert eine Gutschrift; es wurde nichts gegengebucht.`
+              : plan.review === "REVERSAL_DECREASED"
               ? "Die Erstattung/Rueckbuchung beim Anbieter wurde verringert oder aufgehoben; bitte von Hand pruefen und ggf. neu buchen."
               : plan.review === "MODE_MISMATCH"
                 ? "Der Modus (Test/Live) der Zahlung passt nicht zum Zugang; es wurde nichts gebucht."
                 : "Betrag, Waehrung oder Vorgang der Zahlung passen nicht zum Bezahlvorgang; es wurde nichts gebucht.";
           await notifyOnlinePaymentWithinTx(tx, orgId, {
             type: "ONLINE_PAYMENT_ISSUE",
-            title: `Online-Zahlung pruefen${num ? ` (${num})` : ""}`,
+            title: plan.review === "REFUND_WITH_CREDIT_NOTE" ? `Erstattung beim Zahlungsanbieter${num ? ` (${num})` : ""}` : `Online-Zahlung pruefen${num ? ` (${num})` : ""}`,
             body: why,
             invoiceId,
             dedupeKey: `online:${eventId}:review`,

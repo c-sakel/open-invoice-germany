@@ -10,6 +10,7 @@ import { saveDocumentSettings } from "@/domain/document/settings";
 import { createDraftInvoice } from "@/domain/invoice/create";
 import { finalizeInvoice } from "@/domain/invoice/finalize";
 import { cancelInvoice } from "@/domain/invoice/cancel";
+import { createPartialCreditNote } from "@/domain/invoice/credit";
 import { recordPayment } from "@/domain/invoice/payment";
 import { reversePayment } from "@/domain/invoice/payment-reversal";
 import { revealPayLinkUrl } from "@/domain/online-payment/pay-link";
@@ -237,6 +238,24 @@ describe("Webhook: Buchung", () => {
     expect(pays).toHaveLength(3);
     expect(pays[2]).toMatchObject({ amountCents: -6900, reason: "Rueckbuchung beim Zahlungsanbieter (Chargeback)" });
     expect((await invoiceOf(s.invoiceId)).paidAmountCents).toBe(0);
+  });
+
+  it("Erstattung nach Teilgutschrift: keine Gegenbuchung, Rechnung bleibt bezahlt, eine Meldung", async () => {
+    const s = await setup("Hook Gutschrift GmbH");
+    const a = await newAttempt(s);
+    const states = new Map([[a.objectId, paymentJson(a.objectId, a.id)]]);
+    const fake = fakeFor(states);
+    await hook(s, a.objectId, fake);
+    expect((await invoiceOf(s.invoiceId)).status).toBe("PAID");
+    await createPartialCreditNote(s.invoiceId, { lines: [{ description: "Teilgutschrift", quantityMilli: 1000, unitNetPriceCents: 2521, taxRate: 19, taxCategory: "S" }] }, { orgId: s.orgId, now: NOW });
+    states.set(a.objectId, paymentJson(a.objectId, a.id, { refunded: 3000 }));
+    await hook(s, a.objectId, fake);
+    await hook(s, a.objectId, fake);
+    expect(await paymentsOf(s.invoiceId)).toHaveLength(1);
+    expect((await invoiceOf(s.invoiceId)).status).toBe("PAID");
+    const notes = (await notesOf(s.orgId)).filter((n) => n.type === "ONLINE_PAYMENT_ISSUE");
+    expect(notes).toHaveLength(1);
+    expect(JSON.stringify(notes[0])).toContain("bitte manuell zuordnen");
   });
 
   it("aufgehobene Erstattung beim Anbieter: nur Benachrichtigung, keine Neubuchung", async () => {
