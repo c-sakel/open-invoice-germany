@@ -326,7 +326,11 @@ export async function buildDatevRun(tx: Tx, orgId: string, req: DatevExportReque
       for (const line of r.lines) {
         const cells = paddedCells(line, settings.accountLength);
         rows.push(cells);
+        // Die Zellen sind bereits abgebildet (? fuer Unbekanntes); nicht darstellbare Zeichen stehen nur im Rohwert.
         for (const v of cells.values()) if (typeof v === "string") for (const ch of unmappableChars(v)) if (!lost.includes(ch)) lost.push(ch);
+      }
+      for (const raw of [doc?.buyerName, pay?.buyerName]) {
+        if (raw) for (const ch of unmappableChars(raw)) if (!lost.includes(ch)) lost.push(ch);
       }
       const charNote = lost.length > 0 ? `Zeichen ausserhalb Windows-1252 (${lost.join(" ")}) als ? ausgegeben` : null;
       const warning = [r.warning, charNote].filter((x): x is string => !!x).join("; ") || null;

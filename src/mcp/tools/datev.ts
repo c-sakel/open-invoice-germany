@@ -56,6 +56,17 @@ function resolveOutputDir(outputDir: string | undefined): string {
   return real;
 }
 
+/** Bestaetigungsfelder gibt es nur in der Oberflaeche; im Schema ausdruecklich aufgefuehrt, sonst entfernt das SDK sie still. */
+const DATEV_UI_ONLY_KEYS = ["confirmed", "confirmedHash", "confirmedNote", "confirmedAt", "confirmationStale", "confirm", "note"] as const;
+const uiOnlyShape = Object.fromEntries(DATEV_UI_ONLY_KEYS.map((k) => [k, z.unknown().optional()]));
+
+function rejectUiOnlyKeys(args: unknown): void {
+  const obj = args && typeof args === "object" && !Array.isArray(args) ? (args as Record<string, unknown>) : {};
+  for (const k of DATEV_UI_ONLY_KEYS) {
+    if (k in obj && obj[k] !== undefined) throw new DatevError("VALIDATION", `Feld ${k}: Die Bestaetigung der Kontenzuordnung gibt es nur in der Oberflaeche.`);
+  }
+}
+
 const exportInput = datevExportRequestSchema.extend({
   outputDir: z.string().optional().describe("Zielverzeichnis (Default: <Projekt>/exports)"),
 });
@@ -153,10 +164,11 @@ export function registerDatevTools(server: McpServer, ctx: McpToolsContext): voi
       title: "DATEV-Einstellungen aendern",
       description:
         "Teil-Update der DATEV-Einstellungen (Beraternummer, Mandantennummer, Sachkontenlaenge, Kontenrahmen, Debitorenmodus, Bank/Kasse, Zahlungen exportieren, ...). Jede Aenderung macht eine bestehende Bestaetigung der Kontenzuordnung hinfaellig; bestaetigt wird nur in der Oberflaeche.",
-      inputSchema: datevSettingsInputSchema.shape,
+      inputSchema: { ...datevSettingsInputSchema.shape, ...uiOnlyShape },
     },
     async (args): Promise<Result> => {
       try {
+        rejectUiOnlyKeys(args);
         const input = datevSettingsInputSchema.parse(args ?? {});
         if (Object.keys(input).length === 0) return ctx.fail("Mindestens ein Feld angeben.");
         const org = await ctx.requireOrg();
@@ -173,10 +185,11 @@ export function registerDatevTools(server: McpServer, ctx: McpToolsContext): voi
       title: "DATEV-Kontenzuordnung ersetzen",
       description:
         "Ersetzt die gesamte Kontenzuordnung (rows: kind REVENUE/DOWNPAYMENT/MONEY, key, account, buKey) atomar. Macht eine bestehende Bestaetigung hinfaellig; bestaetigt wird nur in der Oberflaeche.",
-      inputSchema: datevMappingPutSchema.shape,
+      inputSchema: { ...datevMappingPutSchema.shape, ...uiOnlyShape },
     },
     async (args): Promise<Result> => {
       try {
+        rejectUiOnlyKeys(args);
         const input = datevMappingPutSchema.parse(args ?? {});
         const org = await ctx.requireOrg();
         return ctx.ok(JSON.stringify((await saveDatevMapping(org.id, input.rows, "mcp")).map(serializeDatevMappingRow), null, 2));
@@ -191,10 +204,11 @@ export function registerDatevTools(server: McpServer, ctx: McpToolsContext): voi
     {
       title: "DATEV-Kontenrahmen-Vorlage uebernehmen",
       description: "Uebernimmt SKR03 oder SKR04 als Vorschlag (fehlende Zeilen werden ergaenzt). Die Vorlage ist keine Bestaetigung; die Zuordnung ist mit dem Steuerberater abzustimmen.",
-      inputSchema: datevTemplateInputSchema.shape,
+      inputSchema: { ...datevTemplateInputSchema.shape, ...uiOnlyShape },
     },
     async (args): Promise<Result> => {
       try {
+        rejectUiOnlyKeys(args);
         const input = datevTemplateInputSchema.parse(args ?? {});
         const org = await ctx.requireOrg();
         return ctx.ok(JSON.stringify(await applyDatevTemplate(org.id, input.chart, "mcp", { overwriteEdited: input.overwriteEdited }), null, 2));

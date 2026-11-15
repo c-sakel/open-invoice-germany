@@ -369,6 +369,13 @@ describe("MCP", () => {
     const s2 = await callTool("update_datev_settings", { exportDebtors: true });
     expect(s2.isError).toBeFalsy();
     expect((await callTool("update_datev_settings", {})).isError).toBe(true);
+    for (const [tool, extra] of [["update_datev_settings", { exportDebtors: true }], ["update_datev_mapping", { rows: [] }], ["apply_datev_template", { chart: "SKR03" }]] as const) {
+      for (const field of ["confirmed", "confirmedHash", "confirmedNote"]) {
+        const refused = await callTool(tool, { ...extra, [field]: field === "confirmed" ? true : "x" });
+        expect(refused.isError, `${tool} ${field}`).toBe(true);
+        expect(text(refused)).toContain("nur in der Oberflaeche");
+      }
+    }
     expect((await callTool("apply_datev_template", { chart: "SKR03" })).isError).toBeFalsy();
   });
 
