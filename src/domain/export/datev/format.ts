@@ -7,6 +7,7 @@
  * Keine Datenbank, kein Netz.
  */
 import { berlinParts } from "@/lib/berlin-time";
+import { FORMULA_START } from "@/domain/export/csv-writer";
 import { encodeCp1252 } from "./cp1252";
 import type { DatevField, FieldKind } from "./fields";
 
@@ -73,10 +74,24 @@ export function belegfeld(s: string): string {
     .join("");
 }
 
-/** Freitext: Steuerzeichen (inkl. CR, LF, Tab) zu Leerzeichen, trimmen, auf `max` Zeichen kuerzen. */
+function cleanText(s: string): string {
+  return s.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").trim();
+}
+
+/** Wuerde `text` einen Apostroph voranstellen (Formelzeichen am Anfang, gleiche Regel wie der CSV-Schreiber)? */
+export function startsWithFormula(s: string): boolean {
+  return FORMULA_START.test(cleanText(s));
+}
+
+/**
+ * Freitext: Steuerzeichen (inkl. CR, LF, Tab) zu Leerzeichen, trimmen, auf `max` Zeichen kuerzen.
+ * Beginnt der Text mit einem Formelzeichen (= + - @, auch nach Leerraum), steht ein Apostroph davor
+ * (Schutz vor Formel-Injection beim Oeffnen in Tabellenkalkulationen); bereits gekuerzte Werte bleiben stabil.
+ */
 export function text(s: string, max: number): string {
-  const cleaned = s.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").trim();
-  return Array.from(cleaned).slice(0, max).join("").trim();
+  const cleaned = cleanText(s);
+  const guarded = startsWithFormula(cleaned) ? `'${cleaned}` : cleaned;
+  return Array.from(guarded).slice(0, max).join("").trim();
 }
 
 export type CellValue = string | number;

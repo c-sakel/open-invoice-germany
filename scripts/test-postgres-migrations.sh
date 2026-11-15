@@ -1972,10 +1972,14 @@ INSERT INTO "DatevAccountMapping" ("id","orgId","kind","key","account","updatedA
 INSERT INTO "DatevExport" ("id","orgId","mode","fromMonth","toMonth","lineCount","itemCount","manualCount","debtorCount","sha256","archivePath","filesJson","settingsJson","createdBy")
   VALUES ('de43a','org43a','PERIOD','2096-01','2096-01',1,1,0,1,'sha43','datev/x.zip','[]','{}','test');
 INSERT INTO "DatevExportItem" ("id","orgId","exportId","itemKey","month","status","lineCount","amountCents")
-  VALUES ('di43a','org43a','de43a','INV:inv43a','2096-01','EXPORTED',1,11900);
+  VALUES ('di43a','org43a','de43a','doc:inv43a','2096-01','EXPORTED',1,11900);
 SQL
 DEF43=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"accountLength\"::text || '|' || \"debtorMode\" || '|' || \"lockBatch\"::text || '|' || \"exportPayments\"::text from \"DatevSettings\" where id='ds43a'")
 [ "$DEF43" = "4|PERSONAL|false|false" ] || fail "DatevSettings-Standardwerte falsch ('$DEF43')"
+SINCE43=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select data_type || '|' || is_nullable from information_schema.columns where table_schema='public' and table_name='DatevSettings' and column_name='exportPaymentsSince'")
+[ "$SINCE43" = "timestamp without time zone|YES" ] || fail "DatevSettings.exportPaymentsSince hat Typ '$SINCE43', erwartet timestamp NULL"
+SINCEV43=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from \"DatevSettings\" where id='ds43a' and \"exportPaymentsSince\" is null")
+[ "$SINCEV43" = "1" ] || fail "DatevSettings.exportPaymentsSince ist nicht NULL in der Standardzeile"
 pg_expect_error 'duplicate key value violates unique constraint "DatevSettings_orgId_key"' "Zweite DatevSettings je Organisation wurde nicht abgewiesen" <<'SQL'
 INSERT INTO "DatevSettings" ("id","orgId","updatedAt") VALUES ('ds43b','org43a',NOW());
 SQL
@@ -1985,7 +1989,7 @@ INSERT INTO "DatevAccountMapping" ("id","orgId","kind","key","account","updatedA
 SQL
 pg_expect_error 'violates foreign key constraint "DatevExportItem_exportId_fkey"' "Position ohne Export wurde nicht abgewiesen" <<'SQL'
 INSERT INTO "DatevExportItem" ("id","orgId","exportId","itemKey","month","status","lineCount","amountCents")
-  VALUES ('di43b','org43a','gibt-es-nicht','INV:x','2096-01','EXPORTED',1,1);
+  VALUES ('di43b','org43a','gibt-es-nicht','doc:x','2096-01','EXPORTED',1,1);
 SQL
 pg_expect_error 'violates foreign key constraint "DatevExportItem_exportId_fkey"' "Export mit Positionen wurde loeschbar (erwartet: Restrict)" <<'SQL'
 DELETE FROM "DatevExport" WHERE id='de43a';

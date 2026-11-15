@@ -6,6 +6,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { debtorRow } from "@/domain/export/datev/debtor-file";
 import { BOOKING_FIELDS, DEBTOR_FIELDS } from "@/domain/export/datev/fields";
 import {
   amount,
@@ -251,6 +252,26 @@ describe("Zellenregeln", () => {
     expect(text('  a"b;c\r\nd\te  ', 50)).toBe('a"b;c  d e');
     expect(text("abcdef", 3)).toBe("abc");
     expect(text("ab \n", 3)).toBe("ab");
+  });
+
+  it("text: Formelzeichen am Anfang bekommen einen Apostroph, auch nach Leerraum, nie doppelt", () => {
+    expect(text('=HYPERLINK("http://x";"y")', 80)).toBe('\'=HYPERLINK("http://x";"y")');
+    expect(text("\t+1234", 20)).toBe("'+1234");
+    expect(text("  @SUMME(A1)", 20)).toBe("'@SUMME(A1)");
+    expect(text("-5 Rabatt", 20)).toBe("'-5 Rabatt");
+    expect(text(text("=1+1", 20), 20)).toBe("'=1+1");
+    expect(text("Muster = GmbH", 20)).toBe("Muster = GmbH");
+  });
+});
+
+describe("Debitorenzeile", () => {
+  it("Kundenname mit Formel: Apostroph in der Zelle, Protokollnotiz", () => {
+    const r = debtorRow(
+      { id: "c", type: "BUSINESS", name: '=HYPERLINK("http://x";"y")', customerNumber: "K-1", vatId: null, addressLine1: "Weg 1", addressLine2: null, postalCode: "12345", city: "Stadt", countryCode: "DE" },
+      10001,
+    );
+    expect(r.line).toContain('"\'=HYPERLINK(""http://x"";""y"")"');
+    expect(r.notes.some((n) => /Formelzeichen/.test(n))).toBe(true);
   });
 });
 

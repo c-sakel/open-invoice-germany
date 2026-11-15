@@ -242,7 +242,7 @@ export async function buildDatevRun(tx: Tx, orgId: string, req: DatevExportReque
       ? (await listPaymentRefs(tx, orgId, from, to, now)).filter((p) => monthSet.has(monthOf(p.paidAt))).map((p) => p.id)
       : [];
   } else {
-    const cand = await supplementCandidates(tx, orgId, monthSet, settings.exportPayments, now);
+    const cand = await supplementCandidates(tx, orgId, monthSet, settings.exportPayments, settings.exportPaymentsSince, coverage, now);
     docIds = cand.docs.map((d) => d.id);
     paymentIds = cand.payments.map((p) => p.id);
   }

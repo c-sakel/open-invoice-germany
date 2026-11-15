@@ -4,7 +4,7 @@
  * Bankverbindung. Nicht darstellbare Werte bleiben leer bzw. werden gekuerzt und als Hinweis gemeldet.
  */
 import { DEBTOR_FIELDS } from "./fields";
-import { dataLine, text, type CellValue } from "./format";
+import { dataLine, startsWithFormula, text, type CellValue } from "./format";
 
 export interface DebtorCustomer {
   id: string;
@@ -26,6 +26,7 @@ export interface DebtorRow {
 }
 
 function fit(value: string, max: number, label: string, notes: string[]): string {
+  if (startsWithFormula(value)) notes.push(`${label} beginnt mit einem Formelzeichen, Apostroph vorangestellt`);
   const cleaned = text(value, Number.MAX_SAFE_INTEGER);
   if (Array.from(cleaned).length > max) notes.push(`${label} auf ${max} Zeichen gekuerzt`);
   return text(cleaned, max);

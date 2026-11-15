@@ -27,6 +27,7 @@ const settings: DatevConfigSettings = {
   bankAccount: 1200,
   cashAccount: 1000,
   exportPayments: true,
+  exportPaymentsSince: null,
   exportDebtors: true,
   useGeneralReversal: true,
   lockBatch: false,
@@ -240,6 +241,21 @@ describe("bookDocument", () => {
     expect(cell(none.lines[0], 40)).toBeUndefined();
   });
 
+  it("Feld 40: GR wird EL, ungueltige oder zu lange USt-IdNr. -> MANUAL, nie gekuerzt", () => {
+    const base = { taxScheme: "IG_LIEFERUNG", breakdown: [{ taxCategory: "K", taxRate: 0, netCents: 50000, taxCents: 0 }] };
+    const gr = exported(bookDocument(doc({ ...base, buyerVatId: "gr 123.456.789" }), ctx()));
+    expect(cell(gr.lines[0], 40)).toBe("EL123456789");
+    for (const vat of ["CH123456789", "GB123456789", "DE12345", "ATU1234567890123456"]) {
+      expect(bookDocument(doc({ ...base, buyerVatId: vat }), ctx()), vat).toMatchObject({ status: "MANUAL", amountCents: 50000 });
+    }
+  });
+
+  it("Kundenname mit Formelzeichen: Apostroph im Buchungstext, Warnung", () => {
+    const r = exported(bookDocument(doc({ buyerName: '=HYPERLINK("http://x";"y")' }), ctx()));
+    expect(cell(r.lines[0], 14)).toBe("Rechnung RE-1001 =HYPERLINK(\"http://x\";\"y\")");
+    expect(r.warning).toMatch(/Formelzeichen/);
+  });
+
   it("Kleinunternehmer E|0 mit BU-Schluessel aus dem Mapping", () => {
     const r = exported(bookDocument(doc({ taxScheme: "KLEINUNTERNEHMER", breakdown: [{ taxCategory: "E", taxRate: 0, netCents: 5000, taxCents: 0 }] }), ctx()));
     expect(r.lines[0].counterAccount).toBe(8195);
@@ -395,6 +411,19 @@ describe("bookPayments", () => {
     expect(bookPayments([pay({ method: "CREDIT_NOTE" })], ctx())).toEqual([]);
     const r = bookPayments([pay({ invoiceCurrency: "USD" })], ctx());
     expect(r[0]).toMatchObject({ status: "MANUAL", reason: "Zahlung in Fremdwaehrung: EUR-Betrag der Bank von Hand buchen" });
+  });
+
+  it("negative Zahlung (Erstattung) -> MANUAL, nie als Haben-Zahlung", () => {
+    const r = bookPayments([pay({ id: "n", amountCents: -5000, provider: "BANK" })], ctx());
+    expect(r).toHaveLength(1);
+    expect(r[0]).toMatchObject({ status: "MANUAL", amountCents: -5000 });
+  });
+
+  it("Gegenbuchung ohne Originalzahlung -> MANUAL statt Konto zu raten", () => {
+    const rev = pay({ id: "r", kind: "REVERSAL", reversesPaymentId: "o", provider: "BANK" });
+    const r = bookPayments([rev], ctx());
+    expect(r).toHaveLength(1);
+    expect(r[0]).toMatchObject({ status: "MANUAL", key: "pay:r" });
   });
 
   it("Festschreibekennzeichen bei Zahlungen ausdruecklich", () => {

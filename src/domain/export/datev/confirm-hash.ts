@@ -18,6 +18,8 @@ export interface DatevConfigSettings {
   bankAccount: number | null;
   cashAccount: number | null;
   exportPayments: boolean;
+  /** Zeitpunkt, an dem exportPayments eingeschaltet wurde (nur serverseitig gesetzt); NULL solange aus. */
+  exportPaymentsSince: Date | null;
   exportDebtors: boolean;
   useGeneralReversal: boolean;
   lockBatch: boolean;
@@ -46,6 +48,7 @@ export function canonicalDatevConfig(settings: DatevConfigSettings, mapping: rea
     s.bankAccount,
     s.cashAccount,
     s.exportPayments,
+    s.exportPaymentsSince === null ? null : s.exportPaymentsSince.toISOString(),
     s.exportDebtors,
     s.useGeneralReversal,
     s.lockBatch,

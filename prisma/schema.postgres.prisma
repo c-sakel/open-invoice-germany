@@ -2019,6 +2019,7 @@ model DatevSettings {
   bankAccount             Int?
   cashAccount             Int?
   exportPayments          Boolean      @default(false)
+  exportPaymentsSince     DateTime? // Zeitpunkt des Einschaltens von exportPayments; Teil der Bestaetigung, Zahlungen frueher exportierter Monate sind kein Nachtrag
   exportDebtors           Boolean      @default(true)
   useGeneralReversal      Boolean      @default(true)
   lockBatch               Boolean      @default(false)
@@ -2073,7 +2074,7 @@ model DatevExportItem {
   org         Organization @relation(fields: [orgId], references: [id])
   exportId    String
   export      DatevExport  @relation(fields: [exportId], references: [id])
-  itemKey     String // INV:<invoiceId> | PAY:<paymentId> | REV:<paymentId>
+  itemKey     String // doc:<invoiceId> | pay:<paymentId> (Zahlung und Gegenbuchung je eigene Zahlungs-Id)
   invoiceId   String?
   paymentId   String?
   customerId  String?

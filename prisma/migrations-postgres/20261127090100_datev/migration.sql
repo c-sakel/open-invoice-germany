@@ -13,6 +13,7 @@ CREATE TABLE "DatevSettings" (
     "bankAccount" INTEGER,
     "cashAccount" INTEGER,
     "exportPayments" BOOLEAN NOT NULL DEFAULT false,
+    "exportPaymentsSince" TIMESTAMP(3),
     "exportDebtors" BOOLEAN NOT NULL DEFAULT true,
     "useGeneralReversal" BOOLEAN NOT NULL DEFAULT true,
     "lockBatch" BOOLEAN NOT NULL DEFAULT false,

@@ -34,6 +34,7 @@ export const SETTINGS_SELECT = {
   bankAccount: true,
   cashAccount: true,
   exportPayments: true,
+  exportPaymentsSince: true,
   exportDebtors: true,
   useGeneralReversal: true,
   lockBatch: true,
@@ -57,6 +58,7 @@ const DEFAULTS: DatevConfigSettings = {
   bankAccount: null,
   cashAccount: null,
   exportPayments: false,
+  exportPaymentsSince: null,
   exportDebtors: true,
   useGeneralReversal: true,
   lockBatch: false,
@@ -84,6 +86,7 @@ export function toConfig(row: DatevConfigSettings): DatevConfigSettings {
     bankAccount: row.bankAccount,
     cashAccount: row.cashAccount,
     exportPayments: row.exportPayments,
+    exportPaymentsSince: row.exportPaymentsSince,
     exportDebtors: row.exportDebtors,
     useGeneralReversal: row.useGeneralReversal,
     lockBatch: row.lockBatch,
@@ -166,7 +169,7 @@ function parseInput(raw: unknown): DatevSettingsInput {
   return r.data;
 }
 
-export async function saveDatevSettings(orgId: string, rawInput: unknown, actor: string): Promise<DatevSettingsView> {
+export async function saveDatevSettings(orgId: string, rawInput: unknown, actor: string, now: Date = new Date()): Promise<DatevSettingsView> {
   const input = parseInput(rawInput);
   return dbInternal.$transaction(async (tx) => {
     await lockOrganization(tx, orgId);
@@ -182,6 +185,8 @@ export async function saveDatevSettings(orgId: string, rawInput: unknown, actor:
         changed.push(key);
       }
     }
+    // Der Zeitpunkt entsteht nur hier: Einschalten setzt ihn, Ausschalten loescht ihn.
+    if (merged.exportPayments !== base.exportPayments) merged.exportPaymentsSince = merged.exportPayments ? now : null;
     assertSettingsAccounts(merged);
     if (existing && merged.accountLength !== existing.accountLength) await assertAccountLengthChange(tx, orgId, merged.accountLength);
     const data = toConfig(merged);

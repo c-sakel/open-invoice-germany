@@ -5,10 +5,11 @@
  * Geld ausschliesslich in Integer-Cent; EUR-Werte nur aus den eingefrorenen Belegfeldern.
  */
 import { berlinMonthKey } from "@/lib/berlin-time";
+import { normalizeVatId, vatIdFormatProblem } from "@/lib/vat-id";
 import { toEurCents } from "@/domain/fx/convert";
 import type { DatevMappingKind } from "@/schemas/datev";
 import type { DatevConfigSettings } from "./confirm-hash";
-import { amount, belegfeld, ddmm, ddmmyyyy, text, type CellValue } from "./format";
+import { amount, belegfeld, ddmm, ddmmyyyy, startsWithFormula, text, type CellValue } from "./format";
 
 export interface DocInput {
   id: string;
@@ -230,12 +231,13 @@ export function bookDocument(doc: DocInput, ctx: BookingContext): ItemResult | D
   const key = docItemKey(doc.id);
   const month = berlinMonthKey(doc.issueDate);
   const hasDeductions = doc.deductions.length > 0;
+  const grossSum = doc.breakdown.reduce((sum, b) => sum + b.netCents + b.taxCents, 0);
 
   if (doc.type === "CREDIT_NOTE" && doc.correctsType === "FINAL") {
-    return manual(doc, "Storno/Gutschrift einer Schlussrechnung von Hand buchen", 0);
+    return manual(doc, "Storno/Gutschrift einer Schlussrechnung von Hand buchen", grossSum);
   }
   if (doc.currency !== "EUR" && hasDeductions) {
-    return manual(doc, "Fremdwaehrungsbeleg mit Abzuegen von Abschlagsrechnungen von Hand buchen", 0);
+    return manual(doc, "Fremdwaehrungsbeleg mit Abzuegen von Abschlagsrechnungen von Hand buchen", grossSum);
   }
   const groups = groupsInEur(doc);
   if (typeof groups === "string") {
@@ -245,8 +247,9 @@ export function bookDocument(doc: DocInput, ctx: BookingContext): ItemResult | D
   const active = groups.filter((g) => g.grossEur !== 0);
   if (active.length === 0 && !hasDeductions) return { key, status: "EMPTY", month };
 
+  const kind: DatevMappingKind = doc.type === "DOWNPAYMENT" || doc.correctsType === "DOWNPAYMENT" ? "DOWNPAYMENT" : "REVENUE";
   if (doc.taxScheme === "DIFFERENZ") {
-    const unmapped = active.some((g) => !ctx.mapping.get("REVENUE", rateKey(doc.taxScheme, g.taxCategory, g.taxRate)));
+    const unmapped = active.some((g) => !ctx.mapping.get(kind, rateKey(doc.taxScheme, g.taxCategory, g.taxRate)));
     if (unmapped) return manual(doc, "Differenzbesteuerung: kein Konto zugeordnet, von Hand buchen", totalEur);
   }
 
@@ -255,7 +258,6 @@ export function bookDocument(doc: DocInput, ctx: BookingContext): ItemResult | D
   if (debtor === null) {
     issues.push({ code: "MISSING_DEBTOR", message: `Keine Debitorennummer fuer den Kunden von ${doc.number}`, documents: [doc.number] });
   }
-  const kind: DatevMappingKind = doc.type === "DOWNPAYMENT" || doc.correctsType === "DOWNPAYMENT" ? "DOWNPAYMENT" : "REVENUE";
   const resolved: { g: Group; account: number; buKey: string | null }[] = [];
   for (const g of active) {
     const mk = rateKey(doc.taxScheme, g.taxCategory, g.taxRate);
@@ -294,9 +296,15 @@ export function bookDocument(doc: DocInput, ctx: BookingContext): ItemResult | D
   let warning: string | undefined;
   let euVatId: string | undefined;
   if (doc.taxScheme === "IG_LIEFERUNG" || doc.taxScheme === "IG_LEISTUNG") {
-    const vat = (doc.buyerVatId ?? "").replace(/\s+/g, "");
-    if (vat === "") warning = "Keine USt-IdNr. des Kaeufers fuer die innergemeinschaftliche Buchung";
-    else euVatId = vat.slice(0, 15);
+    const rawVat = (doc.buyerVatId ?? "").trim();
+    if (rawVat === "") warning = "Keine USt-IdNr. des Kaeufers fuer die innergemeinschaftliche Buchung";
+    else {
+      const vat = normalizeVatId(rawVat);
+      const problem = vatIdFormatProblem(vat);
+      if (problem) return manual(doc, `USt-IdNr. des Kaeufers nicht uebernehmbar (${problem}) — von Hand buchen`, totalEur);
+      if (vat.length > 15) return manual(doc, "USt-IdNr. des Kaeufers laenger als 15 Zeichen (DATEV-Feld 40) — von Hand buchen", totalEur);
+      euVatId = vat;
+    }
   }
 
   const lines: BookingLine[] = [];
@@ -365,6 +373,9 @@ export function bookDocument(doc: DocInput, ctx: BookingContext): ItemResult | D
     });
   }
   const result: ItemResult = { key, status: "EXPORTED", month, lines, amountCents: totalEur };
+  if (startsWithFormula(doc.buyerName)) {
+    warning = `${warning ? `${warning}; ` : ""}Kundenname beginnt mit einem Formelzeichen, Apostroph vorangestellt`;
+  }
   if (warning) result.warning = warning;
   return result;
 }
@@ -421,7 +432,9 @@ export function bookPayments(payments: PaymentInput[], ctx: BookingContext): (It
   const out: (ItemResult | DatevIssue[])[] = [];
   const originalOf = (p: PaymentInput): PaymentInput => p.reversedOriginal ?? p;
   const isSkontoRow = (p: PaymentInput): boolean => originalOf(p).isSkonto;
-  const bases = payments.filter((p) => !isSkontoRow(p) && originalOf(p).method !== "CREDIT_NOTE" && p.invoiceCurrency === "EUR");
+  const orphanReversal = (p: PaymentInput): boolean => p.kind === "REVERSAL" && !p.reversedOriginal;
+  const refund = (p: PaymentInput): boolean => p.kind === "PAYMENT" && p.amountCents < 0;
+  const bases = payments.filter((p) => !orphanReversal(p) && !refund(p) && !isSkontoRow(p) && originalOf(p).method !== "CREDIT_NOTE" && p.invoiceCurrency === "EUR");
   // Skontozeile -> Basiszeile gleicher Art (Zahlung/Gegenbuchung), je Skontozeile hoechstens eine Basis.
   const skontoOf = new Map<string, PaymentInput>();
   const folded = new Set<string>();
@@ -431,6 +444,7 @@ export function bookPayments(payments: PaymentInput[], ctx: BookingContext): (It
     const sk = payments.find(
       (s) =>
         s.kind === base.kind &&
+        !orphanReversal(s) &&
         !folded.has(s.id) &&
         isSkontoRow(s) &&
         originalOf(s).skontoForPaymentId === baseId &&
@@ -443,6 +457,10 @@ export function bookPayments(payments: PaymentInput[], ctx: BookingContext): (It
   }
 
   for (const p of payments) {
+    if (orphanReversal(p)) {
+      out.push(paymentManual(p, "Gegenbuchung ohne zugehoerige Originalzahlung von Hand buchen"));
+      continue;
+    }
     const src = originalOf(p);
     if (src.method === "CREDIT_NOTE") continue;
     if (folded.has(p.id)) continue;
@@ -451,6 +469,10 @@ export function bookPayments(payments: PaymentInput[], ctx: BookingContext): (It
       continue;
     }
     const reversal = p.kind === "REVERSAL";
+    if (refund(p)) {
+      out.push(paymentManual(p, "Erstattung (negative Zahlung) von Hand buchen"));
+      continue;
+    }
     if (isSkontoRow(p)) {
       out.push(paymentManual(p, reversal ? "Skonto-Gegenbuchung ohne Basiszahlung von Hand buchen" : "Skonto ohne Basiszahlung von Hand buchen"));
       continue;
@@ -484,6 +506,7 @@ export function bookPayments(payments: PaymentInput[], ctx: BookingContext): (It
     const useGu = reversal && ctx.settings.useGeneralReversal;
     const side: "S" | "H" = reversal && !ctx.settings.useGeneralReversal ? "S" : "H";
     const ref = src.providerPaymentId ?? src.reference ?? "";
+    if (startsWithFormula(ref)) warning = `${warning ? `${warning}; ` : ""}Zahlungsreferenz beginnt mit einem Formelzeichen, Apostroph vorangestellt`;
     const info: [string, string][] = [["Zahlungsquelle", sourceLabel(src)], ["Referenz", ref]];
     const line: BookingLine = {
       account: debtor,

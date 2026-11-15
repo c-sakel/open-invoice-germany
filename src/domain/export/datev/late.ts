@@ -53,17 +53,37 @@ export interface SupplementCandidates {
   payments: PaymentRef[];
 }
 
-/** Posten der `months`, deren Schluessel in keinem Exportposten der Organisation vorkommt. */
-export async function supplementCandidates(db: Tx, orgId: string, months: ReadonlySet<string>, withPayments: boolean, now: Date): Promise<SupplementCandidates> {
+/**
+ * Posten der `months`, deren Schluessel in keinem Exportposten der Organisation vorkommt.
+ * Zahlungen zaehlen nur in Monaten, deren Export nach dem Einschalten des Zahlungsexports entstand (`paymentsSince`):
+ * Fruehere Exporte enthielten keine Zahlungen, die Kanzlei hat sie dann aus dem Kontoauszug gebucht (sonst Doppelbuchung).
+ */
+export async function supplementCandidates(
+  db: Tx,
+  orgId: string,
+  months: ReadonlySet<string>,
+  withPayments: boolean,
+  paymentsSince: Date | null,
+  coverage: ReadonlyMap<string, ExportedMonth>,
+  now: Date,
+): Promise<SupplementCandidates> {
   if (months.size === 0) return { docs: [], payments: [] };
   const sorted = [...months].sort();
   const from = monthStartOf(sorted[0]);
   const to = monthStartOf(sorted[sorted.length - 1], 1);
   const known = new Set((await db.datevExportItem.findMany({ where: { orgId, month: { in: sorted } }, select: { itemKey: true } })).map((i) => i.itemKey));
   const docs = (await listDocRefs(db, orgId, from, to, now)).filter((d) => months.has(monthOf(d.issueDate)) && !known.has(docItemKey(d.id)));
-  const payments = withPayments
-    ? (await listPaymentRefs(db, orgId, from, to, now)).filter((p) => p.method !== "CREDIT_NOTE" && months.has(monthOf(p.paidAt)) && !known.has(paymentItemKey(p.id)))
-    : [];
+  const payMonths = new Set(
+    sorted.filter((m) => {
+      if (paymentsSince === null) return true;
+      const c = coverage.get(m);
+      return c !== undefined && c.createdAt.getTime() >= paymentsSince.getTime();
+    }),
+  );
+  const payments =
+    withPayments && payMonths.size > 0
+      ? (await listPaymentRefs(db, orgId, from, to, now)).filter((p) => p.method !== "CREDIT_NOTE" && payMonths.has(monthOf(p.paidAt)) && !known.has(paymentItemKey(p.id)))
+      : [];
   return { docs, payments };
 }
 
@@ -83,7 +103,7 @@ export async function datevStatus(orgId: string, now: Date, db: Tx = dbInternal)
   });
   const pending = new Map<string, { count: number; amountCents: number }>();
   if (months.length > 0) {
-    const cand = await supplementCandidates(db, orgId, new Set(months), settings.exportPayments, now);
+    const cand = await supplementCandidates(db, orgId, new Set(months), settings.exportPayments, settings.exportPaymentsSince, coverage, now);
     const bump = (month: string, cents: number) => {
       const cur = pending.get(month) ?? { count: 0, amountCents: 0 };
       cur.count += 1;
