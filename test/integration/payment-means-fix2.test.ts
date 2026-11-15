@@ -13,6 +13,7 @@ vi.mock("@/lib/org", () => ({
     return { id: orgStore.id };
   },
 }));
+vi.mock("@/lib/auth/server", () => ({ getCurrentUserId: async () => "tester" }));
 vi.mock("next/cache", () => ({ revalidatePath: () => undefined, revalidateTag: () => undefined }));
 vi.mock("next/navigation", () => ({
   redirect: (to: string) => {
