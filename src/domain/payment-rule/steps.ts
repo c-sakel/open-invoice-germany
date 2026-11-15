@@ -14,9 +14,18 @@ export function initialSteps(actions: readonly PaymentRuleAction[]): StepState[]
   return actions.map((a) => ({ type: a.type, status: "PENDING" }));
 }
 
-/** Index des ersten offenen Schritts (PENDING oder FAILED), sonst null. */
+/** Die Zahlungsbestaetigung (Mail) steht immer hinter den Datenbankaktionen: ihr Ausgang darf diese nie aufhalten. */
+export function sortMailLast<T extends { type: string }>(actions: readonly T[]): T[] {
+  const isMail = (a: T): boolean => a.type === "SEND_PAYMENT_CONFIRMATION";
+  return [...actions.filter((a) => !isMail(a)), ...actions.filter(isMail)];
+}
+
+/** Index des ersten offenen Schritts (PENDING oder FAILED); offene Datenbankschritte vor dem Mail-Schritt, sonst null. */
 export function nextOpenStep(steps: readonly StepState[]): number | null {
-  const i = steps.findIndex((s) => s.status === "PENDING" || s.status === "FAILED");
+  const open = (s: StepState): boolean => s.status === "PENDING" || s.status === "FAILED";
+  const db = steps.findIndex((s) => open(s) && s.type !== "SEND_PAYMENT_CONFIRMATION");
+  if (db !== -1) return db;
+  const i = steps.findIndex(open);
   return i === -1 ? null : i;
 }
 

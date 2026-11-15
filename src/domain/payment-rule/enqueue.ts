@@ -7,7 +7,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { paymentRuleActionSchema } from "@/schemas/payment-rule";
 import { z } from "zod";
 import { matchRules, paymentSource, triggerFor } from "./match";
-import { initialSteps } from "./steps";
+import { initialSteps, sortMailLast } from "./steps";
 
 /** Schleifenbremse: hoechstens so viele Laeufe je Regel und Rechnung, danach nur noch Protokoll (SKIPPED). */
 export const RUNS_PER_RULE_AND_INVOICE_MAX = 20;
@@ -85,7 +85,8 @@ export async function enqueuePaymentRuleRuns(tx: Prisma.TransactionClient, input
     }
     const previous = await tx.paymentRuleRun.count({ where: { orgId: input.orgId, ruleId: rule.id, invoiceId: input.invoiceId } });
     const capped = previous >= RUNS_PER_RULE_AND_INVOICE_MAX;
-    const steps = initialSteps(parsed.data).map((s) => (capped ? { ...s, status: "SKIPPED" as const, note: CAP_REASON } : s));
+    const actions = sortMailLast(parsed.data);
+    const steps = initialSteps(actions).map((s) => (capped ? { ...s, status: "SKIPPED" as const, note: CAP_REASON } : s));
     await tx.paymentRuleRun.create({
       data: {
         orgId: input.orgId,
@@ -95,7 +96,7 @@ export async function enqueuePaymentRuleRuns(tx: Prisma.TransactionClient, input
         customerId: input.customerId,
         trigger,
         source,
-        actionsJson: JSON.stringify(parsed.data),
+        actionsJson: JSON.stringify(actions),
         stepsJson: JSON.stringify(steps),
         contextJson,
         status: capped ? "SKIPPED" : "PENDING",

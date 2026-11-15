@@ -17,6 +17,7 @@ import {
 } from "@/schemas/payment-rule";
 import { z } from "zod";
 import { PAYMENT_CONFIRMATION_DOC_TYPE } from "./mail";
+import { sortMailLast } from "./steps";
 import type { Prisma } from "@/generated/prisma/client";
 
 export const MAX_RULES_PER_ORG = 20;
@@ -36,6 +37,8 @@ export interface PaymentRuleView {
   updatedAt: Date;
   /** Filter- oder Aktions-Tag existiert nicht mehr (Regel trifft dann nie bzw. die Aktion schlaegt fehl). */
   tagMissing: boolean;
+  /** Gespeicherte Aktionen oder Quellen sind nicht lesbar (z. B. Eingriff in die Datenbank); die Regel wird nie ausgefuehrt. */
+  broken: boolean;
 }
 
 const RULE_SELECT = {
@@ -58,9 +61,21 @@ type RuleRow = Prisma.PaymentRuleGetPayload<{ select: typeof RULE_SELECT }>;
 const sourcesJsonSchema = z.array(z.enum(PAYMENT_SOURCES)).nullable();
 const actionsJsonSchema = z.array(paymentRuleActionSchema);
 
+function parseStored<S extends z.ZodType>(schema: S, json: string): { ok: true; data: z.infer<S> } | { ok: false } {
+  try {
+    const r = schema.safeParse(JSON.parse(json));
+    return r.success ? { ok: true, data: r.data } : { ok: false };
+  } catch {
+    return { ok: false };
+  }
+}
+
 function toView(row: RuleRow, existingTagIds: ReadonlySet<string>): PaymentRuleView {
-  const actions = actionsJsonSchema.parse(JSON.parse(row.actionsJson));
-  const sources = row.sourcesJson === null ? null : sourcesJsonSchema.parse(JSON.parse(row.sourcesJson));
+  const parsedActions = parseStored(actionsJsonSchema, row.actionsJson);
+  const parsedSources = row.sourcesJson === null ? ({ ok: true, data: null } as const) : parseStored(sourcesJsonSchema, row.sourcesJson);
+  const broken = !parsedActions.ok || !parsedSources.ok;
+  const actions = parsedActions.ok ? parsedActions.data : [];
+  const sources = parsedSources.ok ? parsedSources.data : null;
   const tagIds = [row.invoiceTagId, ...actions.map((a) => (a.type === "ADD_TAG" ? a.tagId : null))].filter((x): x is string => x !== null);
   return {
     id: row.id,
@@ -76,6 +91,7 @@ function toView(row: RuleRow, existingTagIds: ReadonlySet<string>): PaymentRuleV
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     tagMissing: tagIds.some((t) => !existingTagIds.has(t)),
+    broken,
   };
 }
 
@@ -83,7 +99,8 @@ async function existingTags(db: Prisma.TransactionClient | typeof dbInternal, or
   const ids = new Set<string>();
   for (const r of rows) {
     if (r.invoiceTagId) ids.add(r.invoiceTagId);
-    for (const a of actionsJsonSchema.parse(JSON.parse(r.actionsJson))) if (a.type === "ADD_TAG") ids.add(a.tagId);
+    const parsed = parseStored(actionsJsonSchema, r.actionsJson);
+    if (parsed.ok) for (const a of parsed.data) if (a.type === "ADD_TAG") ids.add(a.tagId);
   }
   if (ids.size === 0) return new Set();
   const found = await db.tag.findMany({ where: { orgId, id: { in: [...ids] } }, select: { id: true } });
@@ -142,7 +159,7 @@ export async function createPaymentRule(orgId: string, raw: unknown, actor: stri
         sourcesJson: input.sources === null ? null : JSON.stringify(input.sources),
         invoiceTagId: input.invoiceTagId,
         delayMinutes: input.delayMinutes,
-        actionsJson: JSON.stringify(input.actions),
+        actionsJson: JSON.stringify(sortMailLast(input.actions)),
         sortOrder: input.sortOrder,
       },
       select: RULE_SELECT,
@@ -161,6 +178,10 @@ export async function updatePaymentRule(orgId: string, id: string, raw: unknown,
     if (current.archivedAt !== null) throw new PaymentRuleError("Archivierte Regeln koennen nicht geaendert werden.");
     const cur = toView(current, new Set());
     if (Object.keys(patch).length === 0) return cur;
+    // Nicht lesbare Teile nie stillschweigend durch Leerwerte ersetzen: Aktionen und Quellen gemeinsam neu setzen (oder archivieren).
+    if (cur.broken && (patch.actions === undefined || patch.sources === undefined)) {
+      throw new PaymentRuleError("Die gespeicherte Regel ist defekt. Aktionen und Quellen muessen gemeinsam neu gesetzt werden.");
+    }
     const next: PaymentRuleInput = {
       name: patch.name ?? cur.name,
       active: patch.active ?? cur.active,
@@ -187,7 +208,7 @@ export async function updatePaymentRule(orgId: string, id: string, raw: unknown,
         sourcesJson: next.sources === null ? null : JSON.stringify(next.sources),
         invoiceTagId: next.invoiceTagId,
         delayMinutes: next.delayMinutes,
-        actionsJson: JSON.stringify(next.actions),
+        actionsJson: JSON.stringify(sortMailLast(next.actions)),
         sortOrder: next.sortOrder,
       },
       select: RULE_SELECT,
