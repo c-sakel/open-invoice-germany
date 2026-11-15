@@ -30,7 +30,7 @@ export function serializeDirectDebit(json: string | null): { mandateReference: s
 const rateString = (micros: number | null | undefined): string | null => (micros == null ? null : formatRate(micros, "en-GB"));
 
 /** Kaeufer fuer die Kleinbetragspruefung: Snapshot des Belegs, sonst der eingebettete Kunde, sonst unbekannt. */
-function buyerOf(inv: InvoiceWithOptionalRelations): { countryCode: string | null; vatId: string | null } | null {
+export function buyerOf(inv: InvoiceWithOptionalRelations): { countryCode: string | null; vatId: string | null } | null {
   if (inv.buyerSnapshotJson) {
     try {
       const parsed = buyerSnapshotSchema.safeParse(JSON.parse(inv.buyerSnapshotJson));

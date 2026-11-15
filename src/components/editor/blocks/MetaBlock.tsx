@@ -26,6 +26,7 @@ import type { RecipientCustomerOption } from "./RecipientBlock";
 import { currencyOptions } from "@/lib/currencies";
 import { useEditorCurrency } from "../currency-context";
 import { CARD_NETWORK_SUGGESTIONS } from "@/lib/payment-card";
+import { draftIssueDeadline, deDateKey } from "@/lib/editor/checks";
 import { FxPreview } from "@/components/fx/FxPreview";
 
 export interface PaymentMethodOption {
@@ -72,6 +73,7 @@ export function MetaBlock({
   // dieselbe Begruendung wie bei S1 (`src/lib/editor/draft.ts`), hier nur fuer die
   // "heute"-Vorbelegung der Faelligkeitsfrist (kein Speicherpfad betroffen).
   const issueRef = draft.issueDate || localDateOnly(new Date());
+  const deadline = mode === "INVOICE" ? draftIssueDeadline(draft, localDateOnly(new Date())) : null;
 
   // Vorbelegung der Tageszahl beim ersten Oeffnen einer Neuanlage (Ruling, Fix-Welle 1
   // M2): `draftRef` haelt denselben aktuellen Entwurf wie `DocumentEditor.tsx:145-148`
@@ -215,6 +217,12 @@ export function MetaBlock({
               </div>
             )}
           </EditorField>
+        )}
+
+        {mode === "INVOICE" && deadline && (
+          <p className={`text-sm sm:col-span-2 lg:col-span-3 ${deadline.missed ? "font-medium text-stamp" : "text-ink-muted"}`} role={deadline.missed ? "alert" : undefined}>
+            Ausstellfrist: bis {deDateKey(deadline.key)} (§ 14a Abs. 1, 3 UStG){deadline.missed ? " — überschritten" : ""}
+          </p>
         )}
 
         {mode === "INVOICE" && (

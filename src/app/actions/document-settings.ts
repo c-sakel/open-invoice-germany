@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getActiveOrg } from "@/lib/org";
 import { loadDocumentSettings, saveDocumentSettings } from "@/domain/document/settings";
+import { parseKuExternalRows } from "@/lib/ku-external-input";
 import type { ActionResult } from "./result";
 
 function firstError(issues: { message: string; path: PropertyKey[] }[]): string {
@@ -54,6 +55,21 @@ export async function saveDocumentSettingsAction(_prev: ActionResult, fd: FormDa
     console.error("saveDocumentSettingsAction:", e);
     return { ok: false, error: "Speichern fehlgeschlagen." };
   }
+  // Marker-Felder: fehlt der Abschnitt im Formular, bleiben die gespeicherten Werte erhalten.
+  let kuWarnPercent = current.kuWarnPercent;
+  let kuBusinessStartYear = current.kuBusinessStartYear;
+  let kuExternalRevenue = current.kuExternalRevenue;
+  if (fd.has("kuSettingsSent")) {
+    kuWarnPercent = Number(fd.get("kuWarnPercent"));
+    const startRaw = String(fd.get("kuBusinessStartYear") ?? "").trim();
+    if (startRaw === "") kuBusinessStartYear = null;
+    else if (/^\d{4}$/.test(startRaw)) kuBusinessStartYear = Number(startRaw);
+    else return { ok: false, error: "Jahr der Aufnahme der Tätigkeit: vierstelliges Jahr eingeben." };
+    const external = parseKuExternalRows(fd.getAll("kuExtYear").map(String), fd.getAll("kuExtAmount").map(String));
+    if (!external.ok) return { ok: false, error: external.error };
+    kuExternalRevenue = external.value;
+  }
+  const consumerDefaultNotice = fd.has("consumerSettingsSent") ? fd.get("consumerDefaultNotice") === "on" : current.consumerDefaultNotice;
   const raw = {
     onQuoteAccept: fd.get("onQuoteAccept") ?? "NONE",
     shareLinkDays: fd.get("shareLinkDays") ?? "30",
@@ -83,11 +99,10 @@ export async function saveDocumentSettingsAction(_prev: ActionResult, fd: FormDa
     viesCheckOnFinalize: fd.has("viesCheckSent") ? fd.get("viesCheckOnFinalize") === "on" : current.viesCheckOnFinalize,
     ossCountMode: fd.get("ossCountMode") ?? current.ossCountMode,
     ossWarnPercent: fd.has("ossWarnPercent") ? Number(fd.get("ossWarnPercent")) : current.ossWarnPercent,
-    // Felder ohne Eingabe im Formular bleiben unveraendert.
-    kuWarnPercent: current.kuWarnPercent,
-    kuBusinessStartYear: current.kuBusinessStartYear,
-    kuExternalRevenue: current.kuExternalRevenue,
-    consumerDefaultNotice: current.consumerDefaultNotice,
+    kuWarnPercent,
+    kuBusinessStartYear,
+    kuExternalRevenue,
+    consumerDefaultNotice,
   };
 
   try {

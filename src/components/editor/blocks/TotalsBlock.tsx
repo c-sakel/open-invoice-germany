@@ -14,6 +14,7 @@
 import type { DraftState } from "@/lib/editor/draft";
 import type { DraftTotals } from "@/lib/editor/totals";
 import { fromCents } from "@/lib/editor/parse";
+import { SMALL_AMOUNT_LIMIT_CENTS } from "@/domain/invoice/checks";
 import { useEditorCurrencySymbol } from "../currency-context";
 
 function euro(symbol: string, cents: number): string {
@@ -35,7 +36,7 @@ function skontoHint(draft: DraftState): string | null {
   return parts.length ? parts.join(" · ") : null;
 }
 
-export function TotalsBlock({ totals, draft }: { totals: DraftTotals; draft: DraftState }) {
+export function TotalsBlock({ totals, draft, smallAmount = false }: { totals: DraftTotals; draft: DraftState; smallAmount?: boolean }) {
   const sym = useEditorCurrencySymbol();
   if (totals.error) {
     return <div className="rounded-lg border border-stamp/30 bg-stamp/10 p-4 text-sm text-stamp">{totals.error}</div>;
@@ -78,6 +79,11 @@ export function TotalsBlock({ totals, draft }: { totals: DraftTotals; draft: Dra
         <span className="tabular-nums">{euro(sym, totals.grossCents)}</span>
       </div>
       {hint && <p className="border-t border-rule pt-1 text-xs text-ink-muted">{hint}</p>}
+      {smallAmount && (
+        <p className="border-t border-rule pt-1 text-xs text-ink-muted">
+          Kleinbetragsrechnung (§ 33 UStDV): Gesamtbetrag bis {euro(sym, SMALL_AMOUNT_LIMIT_CENTS)}. Nur eine Kennzeichnung — die Pflichtangaben bleiben unverändert.
+        </p>
+      )}
     </div>
   );
 }

@@ -205,6 +205,26 @@ export function MoreOptions({
           </label>
         )}
 
+        {mode === "INVOICE" && (
+          <EditorField
+            label="Verzugshinweis für Verbraucher"
+            hint="§ 286 Abs. 3 BGB. Automatisch: nur bei Kundentyp Verbraucher und eingeschalteter Einstellung (Einstellungen → Belege). Der Wert wird beim Festschreiben festgehalten."
+          >
+            {(id) => (
+              <select
+                id={id}
+                className={inputCls}
+                value={draft.consumerDefaultNotice === null ? "auto" : draft.consumerDefaultNotice ? "yes" : "no"}
+                onChange={(e) => set(dispatch, "consumerDefaultNotice", e.target.value === "yes" ? true : e.target.value === "no" ? false : null)}
+              >
+                <option value="auto">Automatisch</option>
+                <option value="yes">Immer</option>
+                <option value="no">Nie</option>
+              </select>
+            )}
+          </EditorField>
+        )}
+
         <EditorField label="Hinweis / Notiz" hint={notice ? `Pflichthinweis „${notice}“ wird automatisch ergänzt.` : undefined}>
           {(id) => <textarea id={id} className={inputCls} rows={2} value={draft.notes} onChange={(e) => set(dispatch, "notes", e.target.value)} />}
         </EditorField>

@@ -22,6 +22,7 @@ import { useShell } from "@/components/shell/ShellProvider";
 import { createSaveGuard } from "@/lib/editor/save-guard";
 import { EditorHeader } from "./blocks/EditorHeader";
 import { RecipientBlock, type RecipientCustomerOption, type ContactOption, type AddressOption } from "./blocks/RecipientBlock";
+import { draftSmallAmount } from "@/lib/editor/checks";
 import { MetaBlock, type PaymentMethodOption } from "./blocks/MetaBlock";
 import { HeadTextBlock } from "./blocks/HeadTextBlock";
 import { LineItemsEditor } from "./blocks/LineItemsEditor";
@@ -156,6 +157,8 @@ export function DocumentEditor({
   // Task-5-Fix (Minor): einmal pro `draft`-Aenderung berechnet statt zusaetzlich ein
   // zweites Mal in `LineItemsEditor` — `totals` wandert als Prop weiter.
   const totals = useMemo(() => computeDraftTotals(draft), [draft]);
+  // Kennzeichen Kleinbetragsrechnung (§ 33 UStDV): dieselbe Domainfunktion wie beim Beleg, nur Kennzeichnung.
+  const smallAmount = totals.error === null && draftSmallAmount(draft, totals.grossCents, displayCurrency, customers.find((c) => c.id === draft.customerId) ?? null);
 
   // Unsaved-Guard (Verhalten laut Brief): natives `beforeunload` bei ungespeicherten
   // Aenderungen (Browser-Standarddialog) — fuer den Zurueck-LINK uebernimmt
@@ -404,7 +407,7 @@ export function DocumentEditor({
             Server fuer Lieferscheine gar nicht kennt; DocumentAdjustmentFields (Phase 13b,
             Task 3, aus MoreOptions verschoben) bedient dieselbe Bedingung. */}
         {mode !== "DELIVERY_NOTE" && <DocumentAdjustmentFields draft={draft} dispatch={dispatch} />}
-        {mode !== "DELIVERY_NOTE" && <TotalsBlock totals={totals} draft={draft} />}
+        {mode !== "DELIVERY_NOTE" && <TotalsBlock totals={totals} draft={draft} smallAmount={smallAmount} />}
 
         <FootTextBlock mode={mode} draft={draft} dispatch={dispatch} />
 

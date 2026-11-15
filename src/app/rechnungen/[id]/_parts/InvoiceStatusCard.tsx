@@ -9,6 +9,8 @@ import { TagPicker, type TagPickerItem } from "@/components/tags/TagPicker";
 import { formatCents } from "@/lib/money";
 import { relativeDueLabel } from "@/lib/relative-date";
 import { deDate, type InvoiceDetail } from "./invoice-view-model";
+import { deDateKey } from "@/lib/editor/checks";
+import { SMALL_AMOUNT_LIMIT_CENTS } from "@/domain/invoice/checks";
 import { addressCountryLine } from "@/lib/countries";
 import { parseBuyerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
 import { PaymentDialog } from "./PaymentDialog";
@@ -68,6 +70,10 @@ export function InvoiceStatusCard({
   tagOptions,
   archive,
   paymentRuleRuns = [],
+  smallAmount = false,
+  issueDeadlineKey = null,
+  issueDeadlineMissed = false,
+  consumerNotice = null,
 }: {
   invoice: InvoiceDetail;
   openCents: number;
@@ -94,6 +100,13 @@ export function InvoiceStatusCard({
   archive: { createdAt: Date; sha256: string } | null;
   /** Laeufe der Regeln nach Zahlungseingang dieser Rechnung (nur eigene Organisation). */
   paymentRuleRuns?: InvoicePaymentRuleRun[];
+  /** Kleinbetragsrechnung (§ 33 UStDV), nur Kennzeichnung. */
+  smallAmount?: boolean;
+  /** Ausstellfrist (§ 14a UStG) als `yyyy-mm-dd`, `null` = keine. */
+  issueDeadlineKey?: string | null;
+  issueDeadlineMissed?: boolean;
+  /** Festgeschrieben: gedruckt ja/nein; Entwurf: Vorgabe (`null` = automatisch). */
+  consumerNotice?: boolean | null;
 }) {
   // Fix 1 (Review): Bezahlt/Offen gehoerten frueher zum guarded "Zahlung & Mahnwesen"-
   // Abschnitt (isInvoiceType && !isDraft && !isCancelled) — fuer Entwuerfe, Gutschriften und
@@ -154,6 +167,22 @@ export function InvoiceStatusCard({
   if (paymentMethodName) detailRows.push({ label: "Zahlungsmethode", value: paymentMethodName });
   detailRows.push({ label: "Steuerschema", value: taxSchemeLabel(invoice.taxScheme) });
   if (invoice.customer.vatId) detailRows.push({ label: "USt-IdNr.", value: invoice.customer.vatId });
+  if (smallAmount) detailRows.push({ label: "Kleinbetragsrechnung", value: `§ 33 UStDV (bis ${formatCents(SMALL_AMOUNT_LIMIT_CENTS, "EUR")})` });
+  if (issueDeadlineKey) {
+    detailRows.push({
+      label: "Ausstellfrist",
+      value: (
+        <span className={issueDeadlineMissed ? "font-medium text-stamp" : undefined}>
+          bis {deDateKey(issueDeadlineKey)} (§ 14a UStG){issueDeadlineMissed ? " — überschritten" : ""}
+        </span>
+      ),
+    });
+  }
+  if (invoice.status === "DRAFT") {
+    if (consumerNotice !== null) detailRows.push({ label: "Verzugshinweis", value: consumerNotice ? "Immer drucken (§ 286 Abs. 3 BGB)" : "Nie drucken" });
+  } else if (consumerNotice === true) {
+    detailRows.push({ label: "Verzugshinweis", value: "Gedruckt (§ 286 Abs. 3 BGB)" });
+  }
   if (hasSkonto) detailRows.push({ label: "Skonto", value: skontoText(invoice) });
   if (invoice.xmlFormat) {
     detailRows.push({

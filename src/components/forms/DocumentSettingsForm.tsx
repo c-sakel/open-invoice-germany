@@ -7,6 +7,9 @@ import { SelectField, TextField, CheckboxField, SubmitButton, ErrorBanner } from
 import { TaxRatesField } from "@/components/settings/TaxRatesField";
 import type { DocumentSettingsInput } from "@/schemas";
 import { OSS_NOTICE } from "@/schemas/oss";
+import { KU_NOTICE } from "@/schemas/small-business";
+import { KuExternalRevenueField } from "@/components/settings/KuExternalRevenueField";
+import { de } from "@/lib/i18n/doc/de";
 
 export interface PaymentMethodOption {
   id: string;
@@ -165,6 +168,39 @@ export function DocumentSettingsForm({ settings, paymentMethods = [] }: { settin
           </p>
         )}
         <p className="text-xs text-ink-muted">{OSS_NOTICE}</p>
+      </section>
+
+      <section className="space-y-4 rounded-[var(--radius-card)] border border-rule bg-sheet p-5">
+        <h2 className="font-semibold text-ink">Kleinunternehmerregelung (§ 19 UStG)</h2>
+        <p className="text-sm text-ink-soft">
+          Die Auswertung der Umsatzgrenzen erscheint im Dashboard, sobald die Kleinunternehmerregelung angewendet wird. Das Steuerschema wird nie automatisch umgestellt.
+        </p>
+        <input type="hidden" name="kuSettingsSent" value="1" />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <TextField label="Warnung ab (% der Grenze)" name="kuWarnPercent" type="number" defaultValue={String(settings.kuWarnPercent)} hint="Ganze Zahl von 1 bis 99." />
+          <TextField
+            label="Jahr der Aufnahme der Tätigkeit"
+            name="kuBusinessStartYear"
+            inputMode="numeric"
+            maxLength={4}
+            defaultValue={settings.kuBusinessStartYear === null ? "" : String(settings.kuBusinessStartYear)}
+            hint="Optional. Im Jahr der Aufnahme gilt die Grenze von 25.000 € (§ 19 Abs. 1 UStG)."
+          />
+        </div>
+        <KuExternalRevenueField initial={settings.kuExternalRevenue} />
+        <p className="text-xs text-ink-muted">{KU_NOTICE}</p>
+      </section>
+
+      <section className="space-y-4 rounded-[var(--radius-card)] border border-rule bg-sheet p-5">
+        <h2 className="font-semibold text-ink">Rechnungen an Verbraucher</h2>
+        <input type="hidden" name="consumerSettingsSent" value="1" />
+        <CheckboxField
+          label="Verzugshinweis auf Rechnungen an Verbraucher drucken"
+          name="consumerDefaultNotice"
+          defaultChecked={settings.consumerDefaultNotice}
+          hint="§ 286 Abs. 3 BGB. Gilt für neu festgeschriebene Rechnungen an Kunden vom Typ Verbraucher; je Rechnung im Editor überschreibbar. Festgeschriebene Belege bleiben unverändert."
+        />
+        <p className="rounded-md bg-well p-3 text-sm text-ink-soft">{de.notes.consumerDefaultNotice}</p>
       </section>
 
       <section className="space-y-4 rounded-[var(--radius-card)] border border-rule bg-sheet p-5">

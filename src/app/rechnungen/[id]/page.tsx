@@ -301,6 +301,10 @@ export default async function InvoiceDetail({
       aside={
         <>
           <InvoiceStatusCard
+            smallAmount={vm.smallAmount}
+            issueDeadlineKey={vm.issueDeadlineKey}
+            issueDeadlineMissed={vm.issueDeadlineMissed}
+            consumerNotice={vm.consumerNotice}
             invoice={invoice}
             openCents={vm.openCents}
             isOverdue={vm.isOverdue}
