@@ -233,6 +233,75 @@ describe("Trockenlauf", () => {
   });
 });
 
+describe("Fehlertexte, Trockenlauf-Ehrlichkeit, Aenderungen", () => {
+  it("lastError und Schrittfehler nach aussen ohne Adresse und Host (REST und MCP)", async () => {
+    const ruleId = await createRule({ name: "Fehlerregel" });
+    const inv = await mkInvoice(org, ISSUE);
+    const raw = "Error: ECONNREFUSED: 550 <kunde@geheim.example.org> smtp.intern.example.net:25";
+    await dbInternal.paymentRuleRun.create({
+      data: { orgId: org.orgId, ruleId, paymentId: "p-err", invoiceId: inv.id, customerId: org.customerId, trigger: "PAID_FULL", source: "MANUAL", actionsJson: JSON.stringify([{ type: "NOTIFY" }]), stepsJson: JSON.stringify([{ type: "NOTIFY", status: "FAILED", error: raw }]), contextJson: JSON.stringify({ amountCents: 1 }), status: "FAILED", attempts: 5, nextAttemptAt: NOW, lastError: raw },
+      select: { id: true },
+    });
+    const rest = await RunList(req(`http://x/api/v1/PaymentRuleRun?invoiceId=${inv.id}`, { token: readToken }));
+    const restText = await rest.text();
+    expect(restText).toContain("Details im Server-Protokoll");
+    for (const leak of ["geheim.example.org", "smtp.intern", "ECONNREFUSED"]) expect(restText).not.toContain(leak);
+    const mcp = text(await callTool("list_payment_rule_runs", { invoiceId: inv.id }));
+    for (const leak of ["geheim.example.org", "smtp.intern", "ECONNREFUSED"]) expect(mcp).not.toContain(leak);
+  });
+
+  it("Trockenlauf ohne Mail-Einstellungen meldet, dass die Mail fehlschlagen wuerde", async () => {
+    await dbInternal.customer.update({ where: { id: other.customerId }, data: { invoiceEmail: "rechnung@fremd.example.org" }, select: { id: true } });
+    const inv = await mkInvoice(other, ISSUE);
+    const res = await RuleTest(
+      req("http://x/api/v1/PaymentRule/x/test", { method: "POST", token: otherToken, body: { invoiceId: inv.id } }),
+      idCtx(await (async () => {
+        const created = await postRule(otherToken, validRule({ name: "Ohne Mail" }));
+        return (await json<{ data: { id: string } }>(created)).data.id;
+      })()),
+    );
+    const body = await json<{ data: { steps: { type: string; outcome: string }[] } }>(res);
+    expect(body.data.steps[0]!.outcome).toContain("keine Mail-Einstellungen");
+  });
+
+  it("Trockenlauf bei erreichter Versandgrenze je Kunde meldet Verschiebung; inaktive Regel greift nicht", async () => {
+    const ruleId = await createRule({ name: "Grenze" });
+    const inv = await mkInvoice(org, ISSUE);
+    await recordPayment(inv.id, recordPaymentSchema.parse({ amountCents: inv.grossCents, method: "TRANSFER", paidAt: NOW }), { orgId: org.orgId, now: NOW });
+    const ids: string[] = [];
+    for (let i = 0; i < 5; i += 1) {
+      const run = await dbInternal.paymentRuleRun.create({
+        data: { orgId: org.orgId, ruleId, paymentId: `p-grenze-${i}`, invoiceId: inv.id, customerId: org.customerId, trigger: "PAID_FULL", source: "MANUAL", actionsJson: "[]", stepsJson: "[]", contextJson: "{}", status: "DONE", attempts: 1, nextAttemptAt: NOW, mailSentAt: new Date() },
+        select: { id: true },
+      });
+      ids.push(run.id);
+    }
+    try {
+      const res = await RuleTest(req(`http://x/api/v1/PaymentRule/${ruleId}/test`, { method: "POST", token: adminToken, body: { invoiceId: inv.id } }), idCtx(ruleId));
+      const body = await json<{ data: { steps: { outcome: string }[] } }>(res);
+      expect(body.data.steps[0]!.outcome).toContain("Versandgrenze je Kunde");
+    } finally {
+      await dbInternal.paymentRuleRun.updateMany({ where: { id: { in: ids } }, data: { mailSentAt: null } });
+    }
+    const inactive = await createRule({ name: "Inaktiv", active: false });
+    const res = await RuleTest(req(`http://x/api/v1/PaymentRule/${inactive}/test`, { method: "POST", token: adminToken, body: { invoiceId: inv.id } }), idCtx(inactive));
+    const body = await json<{ data: { matches: boolean; reasons: string[] } }>(res);
+    expect(body.data.matches).toBe(false);
+    expect(body.data.reasons.join(" ")).toContain("nicht aktiv");
+  });
+
+  it("PATCH mit {} schreibt keinen Eintrag; archivierte Regel per PATCH -> 422", async () => {
+    const id = await createRule({ name: "Leer-Patch" });
+    const before = await counters(org.orgId);
+    const res = await RulePatch(req(`http://x/api/v1/PaymentRule/${id}`, { method: "PATCH", token: adminToken, body: {} }), idCtx(id));
+    expect(res.status).toBe(200);
+    expect(await counters(org.orgId)).toEqual(before);
+    await RuleDelete(req(`http://x/api/v1/PaymentRule/${id}`, { method: "DELETE", token: adminToken }), idCtx(id));
+    const archived = await RulePatch(req(`http://x/api/v1/PaymentRule/${id}`, { method: "PATCH", token: adminToken, body: { name: "Neu" } }), idCtx(id));
+    expect(archived.status).toBe(422);
+  });
+});
+
 describe("Laeufe", () => {
   it("Liste nach invoiceId gefiltert; retry FAILED -> PENDING, DONE -> 422", async () => {
     const ruleId = await createRule({ name: "Laufregel" });

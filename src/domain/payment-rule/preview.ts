@@ -9,7 +9,10 @@ import { payableBaseCents } from "@/domain/invoice/amounts";
 import { paymentRuleInputSchema, type PaymentRuleInput } from "@/schemas/payment-rule";
 import { getPaymentRule } from "./rules";
 import { matchRules, paymentSource, triggerFor, type PaymentSource } from "./match";
-import { buildPaymentConfirmation } from "./mail";
+import { loadMailSettings } from "@/domain/email/settings";
+import {
+  buildPaymentConfirmation, CONFIRMATION_MAX_PER_CUSTOMER_HOUR, CONFIRMATION_MAX_PER_ORG_HOUR, PAYMENT_CONFIRMATION_DOC_TYPE,
+} from "./mail";
 
 export interface PaymentRulePreview {
   matches: boolean;
@@ -20,8 +23,26 @@ export interface PaymentRulePreview {
 }
 
 const INVOICE_SELECT = {
-  id: true, number: true, status: true, currency: true, grossTotalCents: true, payableCents: true, paidAmountCents: true,
+  id: true, customerId: true, number: true, status: true, currency: true, grossTotalCents: true, payableCents: true, paidAmountCents: true,
 } as const;
+
+/** Grund, warum die Bestaetigungsmail jetzt nicht (sofort) versendet wuerde; null = wuerde senden. Rein lesend. */
+async function mailBlocker(orgId: string, customerId: string, paymentId: string | null): Promise<string | null> {
+  if (!(await loadMailSettings(orgId))) return "wuerde fehlschlagen: keine Mail-Einstellungen hinterlegt";
+  if (paymentId !== null) {
+    const logs = await dbInternal.emailLog.findMany({
+      where: { orgId, docType: PAYMENT_CONFIRMATION_DOC_TYPE, docId: paymentId }, select: { status: true },
+    });
+    if (logs.some((l) => l.status !== "FAILED" && l.status !== "QUEUED")) return "wuerde nicht erneut senden: Bestaetigung bereits versendet";
+    if (logs.some((l) => l.status === "QUEUED")) return "wuerde uebersprungen: Versandergebnis unbekannt, E-Mail-Protokoll pruefen";
+  }
+  const since = new Date(Date.now() - 60 * 60_000);
+  const perCustomer = await dbInternal.paymentRuleRun.count({ where: { orgId, customerId, mailSentAt: { gt: since } } });
+  if (perCustomer >= CONFIRMATION_MAX_PER_CUSTOMER_HOUR) return "wuerde verschoben: Versandgrenze je Kunde erreicht";
+  const perOrg = await dbInternal.paymentRuleRun.count({ where: { orgId, mailSentAt: { gt: since } } });
+  if (perOrg >= CONFIRMATION_MAX_PER_ORG_HOUR) return "wuerde verschoben: Versandgrenze je Firma erreicht";
+  return null;
+}
 
 export async function previewPaymentRule(orgId: string, ruleIdOrInput: string | unknown, invoiceId: string): Promise<PaymentRulePreview> {
   const invoice = await dbInternal.invoice.findFirst({ where: { id: invoiceId, orgId }, select: INVOICE_SELECT });
@@ -96,9 +117,13 @@ export async function previewPaymentRule(orgId: string, ruleIdOrInput: string | 
           { amountCents, paidAt: paidAt.toISOString(), openAfterCents: openAfter, currency: invoice.currency, invoiceNumber: invoice.number },
           latest?.method ?? null, action.templateId,
         );
-        steps.push(res.ok
-          ? { type: action.type, outcome: `Mail an ${res.built.to}`, mail: { to: res.built.to, subject: res.built.subject, body: res.built.text } }
-          : { type: action.type, outcome: `wuerde uebersprungen: ${res.note}`, mail: { to: null, subject: "", body: "" } });
+        if (!res.ok) {
+          steps.push({ type: action.type, outcome: `wuerde uebersprungen: ${res.note}`, mail: { to: null, subject: "", body: "" } });
+          break;
+        }
+        const mail = { to: res.built.to, subject: res.built.subject, body: res.built.text };
+        const blocker = await mailBlocker(orgId, invoice.customerId, latest ? latest.id : null);
+        steps.push({ type: action.type, outcome: blocker ?? `Mail an ${res.built.to}`, mail });
         break;
       }
       case "ADD_TAG": {

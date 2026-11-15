@@ -10,6 +10,7 @@ import { z } from "zod";
 import { dbInternal, prisma, releaseMailClaim } from "@/lib/db";
 import { describeError } from "@/lib/safe-error";
 import { logActivity } from "@/domain/activity/log";
+import { lockRow } from "@/lib/db-lock";
 import { NotFoundError } from "@/domain/errors";
 import { loadNotificationSettings } from "@/domain/notifications/settings";
 import { onPaymentRuleFailed } from "@/domain/notifications/hooks";
@@ -301,6 +302,7 @@ async function runStep(p: {
   }
   const notifyEnabled = action.type === "NOTIFY" ? (await loadNotificationSettings(base.orgId)).enabledTypes.includes("PAYMENT_RULE") : true;
   return dbInternal.$transaction(async (tx) => {
+    await lockRow(tx, "Invoice", base.invoiceId, base.orgId);
     // Status-Recheck in derselben Transaktion wie die Aktion (Gegenbuchung/Storno zwischen Pruefung und Wirkung).
     const reason = await precheck(base, tx);
     if (reason !== null) throw new SkipRunError(reason);
@@ -388,10 +390,11 @@ export async function retryPaymentRuleRun(orgId: string, runId: string, actor: s
       data: { status: "PENDING", attempts: 0, nextAttemptAt: now, lockedUntil: null, lastError: null, finishedAt: null, stepsJson: JSON.stringify(steps) },
     });
     // Bewusste manuelle Wiederholung eines Mail-Schritts: der Claim wird freigegeben, es kann ein Folgeversand entstehen.
-    if (res.count === 1 && mailFollowUp) await releaseMailClaim(tx, { id: runId, orgId });
-    return res.count === 1;
+    if (res.count !== 1) return false;
+    if (mailFollowUp) await releaseMailClaim(tx, { id: runId, orgId });
+    await logActivity(tx, { orgId, entityType: "PAYMENT_RULE", entityId: runId, type: "PAYMENT_RULE_EXECUTED", actor, at: now, data: { retry: true, ...(mailFollowUp ? { mailFollowUp: true } : {}) } });
+    return true;
   });
   if (!reset) throw new PaymentRuleError("Nur fehlgeschlagene Laeufe koennen wiederholt werden.");
-  await logActivity(dbInternal, { orgId, entityType: "PAYMENT_RULE", entityId: runId, type: "PAYMENT_RULE_EXECUTED", actor, at: now, data: { retry: true, ...(mailFollowUp ? { mailFollowUp: true } : {}) } });
   return { id: runId, status: "PENDING", attempts: 0, nextAttemptAt: now };
 }

@@ -258,10 +258,15 @@ export async function sendPaymentConfirmation(
       }),
     );
     if (status === "FAILED") return { kind: "FAILED", error: reachedSend ? SEND_UNCLEAR_NOTE : (error ?? "Versand fehlgeschlagen"), retryable: !reachedSend, notSent: !reachedSend };
-    await logActivity(dbInternal, {
-      orgId: run.orgId, entityType: "INVOICE", entityId: run.invoiceId, type: "PAYMENT_CONFIRMATION_SENT", actor, at: now,
-      data: { paymentId: run.paymentId, logId: claimed.logId, subject: maskPortalLinks(subject), to: [to] },
-    });
+    // Die Mail ist raus und im E-Mail-Protokoll verbucht: ein Fehler im Aktivitaetsprotokoll darf den Versand nicht als unklar melden.
+    try {
+      await logActivity(dbInternal, {
+        orgId: run.orgId, entityType: "INVOICE", entityId: run.invoiceId, type: "PAYMENT_CONFIRMATION_SENT", actor, at: now,
+        data: { paymentId: run.paymentId, logId: claimed.logId, subject: maskPortalLinks(subject), to: [to] },
+      });
+    } catch (e) {
+      console.error("Zahlungsbestaetigung: Aktivitaetsprotokoll fehlgeschlagen", describeError(e));
+    }
   } catch (e) {
     console.error("Zahlungsbestaetigung: Verbuchung nach dem Versandversuch fehlgeschlagen", describeError(e));
     return { kind: "FAILED", error: SEND_UNCLEAR_NOTE, retryable: false, notSent: false };

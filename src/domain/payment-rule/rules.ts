@@ -160,6 +160,7 @@ export async function updatePaymentRule(orgId: string, id: string, raw: unknown,
     if (!current) throw new NotFoundError("Zahlungsregel nicht gefunden.");
     if (current.archivedAt !== null) throw new PaymentRuleError("Archivierte Regeln koennen nicht geaendert werden.");
     const cur = toView(current, new Set());
+    if (Object.keys(patch).length === 0) return cur;
     const next: PaymentRuleInput = {
       name: patch.name ?? cur.name,
       active: patch.active ?? cur.active,

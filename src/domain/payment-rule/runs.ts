@@ -3,6 +3,7 @@ import { z } from "zod";
 import { dbInternal } from "@/lib/db";
 import { NotFoundError } from "@/domain/errors";
 import { paymentRuleRunListFilterSchema } from "@/schemas/payment-rule";
+import { publicErrorText, publicSteps } from "./public-error";
 import type { Prisma } from "@/generated/prisma/client";
 
 const RUN_SELECT = {
@@ -46,8 +47,8 @@ function parseJson(text: string): unknown {
 function toView(r: Row): PaymentRuleRunDetail {
   return {
     id: r.id, ruleId: r.ruleId, ruleName: r.rule.name, paymentId: r.paymentId, invoiceId: r.invoiceId, customerId: r.customerId,
-    trigger: r.trigger, source: r.source, actions: parseJson(r.actionsJson), steps: parseJson(r.stepsJson), context: parseJson(r.contextJson),
-    status: r.status, attempts: r.attempts, nextAttemptAt: r.nextAttemptAt, lastError: r.lastError, skipReason: r.skipReason,
+    trigger: r.trigger, source: r.source, actions: parseJson(r.actionsJson), steps: publicSteps(parseJson(r.stepsJson)), context: parseJson(r.contextJson),
+    status: r.status, attempts: r.attempts, nextAttemptAt: r.nextAttemptAt, lastError: publicErrorText(r.lastError), skipReason: r.skipReason,
     mailSentAt: r.mailSentAt, createdAt: r.createdAt, finishedAt: r.finishedAt,
   };
 }

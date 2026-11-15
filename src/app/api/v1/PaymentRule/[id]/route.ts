@@ -1,9 +1,8 @@
 /** GET (read), PATCH und DELETE = archivieren (admin) einer Regel nach Zahlungseingang. */
-import { z } from "zod";
 import { withApi } from "@/api/auth";
 import { apiData } from "@/api/response";
 import { apiDataResponseSchema, type RouteSpec } from "@/api/spec";
-import { serializePaymentRule } from "@/api/serializers/payment-rule";
+import { paymentRuleSchema, serializePaymentRule } from "@/api/serializers/payment-rule";
 import { archivePaymentRule, getPaymentRule, updatePaymentRule } from "@/domain/payment-rule/rules";
 import { paymentRuleUpdateSchema } from "@/schemas/payment-rule";
 
@@ -28,7 +27,7 @@ export const spec = {
     method: "GET",
     summary: "Regel nach Zahlungseingang abrufen",
     scope: "read",
-    response: apiDataResponseSchema(z.unknown()),
+    response: apiDataResponseSchema(paymentRuleSchema),
     errors: [401, 403, 404, 429],
   },
   update: {
@@ -37,7 +36,7 @@ export const spec = {
     summary: "Regel nach Zahlungseingang aendern (nur uebergebene Felder; archivierte Regeln nicht)",
     scope: "admin",
     request: { body: paymentRuleUpdateSchema },
-    response: apiDataResponseSchema(z.unknown()),
+    response: apiDataResponseSchema(paymentRuleSchema),
     errors: [400, 401, 403, 404, 422, 429],
   },
   archive: {
@@ -45,7 +44,7 @@ export const spec = {
     method: "DELETE",
     summary: "Regel archivieren (nie hart geloescht; bereits erzeugte Laeufe bleiben erhalten)",
     scope: "admin",
-    response: apiDataResponseSchema(z.unknown()),
+    response: apiDataResponseSchema(paymentRuleSchema),
     errors: [401, 403, 404, 429],
   },
 } satisfies Record<string, RouteSpec>;

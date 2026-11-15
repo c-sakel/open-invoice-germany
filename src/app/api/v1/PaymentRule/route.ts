@@ -6,7 +6,7 @@ import { z } from "zod";
 import { withApi } from "@/api/auth";
 import { apiData, apiList } from "@/api/response";
 import { apiDataResponseSchema, apiListResponseSchema, type RouteSpec } from "@/api/spec";
-import { serializePaymentRule } from "@/api/serializers/payment-rule";
+import { paymentRuleSchema, serializePaymentRule } from "@/api/serializers/payment-rule";
 import { createPaymentRule, listPaymentRules } from "@/domain/payment-rule/rules";
 import { paymentRuleInputSchema } from "@/schemas/payment-rule";
 
@@ -34,7 +34,7 @@ export const spec = {
     summary: "Regeln nach Zahlungseingang auflisten (archivierte nur mit includeArchived=true)",
     scope: "read",
     request: { query: listQuerySchema },
-    response: apiListResponseSchema(z.unknown()),
+    response: apiListResponseSchema(paymentRuleSchema),
     errors: [400, 401, 403, 429],
   },
   create: {
@@ -43,7 +43,7 @@ export const spec = {
     summary: "Regel nach Zahlungseingang anlegen (hoechstens 20 aktive je Organisation)",
     scope: "admin",
     request: { body: paymentRuleInputSchema },
-    response: apiDataResponseSchema(z.unknown()),
+    response: apiDataResponseSchema(paymentRuleSchema),
     errors: [400, 401, 403, 422, 429],
   },
 } satisfies Record<string, RouteSpec>;
