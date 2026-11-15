@@ -79,6 +79,7 @@ model Organization {
   portalSettings         CustomerPortalSettings?
   portalLinks            CustomerPortalLink[]
   bankImports            BankStatementImport[]
+  paymentRules           PaymentRule[]
   bankTransactions       BankTransaction[]
   bankHints              BankCounterpartyHint[]
   sepaCreditorId         String? // Phase 18e: SEPA-Glaeubiger-ID (BT-90), normalisiert
@@ -1833,4 +1834,57 @@ model BankCounterpartyHint {
   useCount   Int          @default(1)
 
   @@unique([orgId, ibanHash])
+}
+
+/// Regel „nach Zahlungseingang": feste Aktionsarten, keine Skripte. Nie geloescht, nur archiviert (Laeufe verweisen darauf).
+model PaymentRule {
+  id           String           @id @default(cuid())
+  orgId        String
+  org          Organization     @relation(fields: [orgId], references: [id])
+  name         String
+  active       Boolean          @default(true)
+  trigger      String // PAID_FULL | PAID_PARTIAL
+  sourcesJson  String? // JSON-Liste MANUAL|API|MCP|BANK|MOLLIE|STRIPE; NULL = alle Quellen
+  invoiceTagId String? // nur Rechnungen mit diesem Tag (kein FK: geloeschter Tag -> trifft nie)
+  delayMinutes Int              @default(5)
+  actionsJson  String // Zod-Union, 1–5 Aktionen
+  sortOrder    Int              @default(0)
+  archivedAt   DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  runs         PaymentRuleRun[]
+
+  @@index([orgId, active])
+}
+
+/// Ausfuehrung einer Regel fuer eine Zahlung (Outbox + Protokoll). Entsteht in der Zahlungs-Transaktion.
+model PaymentRuleRun {
+  id            String      @id @default(cuid())
+  orgId         String
+  ruleId        String
+  rule          PaymentRule @relation(fields: [ruleId], references: [id], onDelete: Restrict)
+  paymentId     String // kein FK (Zahlungen sind append-only, Muster BankMatch)
+  invoiceId     String
+  customerId    String // fuer das Mail-Limit je Kunde
+  trigger       String
+  source        String
+  actionsJson   String // Schnappschuss der Aktionen zum Zahlungszeitpunkt
+  stepsJson     String // Zustand je Aktion: PENDING|DONE|SKIPPED|FAILED + Hinweis
+  contextJson   String // Betrag, paidAt, offener Rest nach Zahlung, Waehrung, Rechnungsnummer
+  status        String      @default("PENDING") // PENDING|RUNNING|DONE|FAILED|SKIPPED
+  attempts      Int         @default(0)
+  nextAttemptAt DateTime
+  lockedUntil   DateTime?
+  lastError     String?
+  skipReason    String?
+  mailSentAt    DateTime?
+  createdAt     DateTime    @default(now())
+  finishedAt    DateTime?
+
+  @@unique([ruleId, paymentId])
+  @@index([status, nextAttemptAt])
+  @@index([orgId, createdAt])
+  @@index([orgId, customerId, mailSentAt])
+  @@index([paymentId])
+  @@index([invoiceId])
 }
