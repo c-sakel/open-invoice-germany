@@ -13,6 +13,7 @@ import { resolveBuyerSnapshot } from "@/domain/document/snapshot-input";
 import { normalizeLines } from "@/domain/document/lines";
 import { resolveLineOssCategories } from "@/domain/product/oss-snapshot";
 import { NotFoundError } from "@/domain/errors";
+import { lockRow } from "@/lib/db-lock";
 import { assertAllowedTaxRates, ratesOfLines } from "@/domain/settings/tax-rates";
 import { updateDocumentSchema, resolveLineCategories, type TaxScheme as TaxSchemeValue } from "@/schemas";
 import type { Prisma } from "@/generated/prisma/client";
@@ -24,6 +25,8 @@ export async function updateDraftDocument(orgId: string, id: string, rawInput: u
   const now = new Date();
 
   return dbInternal.$transaction(async (tx) => {
+    // Zeilensperre als erste Anweisung: Statuspruefung erst danach, sonst Race gegen DRAFT -> SENT.
+    await lockRow(tx, "Quote", id, orgId);
     const quote = await tx.quote.findFirst({ where: { id, orgId }, include: { lines: { orderBy: { position: "asc" } } } });
     if (!quote) throw new NotFoundError(`Dokument ${id} nicht gefunden.`);
     if (quote.status !== "DRAFT") {

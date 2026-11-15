@@ -7,6 +7,7 @@
  *                 (finalize, cancel, recordPayment) verwenden, die kontrollierte
  *                 Statuswechsel vornehmen.
  */
+import { QUOTE_TRANSITIONS, DELIVERY_TRANSITIONS } from "@/domain/document/status-transitions";
 import path from "node:path";
 import { PrismaClient, type Prisma } from "@/generated/prisma/client";
 
@@ -113,7 +114,8 @@ async function guardLineWhere(where: unknown): Promise<void> {
 /** invoiceId aus einem Create-Payload (skalar oder `invoice.connect`); null, wenn nicht bestimmbar. */
 function lineCreateInvoiceId(data: unknown): string | null {
   const d = (data ?? {}) as { invoiceId?: unknown; invoice?: { connect?: { id?: unknown } } };
-  if (typeof d.invoiceId === "string") return d.invoiceId;
+  const scalar = unwrapSet(d.invoiceId);
+  if (typeof scalar === "string") return scalar;
   const connected = d.invoice?.connect?.id;
   return typeof connected === "string" ? connected : null;
 }
@@ -137,6 +139,48 @@ async function guardLineCreate(data: unknown): Promise<void> {
   });
   const locked = rows.find((r) => r.status !== "DRAFT");
   if (locked) throw new GobdImmutabilityError(locked.number ?? locked.id);
+}
+
+/** IDs aus `lines: { connect | set | connectOrCreate }` eines Kopf-Payloads (nested writes). */
+function connectedLineIds(data: unknown): string[] {
+  const lines = (data as { lines?: unknown } | null | undefined)?.lines;
+  if (lines === null || typeof lines !== "object") return [];
+  const l = lines as { connect?: unknown; set?: unknown; connectOrCreate?: unknown };
+  const ids: string[] = [];
+  const pick = (v: unknown) => {
+    for (const item of Array.isArray(v) ? v : v === undefined ? [] : [v]) {
+      const id = (item as { id?: unknown; where?: { id?: unknown } } | null)?.id ?? (item as { where?: { id?: unknown } } | null)?.where?.id;
+      ids.push(typeof id === "string" ? id : "");
+    }
+  };
+  pick(l.connect);
+  pick(l.set);
+  pick(l.connectOrCreate);
+  return ids;
+}
+
+/**
+ * Nested `lines.connect/set/connectOrCreate` am Kopf haengt bestehende Positionen um: die Quell-
+ * Positionen duerfen dann nicht zu einem ausgegebenen/festgeschriebenen Beleg gehoeren (kein Domain-Pfad
+ * nutzt diese Schreibweise; nicht bestimmbare IDs werden abgelehnt).
+ */
+async function guardInvoiceLinesConnect(data: unknown): Promise<void> {
+  const ids = connectedLineIds(data);
+  if (ids.length === 0) return;
+  if (ids.some((i) => i === "")) throw new GobdImmutabilityError("Positionen ohne bestimmbare ID");
+  const rows = await base.invoiceLine.findMany({
+    where: { id: { in: ids } },
+    select: { invoice: { select: { id: true, number: true, status: true } } },
+  });
+  const locked = rows.find((r) => r.invoice.status !== "DRAFT");
+  if (locked) throw new GobdImmutabilityError(locked.invoice.number ?? locked.invoice.id);
+}
+
+/** Umhaengen einer Position (`invoiceId`/`invoice` im Update-Payload): auch der Zielbeleg muss ein Entwurf sein. */
+async function guardInvoiceLineMove(data: unknown): Promise<void> {
+  const d = (data ?? {}) as Record<string, unknown>;
+  if (!("invoiceId" in d) && !("invoice" in d)) return;
+  await guardLineCreate(d);
 }
 
 /**
@@ -397,6 +441,150 @@ async function guardPrintOptions(model: "quote" | "deliveryNote", where: unknown
   if (row) throw new FrozenPrintOptionsError(row.number ?? row.id);
 }
 
+/**
+ * Angebote/Auftragsbestaetigungen/Proforma und Lieferscheine sind nach Ausgabe (Status ungleich
+ * DRAFT) abgesandte Handelsbriefe (§ 257 Abs. 1 Nr. 3 HGB) und inhaltlich unveraenderlich. Ueber den
+ * geschuetzten Client sind dann Positionen komplett gesperrt; am Kopf bleiben nur Status,
+ * Statuszeitpunkte, Entscheidungsnotiz, Verknuepfung zur Folgerechnung und Archivmarker aenderbar.
+ * Die Domain-Services schreiben ueber `dbInternal` bzw. dessen Transaktions-Client.
+ */
+export class HandelsbriefImmutabilityError extends GobdImmutabilityError {
+  constructor(ref: string) {
+    super(ref);
+    this.message =
+      `GoBD: Der ausgegebene Beleg "${ref}" ist ein abgesandter Handelsbrief und inhaltlich unveränderbar (§ 257 HGB).`;
+    this.name = "HandelsbriefImmutabilityError";
+  }
+}
+
+const QUOTE_MUTABLE_AFTER_ISSUE: ReadonlySet<string> = new Set([
+  "status",
+  "sentAt",
+  "decidedAt",
+  "decisionNote",
+  "convertedToInvoiceId",
+  "archivedAt",
+  "updatedAt",
+]);
+const DELIVERY_NOTE_MUTABLE_AFTER_ISSUE: ReadonlySet<string> = new Set([
+  "status",
+  "sentAt",
+  "deliveredAt",
+  "archivedAt",
+  "updatedAt",
+]);
+
+type HandelsbriefModel = "quote" | "deliveryNote";
+
+function touchesOnlyKeys(data: unknown, allowed: ReadonlySet<string>): boolean {
+  if (typeof data !== "object" || data === null) return false;
+  return Object.keys(data).every((k) => allowed.has(k));
+}
+
+async function findIssuedHead(model: HandelsbriefModel, where: unknown): Promise<string | null> {
+  const filter = { AND: [(where ?? {}) as never, { status: { not: "DRAFT" } }] } as never;
+  const select = { id: true, number: true } as const;
+  const row =
+    model === "quote"
+      ? await base.quote.findFirst({ where: filter, select })
+      : await base.deliveryNote.findFirst({ where: filter, select });
+  return row ? (row.number ?? row.id) : null;
+}
+
+/**
+ * Statuswert eines Kopf-Updates: muss ein bekannter Status sein und fuer jeden getroffenen
+ * ausgegebenen Beleg ein erlaubter VORWAERTS-Uebergang (Tabellen der Domain-Statusmaschinen) bzw.
+ * unveraendert. Insbesondere kein Zurueck auf DRAFT, das die Sperre aufheben wuerde.
+ */
+async function guardStatusWrite(model: HandelsbriefModel, where: unknown, rawStatus: unknown): Promise<void> {
+  const target = unwrapSet(rawStatus);
+  const table: Readonly<Record<string, readonly string[]>> = model === "quote" ? QUOTE_TRANSITIONS : DELIVERY_TRANSITIONS;
+  const filter = (where ?? {}) as never;
+  const select = { id: true, number: true, status: true } as const;
+  const rows =
+    model === "quote"
+      ? await base.quote.findMany({ where: filter, select })
+      : await base.deliveryNote.findMany({ where: filter, select });
+  if (typeof target !== "string" || !(target in table)) {
+    throw new HandelsbriefImmutabilityError(rows[0] ? (rows[0].number ?? rows[0].id) : "unbekannter Status");
+  }
+  for (const row of rows) {
+    if (row.status === "DRAFT" && target === "DRAFT") continue;
+    if (row.status === target) continue;
+    if (!(table[row.status] ?? []).includes(target)) {
+      throw new HandelsbriefImmutabilityError(row.number ?? row.id);
+    }
+  }
+}
+
+/** Nested `lines.connect/set/connectOrCreate` am Kopf: Quellpositionen duerfen keinem ausgegebenen Beleg gehoeren. */
+async function guardHeadLinesConnect(model: HandelsbriefModel, data: unknown): Promise<void> {
+  const ids = connectedLineIds(data);
+  if (ids.length === 0) return;
+  if (ids.some((i) => i === "")) throw new HandelsbriefImmutabilityError("Positionen ohne bestimmbare ID");
+  const where = { AND: [{ id: { in: ids } }, { [model]: { status: { not: "DRAFT" } } }] } as never;
+  const row =
+    model === "quote"
+      ? await base.quoteLine.findFirst({ where, select: { quote: { select: { id: true, number: true } } } })
+      : await base.deliveryNoteLine.findFirst({ where, select: { deliveryNote: { select: { id: true, number: true } } } });
+  if (!row) return;
+  const head = "quote" in row ? row.quote : row.deliveryNote;
+  throw new HandelsbriefImmutabilityError(head.number ?? head.id);
+}
+
+/**
+ * Kopf: bei ausgegebenen Belegen nur Positivliste an Feldern; `data` null = Loeschen. Ein `status` im
+ * Payload wird immer auf einen zulaessigen Vorwaertswechsel geprueft. Die Pruefungen lesen ueber `base`
+ * und sind nicht atomar mit dem Schreiben — der Guard ist Zweitverteidigung, die Domain-Services
+ * sperren die Zeile (lockRow) und pruefen den Status selbst.
+ */
+async function guardHeadWrite(model: HandelsbriefModel, where: unknown, data: unknown | null): Promise<void> {
+  const allowed = model === "quote" ? QUOTE_MUTABLE_AFTER_ISSUE : DELIVERY_NOTE_MUTABLE_AFTER_ISSUE;
+  if (data !== null) {
+    await guardHeadLinesConnect(model, data);
+    if (typeof data === "object" && "status" in data) await guardStatusWrite(model, where, (data as { status: unknown }).status);
+    if (touchesOnlyKeys(data, allowed)) return;
+  }
+  const ref = await findIssuedHead(model, where);
+  if (ref) throw new HandelsbriefImmutabilityError(ref);
+}
+
+async function guardLineWrite(model: HandelsbriefModel, where: unknown): Promise<void> {
+  const filter = { AND: [(where ?? {}) as never, { [model]: { status: { not: "DRAFT" } } }] } as never;
+  const row =
+    model === "quote"
+      ? await base.quoteLine.findFirst({ where: filter, select: { quote: { select: { id: true, number: true } } } })
+      : await base.deliveryNoteLine.findFirst({ where: filter, select: { deliveryNote: { select: { id: true, number: true } } } });
+  if (!row) return;
+  const head = "quote" in row ? row.quote : row.deliveryNote;
+  throw new HandelsbriefImmutabilityError(head.number ?? head.id);
+}
+
+async function guardLineCreateFor(model: HandelsbriefModel, data: unknown): Promise<void> {
+  const idKey = model === "quote" ? "quoteId" : "deliveryNoteId";
+  const items = Array.isArray(data) ? data : [data];
+  const ids = new Set<string>();
+  for (const item of items) {
+    const d = (item ?? {}) as Record<string, unknown>;
+    const connected = (d[model] as { connect?: { id?: unknown } } | undefined)?.connect?.id;
+    const scalar = unwrapSet(d[idKey]);
+    const id = typeof scalar === "string" ? scalar : connected;
+    if (typeof id !== "string") throw new HandelsbriefImmutabilityError("Position ohne bestimmbaren Zielbeleg");
+    ids.add(id);
+  }
+  if (ids.size === 0) return;
+  const where = { id: { in: [...ids] } };
+  const ref = await findIssuedHead(model, where);
+  if (ref) throw new HandelsbriefImmutabilityError(ref);
+}
+
+/** Umhaengen einer Position (Zielbeleg im Update-Payload): auch der Zielbeleg muss ein Entwurf sein. */
+async function guardLineMoveFor(model: HandelsbriefModel, data: unknown): Promise<void> {
+  const d = (data ?? {}) as Record<string, unknown>;
+  if (!((model === "quote" ? "quoteId" : "deliveryNoteId") in d) && !(model in d)) return;
+  await guardLineCreateFor(model, d);
+}
+
 export class LayoutDesignDeleteError extends Error {
   constructor() {
     super("Layout-Designs werden nie geloescht (eingefrorene Belege verweisen auf Versionen), nur archiviert.");
@@ -426,8 +614,13 @@ class PaymentImmutabilityError extends Error {
 export const prisma = base.$extends({
   query: {
     invoice: {
+      async create({ args, query }) {
+        await guardInvoiceLinesConnect(args.data);
+        return query(args);
+      },
       async update({ args, query }) {
         await guardInvoiceWhere(args.where);
+        await guardInvoiceLinesConnect(args.data);
         return query(args);
       },
       async delete({ args, query }) {
@@ -444,6 +637,8 @@ export const prisma = base.$extends({
       },
       async upsert({ args, query }) {
         await guardInvoiceWhere(args.where);
+        await guardInvoiceLinesConnect(args.update);
+        await guardInvoiceLinesConnect(args.create);
         return query(args);
       },
     },
@@ -462,15 +657,18 @@ export const prisma = base.$extends({
       },
       async upsert({ args, query }) {
         await guardLineWhere(args.where);
+        await guardInvoiceLineMove(args.update);
         await guardLineCreate(args.create);
         return query(args);
       },
       async updateManyAndReturn({ args, query }) {
         await guardLineWhere(args.where);
+        await guardInvoiceLineMove(args.data);
         return query(args);
       },
       async update({ args, query }) {
         await guardLineWhere(args.where);
+        await guardInvoiceLineMove(args.data);
         return query(args);
       },
       async delete({ args, query }) {
@@ -479,6 +677,7 @@ export const prisma = base.$extends({
       },
       async updateMany({ args, query }) {
         await guardLineWhere(args.where);
+        await guardInvoiceLineMove(args.data);
         return query(args);
       },
       async deleteMany({ args, query }) {
@@ -707,38 +906,158 @@ export const prisma = base.$extends({
       },
     },
     quote: {
+      async create({ args, query }) {
+        await guardHeadLinesConnect("quote", args.data);
+        return query(args);
+      },
       async update({ args, query }) {
         await guardPrintOptions("quote", args.where, args.data);
+        await guardHeadWrite("quote", args.where, args.data);
         return query(args);
       },
       async updateMany({ args, query }) {
         await guardPrintOptions("quote", args.where, args.data);
+        await guardHeadWrite("quote", args.where, args.data);
         return query(args);
       },
       async updateManyAndReturn({ args, query }) {
         await guardPrintOptions("quote", args.where, args.data);
+        await guardHeadWrite("quote", args.where, args.data);
         return query(args);
       },
       async upsert({ args, query }) {
         await guardPrintOptions("quote", args.where, args.update);
+        await guardHeadWrite("quote", args.where, args.update);
+        await guardHeadLinesConnect("quote", args.create);
+        return query(args);
+      },
+      async delete({ args, query }) {
+        await guardHeadWrite("quote", args.where, null);
+        return query(args);
+      },
+      async deleteMany({ args, query }) {
+        await guardHeadWrite("quote", args.where, null);
+        return query(args);
+      },
+    },
+    quoteLine: {
+      async create({ args, query }) {
+        await guardLineCreateFor("quote", args.data);
+        return query(args);
+      },
+      async createMany({ args, query }) {
+        await guardLineCreateFor("quote", args.data);
+        return query(args);
+      },
+      async createManyAndReturn({ args, query }) {
+        await guardLineCreateFor("quote", args.data);
+        return query(args);
+      },
+      async upsert({ args, query }) {
+        await guardLineWrite("quote", args.where);
+        await guardLineMoveFor("quote", args.update);
+        await guardLineCreateFor("quote", args.create);
+        return query(args);
+      },
+      async update({ args, query }) {
+        await guardLineWrite("quote", args.where);
+        await guardLineMoveFor("quote", args.data);
+        return query(args);
+      },
+      async updateMany({ args, query }) {
+        await guardLineWrite("quote", args.where);
+        await guardLineMoveFor("quote", args.data);
+        return query(args);
+      },
+      async updateManyAndReturn({ args, query }) {
+        await guardLineWrite("quote", args.where);
+        await guardLineMoveFor("quote", args.data);
+        return query(args);
+      },
+      async delete({ args, query }) {
+        await guardLineWrite("quote", args.where);
+        return query(args);
+      },
+      async deleteMany({ args, query }) {
+        await guardLineWrite("quote", args.where);
         return query(args);
       },
     },
     deliveryNote: {
+      async create({ args, query }) {
+        await guardHeadLinesConnect("deliveryNote", args.data);
+        return query(args);
+      },
       async update({ args, query }) {
         await guardPrintOptions("deliveryNote", args.where, args.data);
+        await guardHeadWrite("deliveryNote", args.where, args.data);
         return query(args);
       },
       async updateMany({ args, query }) {
         await guardPrintOptions("deliveryNote", args.where, args.data);
+        await guardHeadWrite("deliveryNote", args.where, args.data);
         return query(args);
       },
       async updateManyAndReturn({ args, query }) {
         await guardPrintOptions("deliveryNote", args.where, args.data);
+        await guardHeadWrite("deliveryNote", args.where, args.data);
         return query(args);
       },
       async upsert({ args, query }) {
         await guardPrintOptions("deliveryNote", args.where, args.update);
+        await guardHeadWrite("deliveryNote", args.where, args.update);
+        await guardHeadLinesConnect("deliveryNote", args.create);
+        return query(args);
+      },
+      async delete({ args, query }) {
+        await guardHeadWrite("deliveryNote", args.where, null);
+        return query(args);
+      },
+      async deleteMany({ args, query }) {
+        await guardHeadWrite("deliveryNote", args.where, null);
+        return query(args);
+      },
+    },
+    deliveryNoteLine: {
+      async create({ args, query }) {
+        await guardLineCreateFor("deliveryNote", args.data);
+        return query(args);
+      },
+      async createMany({ args, query }) {
+        await guardLineCreateFor("deliveryNote", args.data);
+        return query(args);
+      },
+      async createManyAndReturn({ args, query }) {
+        await guardLineCreateFor("deliveryNote", args.data);
+        return query(args);
+      },
+      async upsert({ args, query }) {
+        await guardLineWrite("deliveryNote", args.where);
+        await guardLineMoveFor("deliveryNote", args.update);
+        await guardLineCreateFor("deliveryNote", args.create);
+        return query(args);
+      },
+      async update({ args, query }) {
+        await guardLineWrite("deliveryNote", args.where);
+        await guardLineMoveFor("deliveryNote", args.data);
+        return query(args);
+      },
+      async updateMany({ args, query }) {
+        await guardLineWrite("deliveryNote", args.where);
+        await guardLineMoveFor("deliveryNote", args.data);
+        return query(args);
+      },
+      async updateManyAndReturn({ args, query }) {
+        await guardLineWrite("deliveryNote", args.where);
+        await guardLineMoveFor("deliveryNote", args.data);
+        return query(args);
+      },
+      async delete({ args, query }) {
+        await guardLineWrite("deliveryNote", args.where);
+        return query(args);
+      },
+      async deleteMany({ args, query }) {
+        await guardLineWrite("deliveryNote", args.where);
         return query(args);
       },
     },
