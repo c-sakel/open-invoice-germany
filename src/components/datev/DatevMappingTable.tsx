@@ -19,6 +19,8 @@ export interface DatevConfirmInfo {
   consultantNumber: number | null;
   clientNumber: number | null;
   chart: string | null;
+  /** Weitere bestätigte Einstellungen (Bezeichnung, Wert) für die Druckansicht. */
+  settingsLines?: { label: string; value: string }[];
 }
 
 export const CONSULT_HINT = "Vorher mit dem Steuerberater abstimmen.";
@@ -184,6 +186,15 @@ export function DatevMappingTable({ rows, info }: { rows: MappingUiRow[]; info: 
           Beraternummer {info.consultantNumber ?? "—"}, Mandantennummer {info.clientNumber ?? "—"}, Kontenrahmen {info.chart ?? "—"}
           {info.confirmed && info.confirmedNote ? `, bestätigt: ${info.confirmedNote}` : ", noch nicht bestätigt"}
         </p>
+        {info.settingsLines && info.settingsLines.length > 0 && (
+          <ul className="mt-2 text-sm">
+            {info.settingsLines.map((l) => (
+              <li key={l.label}>
+                {l.label}: {l.value}
+              </li>
+            ))}
+          </ul>
+        )}
         <table className="mt-2 w-full text-sm">
           <thead>
             <tr>

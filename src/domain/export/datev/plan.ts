@@ -57,8 +57,10 @@ export interface PlannedItem {
   status: "EXPORTED" | "MANUAL" | "EMPTY";
   month: string;
   lineCount: number;
-  /** EUR-Cent, vorzeichenbehaftet. */
+  /** Cent, vorzeichenbehaftet; EUR, bei MANUAL-Posten in `currency`. */
   amountCents: number;
+  /** Waehrung des Betrags bei MANUAL-Posten (sonst EUR). */
+  currency?: string;
   reason: string | null;
   warning: string | null;
   invoiceId: string | null;
@@ -126,11 +128,15 @@ function fiscalYearStart(month: string, startMonth: number): Date {
   return berlinMidnight(m >= startMonth ? y : y - 1, startMonth, 1);
 }
 
-/** Sachkonten werden auf die eingestellte Kontenlaenge mit Nullen aufgefuellt (Vorlagen sind 4-stellig). */
+/**
+ * DATEV-Konvention: ist die Sachkontenlaenge groesser als 4, werden kuerzere Sachkonten rechts mit Nullen aufgefuellt
+ * (8400 wird bei Laenge 6 zu 840000). Bei Laenge 4 bleibt jedes Konto unveraendert. Konten unter 4 Stellen werden
+ * bereits beim Speichern abgelehnt, damit nie still ein anderes Konto entsteht (85 wuerde sonst zu 8500).
+ */
 function padAccount(account: number, length: number): number {
   const digits = String(account).length;
   if (digits > length) throw new DatevExportError("ACCOUNT_TOO_LONG", `Konto ${account} ist laenger als die Sachkontenlaenge ${length}.`);
-  return account * 10 ** (length - digits);
+  return length > 4 ? account * 10 ** (length - digits) : account;
 }
 
 function paddedCells(line: BookingLine, length: number): ReadonlyMap<number, CellValue> {
@@ -180,6 +186,7 @@ interface ProtocolRow {
   status: string;
   reference: string;
   amountCents: number | null;
+  currency: string;
   lines: number | null;
   note: string;
 }
@@ -190,7 +197,8 @@ const PROTOCOL_COLUMNS = [
   col<ProtocolRow>("Monat", "text", (r) => r.month),
   col<ProtocolRow>("Status", "text", (r) => r.status),
   col<ProtocolRow>("Referenz", "text", (r) => r.reference),
-  col<ProtocolRow>("Betrag EUR", "cents", (r) => r.amountCents),
+  col<ProtocolRow>("Betrag", "cents", (r) => r.amountCents),
+  col<ProtocolRow>("Waehrung", "text", (r) => r.currency),
   col<ProtocolRow>("Zeilen", "int", (r) => r.lines),
   col<ProtocolRow>("Grund/Hinweis", "text", (r) => r.note),
 ];
@@ -234,12 +242,22 @@ export async function buildDatevRun(tx: Tx, orgId: string, req: DatevExportReque
   // Posten bestimmen.
   let docIds: string[];
   let paymentIds: string[];
+  let skippedPaymentMonths: string[] = [];
   if (req.mode === "PERIOD") {
     const from = monthStartOf(months[0]);
     const to = monthStartOf(months[months.length - 1], 1);
     docIds = (await listDocRefs(tx, orgId, from, to, now)).filter((d) => monthSet.has(monthOf(d.issueDate))).map((d) => d.id);
+    // Wiederholung eines Monats, dessen frueherer Lauf vor dem Einschalten des Zahlungsexports entstand: die Kanzlei hat die
+    // Zahlungen dann aus dem Kontoauszug gebucht, ein erneuter Export wuerde sie doppelt buchen.
+    const payMonths = new Set(
+      months.filter((m) => {
+        const prior = coverage.get(m);
+        return prior === undefined || settings.exportPaymentsSince === null || prior.createdAt.getTime() >= settings.exportPaymentsSince.getTime();
+      }),
+    );
+    skippedPaymentMonths = settings.exportPayments ? months.filter((m) => !payMonths.has(m)) : [];
     paymentIds = settings.exportPayments
-      ? (await listPaymentRefs(tx, orgId, from, to, now)).filter((p) => monthSet.has(monthOf(p.paidAt))).map((p) => p.id)
+      ? (await listPaymentRefs(tx, orgId, from, to, now)).filter((p) => payMonths.has(monthOf(p.paidAt))).map((p) => p.id)
       : [];
   } else {
     const cand = await supplementCandidates(tx, orgId, monthSet, settings.exportPayments, settings.exportPaymentsSince, coverage, now);
@@ -306,6 +324,12 @@ export async function buildDatevRun(tx: Tx, orgId: string, req: DatevExportReque
   const rowsByMonth = new Map<string, ReadonlyMap<number, CellValue>[]>();
   const debtorCustomers = new Set<string>();
   const protocol: ProtocolRow[] = [];
+  for (const m of skippedPaymentMonths) {
+    protocol.push({
+      art: "Hinweis", key: "", month: m, status: "HINWEIS", reference: "", amountCents: null, currency: "", lines: null,
+      note: "Zahlungen dieses Monats nicht exportiert: der fruehere Export entstand vor dem Einschalten des Zahlungsexports",
+    });
+  }
   for (const r of results) {
     const doc = docByKey.get(r.key);
     const pay = payByKey.get(r.key);
@@ -349,15 +373,15 @@ export async function buildDatevRun(tx: Tx, orgId: string, req: DatevExportReque
           reason: null, warning: "Skonto im Skontofeld der Zahlung gebucht",
         });
       }
-      protocol.push({ art: pay ? "Zahlung" : "Beleg", key: r.key, month: r.month, status: "EXPORTED", reference, amountCents: signed, lines: r.lines.length, note: warning ?? "" });
+      protocol.push({ art: pay ? "Zahlung" : "Beleg", key: r.key, month: r.month, status: "EXPORTED", reference, amountCents: signed, currency: "EUR", lines: r.lines.length, note: warning ?? "" });
     } else if (r.status === "MANUAL") {
-      plan.items.push({ ...base, status: "MANUAL", lineCount: 0, amountCents: r.amountCents, reason: r.reason, warning: null });
+      plan.items.push({ ...base, status: "MANUAL", lineCount: 0, amountCents: r.amountCents, currency: r.currency, reason: r.reason, warning: null });
       plan.manualCount += 1;
-      stored.manual.push({ key: r.key, month: r.month, reason: r.reason, amountCents: r.amountCents, reference });
-      protocol.push({ art: pay ? "Zahlung" : "Beleg", key: r.key, month: r.month, status: "MANUAL", reference, amountCents: r.amountCents, lines: 0, note: r.reason });
+      stored.manual.push({ key: r.key, month: r.month, reason: r.reason, amountCents: r.amountCents, currency: r.currency, reference });
+      protocol.push({ art: pay ? "Zahlung" : "Beleg", key: r.key, month: r.month, status: "MANUAL", reference, amountCents: r.amountCents, currency: r.currency, lines: 0, note: r.reason });
     } else {
       plan.items.push({ ...base, status: "EMPTY", lineCount: 0, amountCents: 0, reason: null, warning: null });
-      protocol.push({ art: pay ? "Zahlung" : "Beleg", key: r.key, month: r.month, status: "EMPTY", reference, amountCents: 0, lines: 0, note: "Keine buchbaren Betraege" });
+      protocol.push({ art: pay ? "Zahlung" : "Beleg", key: r.key, month: r.month, status: "EMPTY", reference, amountCents: 0, currency: "EUR", lines: 0, note: "Keine buchbaren Betraege" });
     }
   }
   if (results.length === 0) return built;
@@ -421,7 +445,7 @@ export async function buildDatevRun(tx: Tx, orgId: string, req: DatevExportReque
     plan.debtorCount = rows.length;
     for (const { c, row } of rows) {
       for (const note of row.notes) {
-        protocol.push({ art: "Debitor", key: `debtor:${c.id}`, month: "", status: "HINWEIS", reference: String(row.account), amountCents: null, lines: null, note });
+        protocol.push({ art: "Debitor", key: `debtor:${c.id}`, month: "", status: "HINWEIS", reference: String(row.account), amountCents: null, currency: "", lines: null, note });
       }
     }
   } else if (settings.debtorMode === "PERSONAL") {

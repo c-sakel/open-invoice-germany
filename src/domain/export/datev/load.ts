@@ -51,18 +51,25 @@ export async function listPaymentRefs(tx: Tx, orgId: string, from: Date, to: Dat
   });
 }
 
-function parseBreakdown(json: string): DocInput["breakdown"] {
-  const raw: unknown = JSON.parse(json);
-  if (!Array.isArray(raw)) return [];
+function parseBreakdown(json: string): { items: DocInput["breakdown"]; ok: boolean } {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(json);
+  } catch {
+    return { items: [], ok: false };
+  }
+  if (!Array.isArray(raw)) return { items: [], ok: false };
   const out: DocInput["breakdown"] = [];
+  let ok = true;
   for (const e of raw) {
-    if (typeof e !== "object" || e === null) continue;
-    const r = e as Record<string, unknown>;
-    if (typeof r.taxCategory === "string" && typeof r.taxRate === "number" && typeof r.netCents === "number" && typeof r.taxCents === "number") {
+    const r = typeof e === "object" && e !== null ? (e as Record<string, unknown>) : null;
+    if (r && typeof r.taxCategory === "string" && typeof r.taxRate === "number" && typeof r.netCents === "number" && typeof r.taxCents === "number") {
       out.push({ taxCategory: r.taxCategory, taxRate: r.taxRate, netCents: r.netCents, taxCents: r.taxCents });
+    } else {
+      ok = false;
     }
   }
-  return out;
+  return { items: out, ok };
 }
 
 function buyerOf(json: string | null, fallbackName: string): { name: string; vatId: string | null } {
@@ -84,7 +91,7 @@ export async function loadDocInputs(tx: Tx, orgId: string, ids: readonly string[
     where: { orgId, id: { in: [...ids] } },
     select: {
       id: true, number: true, type: true, taxScheme: true, currency: true, issueDate: true, dueDate: true, customerId: true,
-      buyerSnapshotJson: true, correctsInvoiceId: true, taxBreakdownJson: true, netTotalEurCents: true, taxTotalEurCents: true,
+      buyerSnapshotJson: true, correctsInvoiceId: true, taxBreakdownJson: true, grossTotalCents: true, netTotalEurCents: true, taxTotalEurCents: true,
       fxRateMicros: true, fxRateSource: true,
       customer: { select: { name: true } },
       finalDeductions: { select: { taxCategory: true, taxRate: true, grossCents: true } },
@@ -103,6 +110,7 @@ export async function loadDocInputs(tx: Tx, orgId: string, ids: readonly string[
     if (!r || r.number === null) continue;
     const orig = r.correctsInvoiceId ? correctedById.get(r.correctsInvoiceId) : undefined;
     const buyer = buyerOf(r.buyerSnapshotJson, r.customer.name);
+    const breakdown = parseBreakdown(r.taxBreakdownJson);
     out.push({
       id: r.id,
       number: r.number,
@@ -117,7 +125,9 @@ export async function loadDocInputs(tx: Tx, orgId: string, ids: readonly string[
       correctsType: orig?.type ?? null,
       correctsNumber: orig?.number ?? null,
       isStorno: r.type === "CREDIT_NOTE" && orig?.reversedByInvoiceId === r.id,
-      breakdown: parseBreakdown(r.taxBreakdownJson),
+      breakdown: breakdown.items,
+      breakdownUnreadable: !breakdown.ok,
+      grossTotalCents: r.grossTotalCents,
       netTotalEurCents: r.netTotalEurCents,
       taxTotalEurCents: r.taxTotalEurCents,
       fxRateMicros: r.fxRateMicros,

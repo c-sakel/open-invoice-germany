@@ -40,6 +40,18 @@ export default async function DatevSettingsPage() {
     consultantNumber: settings.consultantNumber,
     clientNumber: settings.clientNumber,
     chart,
+    settingsLines: [
+      { label: "Sachkontenlänge", value: String(settings.accountLength) },
+      { label: "Bankkonto", value: settings.bankAccount?.toString() ?? "—" },
+      { label: "Kassenkonto", value: settings.cashAccount?.toString() ?? "—" },
+      { label: "Debitoren", value: settings.debtorMode === "COLLECTIVE" ? `Sammeldebitor ${settings.collectiveDebtorAccount ?? "—"}` : `je Kunde ab ${settings.debtorRangeStart ?? "—"}` },
+      { label: "Debitorenstammdaten exportieren", value: settings.exportDebtors ? "ja" : "nein" },
+      { label: "Zahlungen exportieren", value: settings.exportPayments ? "ja" : "nein" },
+      { label: "Generalumkehr bei Gutschriften und Stornos", value: settings.useGeneralReversal ? "ja" : "nein" },
+      { label: "Stapel festschreiben", value: settings.lockBatch ? "ja" : "nein" },
+      { label: "Wirtschaftsjahr beginnt im Monat", value: String(settings.fiscalYearStartMonth) },
+      { label: "Diktatkürzel", value: settings.dictationCode ?? "—" },
+    ],
   };
   const mappingKey = JSON.stringify(rows.map((r) => [r.kind, r.key, r.account, r.buKey]));
 

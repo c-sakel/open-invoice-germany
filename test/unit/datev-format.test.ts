@@ -292,6 +292,15 @@ describe("Debitorenzeile", () => {
     expect(r.line).toContain('"\'=HYPERLINK(""http://x"";""y"")"');
     expect(r.notes.some((n) => /Formelzeichen/.test(n))).toBe(true);
   });
+
+  it("USt-IdNr.: nur geprueftes EU-Format, Drittland bleibt leer mit Hinweis", () => {
+    const row = (vatId: string) => debtorRow({ id: "c", type: "BUSINESS", name: "Muster", customerNumber: null, vatId, addressLine1: "Weg 1", addressLine2: null, postalCode: "12345", city: "Stadt", countryCode: "DE" }, 10001);
+    const eu = row("DE123456789");
+    expect(eu.line).toContain('"DE";"123456789"');
+    const nonEu = row("CHE123456789");
+    expect(nonEu.line).not.toContain("CHE");
+    expect(nonEu.notes.some((n) => /nicht uebernommen/.test(n))).toBe(true);
+  });
 });
 
 describe("Windows-1252 und Datei", () => {

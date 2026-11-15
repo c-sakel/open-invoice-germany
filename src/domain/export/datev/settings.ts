@@ -65,7 +65,10 @@ const DEFAULTS: DatevConfigSettings = {
   dictationCode: null,
 };
 
-/** Kontenbereiche je Sachkontenlaenge: Sachkonten 1..10^n-1, Personenkonten 10^n..7*10^n-1 (ab 7*10^n Kreditoren). */
+/** Kleinstes zulaessiges Sachkonto: 4 Stellen (kuerzere wuerden beim Auffuellen zu einem anderen Konto). */
+export const SACH_MIN = 1000;
+
+/** Kontenbereiche je Sachkontenlaenge: Sachkonten 1000..10^n-1, Personenkonten 10^n..7*10^n-1 (ab 7*10^n Kreditoren). */
 export function accountRules(len: number): { sachMax: number; debtorMin: number; debtorMax: number } {
   const p = 10 ** len;
   return { sachMax: p - 1, debtorMin: p, debtorMax: 7 * p - 1 };
@@ -118,8 +121,8 @@ export async function getDatevSettings(orgId: string, db: Db = dbInternal): Prom
 export function assertSettingsAccounts(s: DatevConfigSettings): void {
   const { sachMax, debtorMin, debtorMax } = accountRules(s.accountLength);
   const sach = (value: number | null, name: string) => {
-    if (value !== null && (value < 1 || value > sachMax)) {
-      throw new DatevError("ACCOUNT_OUT_OF_RANGE", `${name}: Sachkonto muss bei Kontenlaenge ${s.accountLength} zwischen 1 und ${sachMax} liegen.`);
+    if (value !== null && (value < SACH_MIN || value > sachMax)) {
+      throw new DatevError("ACCOUNT_OUT_OF_RANGE", `${name}: Sachkonto muss bei Kontenlaenge ${s.accountLength} zwischen ${SACH_MIN} und ${sachMax} liegen.`);
     }
   };
   const person = (value: number | null, name: string) => {
@@ -154,11 +157,11 @@ async function assertAccountLengthChange(tx: Prisma.TransactionClient, orgId: st
     );
   }
   const mapping = await tx.datevAccountMapping.findMany({ where: { orgId }, select: { kind: true, key: true, account: true } });
-  const badMapping = mapping.filter((m) => m.account < 1 || m.account > sachMax);
+  const badMapping = mapping.filter((m) => m.account < SACH_MIN || m.account > sachMax);
   if (badMapping.length > 0) {
     throw new DatevError(
       "ACCOUNT_OUT_OF_RANGE",
-      `Kontenlaenge ${length}: Zuordnungskonten ausserhalb 1..${sachMax}: ${badMapping.slice(0, 10).map((m) => `${m.kind} ${m.key}`).join(", ")}.`,
+      `Kontenlaenge ${length}: Zuordnungskonten ausserhalb ${SACH_MIN}..${sachMax}: ${badMapping.slice(0, 10).map((m) => `${m.kind} ${m.key}`).join(", ")}.`,
     );
   }
 }
@@ -227,8 +230,8 @@ export async function confirmDatevMapping(orgId: string, rawNote: unknown, actor
     assertSettingsAccounts(s);
     const mapping = await tx.datevAccountMapping.findMany({ where: { orgId }, select: MAPPING_SELECT });
     const { sachMax } = accountRules(s.accountLength);
-    const bad = mapping.find((m) => m.account < 1 || m.account > sachMax);
-    if (bad) throw new DatevError("ACCOUNT_OUT_OF_RANGE", `Zuordnung ${bad.kind} ${bad.key}: Konto ${bad.account} liegt ausserhalb 1..${sachMax}.`);
+    const bad = mapping.find((m) => m.account < SACH_MIN || m.account > sachMax);
+    if (bad) throw new DatevError("ACCOUNT_OUT_OF_RANGE", `Zuordnung ${bad.kind} ${bad.key}: Konto ${bad.account} liegt ausserhalb ${SACH_MIN}..${sachMax}.`);
     if (!mapping.some((m) => m.kind === "REVENUE")) {
       throw new DatevError("SETTINGS_INCOMPLETE", "Pflichtzuordnung fehlt: mindestens ein Erloeskonto muss zugeordnet sein.");
     }

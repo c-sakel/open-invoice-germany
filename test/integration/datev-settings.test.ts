@@ -42,6 +42,7 @@ describe("Einstellungen", () => {
     await expectCode(saveDatevSettings(orgId, { clientNumber: 0 }, "t"), "VALIDATION");
     await expectCode(saveDatevSettings(orgId, { dictationCode: "ab" }, "t"), "VALIDATION");
     await expectCode(saveDatevSettings(orgId, { bankAccount: 12000 }, "t"), "ACCOUNT_OUT_OF_RANGE");
+    await expectCode(saveDatevSettings(orgId, { cashAccount: 85 }, "t"), "ACCOUNT_OUT_OF_RANGE");
     await expectCode(saveDatevSettings(orgId, { debtorRangeStart: 9999 }, "t"), "ACCOUNT_OUT_OF_RANGE");
     await expectCode(saveDatevSettings(orgId, { collectiveDebtorAccount: 70000 }, "t"), "ACCOUNT_OUT_OF_RANGE");
     const ok = await saveDatevSettings(orgId, { consultantNumber: 9999999, clientNumber: 11111, dictationCode: "AB" }, "t");
@@ -86,6 +87,7 @@ describe("Vorlagen und Bestaetigung", () => {
 
   it("Zuordnung: Konto ausserhalb der Laenge und Duplikate werden abgelehnt", async () => {
     await expectCode(saveDatevMapping(orgId, [{ kind: "REVENUE", key: "REGULAR|S|7", account: 12000, buKey: null }], "t"), "ACCOUNT_OUT_OF_RANGE");
+    await expectCode(saveDatevMapping(orgId, [{ kind: "REVENUE", key: "REGULAR|S|7", account: 840, buKey: null }], "t"), "ACCOUNT_OUT_OF_RANGE");
     await expectCode(saveDatevMapping(orgId, [{ kind: "REVENUE", key: "REGULAR|S|7", account: 1, buKey: "3" }], "t"), "VALIDATION");
     await expectCode(
       saveDatevMapping(

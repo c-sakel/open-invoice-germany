@@ -13,7 +13,8 @@ export interface PendingLateDto {
   amountCents: number;
 }
 
-const eur = (cents: number): string => `${(cents / 100).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
+const eur = (cents: number, currency = "EUR"): string =>
+  `${(cents / 100).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency === "EUR" ? "€" : currency}`;
 
 function monthLabel(m: string): string {
   return `${m.slice(5, 7)}/${m.slice(0, 4)}`;
@@ -55,7 +56,7 @@ export function DatevPreview({ preview }: { preview: PreviewDto }) {
           <ul className="mt-1 list-disc pl-5 text-ink-soft">
             {preview.manual.map((m, i) => (
               <li key={`${m.reference}|${i}`}>
-                {m.reference || "Zahlung"} ({monthLabel(m.month)}, {eur(m.amountCents)}): {m.reason}
+                {m.reference || "Zahlung"} ({monthLabel(m.month)}, {eur(m.amountCents, m.currency)}): {m.reason}
               </li>
             ))}
           </ul>

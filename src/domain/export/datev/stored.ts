@@ -23,6 +23,8 @@ export const storedManualSchema = z.object({
   month: z.string(),
   reason: z.string(),
   amountCents: z.number().int(),
+  /** Waehrung des Betrags; aeltere Protokolle ohne Angabe gelten als EUR. */
+  currency: z.string().optional(),
   reference: z.string(),
 });
 

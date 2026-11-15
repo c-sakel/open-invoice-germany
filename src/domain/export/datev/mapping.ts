@@ -4,7 +4,7 @@ import { lockOrganization } from "@/lib/db-lock";
 import { logActivity } from "@/domain/activity/log";
 import { datevMappingInputSchema, type DatevChart, type DatevMappingRow } from "@/schemas/datev";
 import { DatevError } from "./errors";
-import { accountRules, SETTINGS_SELECT, toConfig } from "./settings";
+import { accountRules, SACH_MIN, SETTINGS_SELECT, toConfig } from "./settings";
 import {
   datevTemplateRows,
   TEMPLATE_ACCOUNT_LENGTH,
@@ -43,8 +43,8 @@ export async function saveDatevMapping(orgId: string, rawRows: unknown, actor: s
     const settings = await tx.datevSettings.findUnique({ where: { orgId }, select: { accountLength: true } });
     const { sachMax } = accountRules(settings?.accountLength ?? TEMPLATE_ACCOUNT_LENGTH);
     for (const r of rows) {
-      if (r.account < 1 || r.account > sachMax) {
-        throw new DatevError("ACCOUNT_OUT_OF_RANGE", `${r.kind} ${r.key}: Sachkonto muss zwischen 1 und ${sachMax} liegen.`);
+      if (r.account < SACH_MIN || r.account > sachMax) {
+        throw new DatevError("ACCOUNT_OUT_OF_RANGE", `${r.kind} ${r.key}: Sachkonto muss zwischen ${SACH_MIN} und ${sachMax} liegen.`);
       }
     }
     await tx.datevAccountMapping.deleteMany({ where: { orgId } });

@@ -64,7 +64,7 @@ describe("Vorschau", () => {
   const preview: PreviewDto = {
     mode: "PERIOD", months: ["2096-03"], lineCount: 4, itemCount: 3, manualCount: 1, debtorCount: 1, newDebtors: 1,
     issues: [{ code: "MISSING_MAPPING", message: "Kein Konto zugeordnet fuer REVENUE REGULAR|S|19", key: "REVENUE REGULAR|S|19", documents: ["RE-1"] }],
-    manual: [{ reference: "RE-7", month: "2096-03", reason: "Fremdwaehrungszahlung", amountCents: 12345 }],
+    manual: [{ reference: "RE-7", month: "2096-03", reason: "Fremdwaehrungszahlung", amountCents: 12345, currency: "USD" }],
     repeats: [{ month: "2096-03", exportId: "e1", createdAt: "2096-04-01T00:00:00.000Z", identical: false }],
   };
   it("zeigt Zähler, Issues mit Belegnummern, MANUAL-Liste und Wiederholung", () => {

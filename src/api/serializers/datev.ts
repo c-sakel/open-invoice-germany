@@ -85,7 +85,7 @@ const fileSchema = z.object({
   sha256: z.string(),
   contentSha256: z.string(),
 });
-const manualSchema = z.object({ key: z.string(), month: z.string(), reason: z.string(), amountCents: z.number().int(), reference: z.string() });
+const manualSchema = z.object({ key: z.string(), month: z.string(), reason: z.string(), amountCents: z.number().int(), currency: z.string(), reference: z.string() });
 const repeatSchema = z.object({
   month: z.string(),
   exportId: z.string(),
@@ -109,7 +109,7 @@ export function serializeDatevExport(v: DatevExportView) {
     debtorCount: v.debtorCount,
     sha256: v.sha256,
     files: v.files,
-    manual: v.manual,
+    manual: v.manual.map((m) => ({ ...m, currency: m.currency ?? "EUR" })),
     repeats: v.repeats.map((r) => ({ month: r.month, exportId: r.exportId, createdAt: iso(r.createdAt), contentSha256: r.contentSha256, identical: r.identical })),
     createdBy: v.createdBy,
     createdAt: iso(v.createdAt),
@@ -176,7 +176,7 @@ export function serializeDatevPlan(p: DatevPlan) {
     debtorCount: p.debtorCount,
     manual: p.items
       .filter((i) => i.status === "MANUAL")
-      .map((i) => ({ key: i.key, month: i.month, reason: i.reason ?? "", amountCents: i.amountCents, reference: i.reference })),
+      .map((i) => ({ key: i.key, month: i.month, reason: i.reason ?? "", amountCents: i.amountCents, currency: i.currency ?? "EUR", reference: i.reference })),
   };
 }
 

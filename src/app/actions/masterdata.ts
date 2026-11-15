@@ -158,7 +158,7 @@ export async function saveCustomer(_prev: ActionResult, fd: FormData): Promise<A
       const res = await dbInternal.customer.findFirst({ where: { id, orgId: org.id }, select: { id: true } });
       if (!res) return { ok: false, error: "Kunde nicht gefunden." };
       // Alle Formularfelder sind Schluessel des Formulars; leere Felder loeschen den Wert (PATCH-Semantik der Domain).
-      await updateCustomerWithDatev(org.id, id, datevAccount === undefined ? v : { ...v, datevAccount }, (await getCurrentUserId()) ?? "system");
+      await updateCustomerWithDatev(org.id, id, datevAccount === undefined ? v : { ...v, datevAccount }, datevAccount === undefined ? "system" : ((await getCurrentUserId()) ?? "system"));
     } else {
       await createCustomer(org.id, v);
     }

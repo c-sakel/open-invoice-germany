@@ -438,4 +438,31 @@ describe("bookPayments", () => {
     expect(cell(exported(bookPayments([pay()], ctx())[0]).lines[0], 114)).toBe(0);
     expect(cell(exported(bookPayments([pay()], ctx({}, { lockBatch: true }))[0]).lines[0], 114)).toBe(1);
   });
+
+  it("Barzahlung bucht auf das Kassenkonto der Einstellungen, nie auf die Bank", () => {
+    const line = exported(bookPayments([pay({ method: "CASH", provider: null })], ctx({}, { cashAccount: 1010 }))[0]).lines[0];
+    expect(line.counterAccount).toBe(1010);
+    expect(bookPayments([pay({ method: "CASH", provider: null })], ctx({ mapping: mappingLookup([]) }, { cashAccount: null }))[0]).toMatchObject({
+      status: "MANUAL",
+      reason: "Barzahlung ohne Kassenkonto von Hand buchen",
+    });
+  });
+
+  it("Karte ohne Zuordnung -> MANUAL mit Waehrung, nie auf die Bank", () => {
+    const r = bookPayments([pay({ method: "CARD", provider: null, invoiceCurrency: "EUR" })], ctx())[0];
+    expect(r).toMatchObject({ status: "MANUAL", currency: "EUR" });
+    const withRow = bookPayments([pay({ method: "CARD", provider: null })], ctx({ mapping: mappingLookup([{ kind: "MONEY", key: "METHOD:CARD", account: 1360, buKey: null }]) }))[0];
+    expect(exported(withRow).lines[0].counterAccount).toBe(1360);
+  });
+
+  it("MANUAL-Betrag fuehrt die Waehrung des Betrags", () => {
+    expect(bookPayments([pay({ invoiceCurrency: "USD" })], ctx())[0]).toMatchObject({ status: "MANUAL", currency: "USD" });
+    expect(bookDocument(doc({ type: "CORRECTION", currency: "USD" }), ctx())).toMatchObject({ status: "MANUAL", currency: "USD" });
+  });
+
+  it("Summenabgleich: Aufschluesselung ungleich Belegbetrag oder nicht lesbar -> MANUAL", () => {
+    expect(bookDocument(doc({ grossTotalCents: 119000 }), ctx())).toMatchObject({ status: "EXPORTED" });
+    expect(bookDocument(doc({ grossTotalCents: 119001 }), ctx())).toMatchObject({ status: "MANUAL", currency: "EUR" });
+    expect(bookDocument(doc({ breakdownUnreadable: true }), ctx())).toMatchObject({ status: "MANUAL" });
+  });
 });

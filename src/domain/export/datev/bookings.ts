@@ -34,6 +34,10 @@ export interface DocInput {
   fxRateSource: string | null;
   deductions: { taxCategory: string; taxRate: number; grossCents: number }[];
   archiveSha256: string | null;
+  /** Bruttosumme laut Beleg (Belegwaehrung); fehlt sie, entfaellt der Summenabgleich. */
+  grossTotalCents?: number | null;
+  /** Steueraufschluesselung nicht (vollstaendig) lesbar: nie teilweise buchen. */
+  breakdownUnreadable?: boolean;
 }
 
 export interface PaymentInput {
@@ -101,7 +105,7 @@ export interface DatevIssue {
 
 export type ItemResult =
   | { key: string; status: "EXPORTED"; month: string; lines: BookingLine[]; amountCents: number; warning?: string; coveredKeys?: string[] }
-  | { key: string; status: "MANUAL"; month: string; reason: string; amountCents: number }
+  | { key: string; status: "MANUAL"; month: string; reason: string; amountCents: number; currency: string }
   | { key: string; status: "EMPTY"; month: string };
 
 const MAX_CENTS = 999_999_999_999;
@@ -186,8 +190,9 @@ function buildCells(c: {
   return m;
 }
 
-function manual(doc: DocInput, reason: string, amountCents: number): ItemResult {
-  return { key: docItemKey(doc.id), status: "MANUAL", month: berlinMonthKey(doc.issueDate), reason, amountCents };
+/** `currency`: Waehrung des Betrags (Belegwaehrung oder EUR, je nach Quelle des Betrags). */
+function manual(doc: DocInput, reason: string, amountCents: number, currency: string): ItemResult {
+  return { key: docItemKey(doc.id), status: "MANUAL", month: berlinMonthKey(doc.issueDate), reason, amountCents, currency };
 }
 
 interface Group {
@@ -233,27 +238,35 @@ export function bookDocument(doc: DocInput, ctx: BookingContext): ItemResult | D
   const hasDeductions = doc.deductions.length > 0;
   const grossSum = doc.breakdown.reduce((sum, b) => sum + b.netCents + b.taxCents, 0);
 
+  if (doc.breakdownUnreadable) {
+    return manual(doc, "Steueraufschluesselung nicht lesbar, von Hand buchen", doc.grossTotalCents ?? grossSum, doc.currency);
+  }
   if (doc.type === "CORRECTION") {
-    return manual(doc, "Korrekturrechnung von Hand buchen", grossSum);
+    return manual(doc, "Korrekturrechnung von Hand buchen", grossSum, doc.currency);
   }
   if (doc.type === "CREDIT_NOTE" && doc.correctsType === "FINAL") {
-    return manual(doc, "Storno/Gutschrift einer Schlussrechnung von Hand buchen", grossSum);
+    return manual(doc, "Storno/Gutschrift einer Schlussrechnung von Hand buchen", grossSum, doc.currency);
   }
   if (doc.currency !== "EUR" && hasDeductions) {
-    return manual(doc, "Fremdwaehrungsbeleg mit Abzuegen von Abschlagsrechnungen von Hand buchen", grossSum);
+    return manual(doc, "Fremdwaehrungsbeleg mit Abzuegen von Abschlagsrechnungen von Hand buchen", grossSum, doc.currency);
   }
   const groups = groupsInEur(doc);
   if (typeof groups === "string") {
-    return manual(doc, groups, doc.breakdown.reduce((s, b) => s + b.netCents + b.taxCents, 0));
+    return manual(doc, groups, grossSum, doc.currency);
   }
   const totalEur = groups.reduce((s, g) => s + g.grossEur, 0);
+  // Summenabgleich: die gebuchten Gruppen muessen centgenau dem Belegbetrag entsprechen, sonst nie teilweise buchen.
+  const expectedEur = doc.currency === "EUR" ? (doc.grossTotalCents ?? null) : doc.netTotalEurCents !== null && doc.taxTotalEurCents !== null ? doc.netTotalEurCents + doc.taxTotalEurCents : null;
+  if (expectedEur !== null && expectedEur !== totalEur) {
+    return manual(doc, `Summe der Steuergruppen (${formatAmountDe(totalEur)}) weicht vom Belegbetrag (${formatAmountDe(expectedEur)}) ab, von Hand buchen`, totalEur, "EUR");
+  }
   const active = groups.filter((g) => g.grossEur !== 0);
   if (active.length === 0 && !hasDeductions) return { key, status: "EMPTY", month };
 
   const kind: DatevMappingKind = doc.type === "DOWNPAYMENT" || doc.correctsType === "DOWNPAYMENT" ? "DOWNPAYMENT" : "REVENUE";
   if (doc.taxScheme === "DIFFERENZ") {
     const unmapped = active.some((g) => !ctx.mapping.get(kind, rateKey(doc.taxScheme, g.taxCategory, g.taxRate)));
-    if (unmapped) return manual(doc, "Differenzbesteuerung: kein Konto zugeordnet, von Hand buchen", totalEur);
+    if (unmapped) return manual(doc, "Differenzbesteuerung: kein Konto zugeordnet, von Hand buchen", totalEur, "EUR");
   }
 
   const debtor = ctx.debtorOf(doc.customerId);
@@ -304,8 +317,8 @@ export function bookDocument(doc: DocInput, ctx: BookingContext): ItemResult | D
     else {
       const vat = normalizeVatId(rawVat);
       const problem = vatIdFormatProblem(vat);
-      if (problem) return manual(doc, `USt-IdNr. des Kaeufers nicht uebernehmbar (${problem}) — von Hand buchen`, totalEur);
-      if (vat.length > 15) return manual(doc, "USt-IdNr. des Kaeufers laenger als 15 Zeichen (DATEV-Feld 40) — von Hand buchen", totalEur);
+      if (problem) return manual(doc, `USt-IdNr. des Kaeufers nicht uebernehmbar (${problem}) — von Hand buchen`, totalEur, "EUR");
+      if (vat.length > 15) return manual(doc, "USt-IdNr. des Kaeufers laenger als 15 Zeichen (DATEV-Feld 40) — von Hand buchen", totalEur, "EUR");
       euVatId = vat;
     }
   }
@@ -397,18 +410,20 @@ function sourceLabel(p: PaymentInput): string {
 }
 
 function paymentManual(p: PaymentInput, reason: string): ItemResult {
-  return { key: paymentItemKey(p.id), status: "MANUAL", month: berlinMonthKey(p.paidAt), reason, amountCents: p.amountCents };
+  return { key: paymentItemKey(p.id), status: "MANUAL", month: berlinMonthKey(p.paidAt), reason, amountCents: p.amountCents, currency: p.invoiceCurrency };
 }
 
-/** Gegenkonto der Zahlung (Geldkonto): Bank, Geldtransit je Anbieter oder Methode, sonst Bank. */
-function moneyAccount(p: PaymentInput, ctx: BookingContext): { account: number; buKey: string | null } | DatevIssue {
+/** Gegenkonto der Zahlung (Geldkonto): Bank, Geldtransit je Anbieter, Kassenkonto oder Zuordnung je Zahlungsart. */
+type MoneyResult = { account: number; buKey: string | null } | { manual: string } | DatevIssue;
+
+function moneyAccount(p: PaymentInput, ctx: BookingContext): MoneyResult {
   const bank = ctx.settings.bankAccount;
   const provider = (p.provider ?? "").toUpperCase();
-  if (provider === "BANK") {
-    return bank === null
+  const viaBank = (): MoneyResult =>
+    bank === null
       ? { code: "MISSING_BANK", message: `Kein Bankkonto eingestellt (${p.invoiceNumber})`, documents: [p.invoiceNumber] }
       : { account: bank, buKey: null };
-  }
+  if (provider === "BANK") return viaBank();
   if (provider === "MOLLIE" || provider === "STRIPE") {
     const row = ctx.mapping.get("MONEY", `PROVIDER:${provider}`);
     return row
@@ -416,14 +431,23 @@ function moneyAccount(p: PaymentInput, ctx: BookingContext): { account: number; 
       : { code: "MISSING_TRANSIT", message: `Kein Geldtransitkonto fuer ${provider} (${p.invoiceNumber})`, key: `MONEY PROVIDER:${provider}`, documents: [p.invoiceNumber] };
   }
   const row = /^[A-Z0-9_]{1,32}$/.test(p.method) ? ctx.mapping.get("MONEY", `METHOD:${p.method}`) : undefined;
+  if (p.method === "CASH") {
+    // Das Kassenkonto der Einstellungen gilt vor der Zuordnungszeile; ohne beides nie auf die Bank buchen.
+    if (ctx.settings.cashAccount !== null) return { account: ctx.settings.cashAccount, buKey: null };
+    if (row) return { account: row.account, buKey: row.buKey };
+    return { manual: "Barzahlung ohne Kassenkonto von Hand buchen" };
+  }
+  if (p.method === "TRANSFER" || p.method === "SEPA") return row ? { account: row.account, buKey: row.buKey } : viaBank();
   if (row) return { account: row.account, buKey: row.buKey };
-  return bank === null
-    ? { code: "MISSING_BANK", message: `Kein Bankkonto eingestellt (${p.invoiceNumber})`, documents: [p.invoiceNumber] }
-    : { account: bank, buKey: null };
+  return { manual: `Zahlungsart ${p.method} ohne Kontenzuordnung von Hand buchen` };
 }
 
-function isIssue(v: { account: number } | DatevIssue): v is DatevIssue {
+function isIssue(v: MoneyResult): v is DatevIssue {
   return "code" in v;
+}
+
+function isManual(v: MoneyResult): v is { manual: string } {
+  return "manual" in v;
 }
 
 /**
@@ -498,6 +522,10 @@ export function bookPayments(payments: PaymentInput[], ctx: BookingContext): (It
     }
     const debtor = ctx.debtorOf(p.customerId);
     const money = moneyAccount(src, ctx);
+    if (isManual(money)) {
+      out.push(paymentManual(p, money.manual));
+      continue;
+    }
     const issues: DatevIssue[] = [];
     if (debtor === null) issues.push({ code: "MISSING_DEBTOR", message: `Keine Debitorennummer fuer den Kunden von ${p.invoiceNumber}`, documents: [p.invoiceNumber] });
     if (isIssue(money)) issues.push(money);

@@ -43,10 +43,17 @@ export async function listUsedMappingKeys(orgId: string): Promise<UsedMappingKey
 
   const invoices = await dbInternal.invoice.findMany({
     where: { orgId, status: { not: "DRAFT" }, number: { not: null } },
-    select: { type: true, taxScheme: true, taxBreakdownJson: true, finalDeductions: { select: { taxCategory: true, taxRate: true } } },
+    select: { type: true, taxScheme: true, taxBreakdownJson: true, correctsInvoiceId: true, finalDeductions: { select: { taxCategory: true, taxRate: true } } },
   });
+  // Gutschriften zu Abschlagsrechnungen werden wie diese auf das Anzahlungskonto gebucht.
+  const correctedIds = [...new Set(invoices.map((i) => i.correctsInvoiceId).filter((x): x is string => x !== null))];
+  const corrected = correctedIds.length
+    ? await dbInternal.invoice.findMany({ where: { orgId, id: { in: correctedIds } }, select: { id: true, type: true } })
+    : [];
+  const correctedType = new Map(corrected.map((c) => [c.id, c.type]));
   for (const inv of invoices) {
-    const kind: DatevMappingKind = inv.type === "DOWNPAYMENT" ? "DOWNPAYMENT" : "REVENUE";
+    const origType = inv.correctsInvoiceId ? correctedType.get(inv.correctsInvoiceId) : undefined;
+    const kind: DatevMappingKind = inv.type === "DOWNPAYMENT" || origType === "DOWNPAYMENT" ? "DOWNPAYMENT" : "REVENUE";
     for (const b of breakdownEntries(inv.taxBreakdownJson)) bump(kind, rateKey(inv.taxScheme, b.taxCategory, b.taxRate));
     for (const d of inv.finalDeductions) bump("DOWNPAYMENT", rateKey(inv.taxScheme, d.taxCategory, d.taxRate));
   }

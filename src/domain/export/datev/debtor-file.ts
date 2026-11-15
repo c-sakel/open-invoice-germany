@@ -3,6 +3,7 @@
  * Nur Konto, Name, Adressatentyp, Kurzbezeichnung, USt-IdNr., Anschrift — keine E-Mail, kein Telefon, keine
  * Bankverbindung. Nicht darstellbare Werte bleiben leer bzw. werden gekuerzt und als Hinweis gemeldet.
  */
+import { normalizeVatId, vatIdFormatProblem } from "@/lib/vat-id";
 import { DEBTOR_FIELDS } from "./fields";
 import { dataLine, startsWithFormula, text, unmappableChars, type CellValue } from "./format";
 
@@ -48,11 +49,16 @@ export function debtorRow(c: DebtorCustomer, account: number): DebtorRow {
     cells.set(7, "2");
   }
   if (c.customerNumber) cells.set(8, fit(c.customerNumber, 15, "Kurzbezeichnung", notes));
-  const vat = (c.vatId ?? "").replace(/\s+/g, "").toUpperCase();
+  const vat = normalizeVatId(c.vatId ?? "");
   const m = /^([A-Z]{2})(.+)$/.exec(vat);
   if (m) {
-    cells.set(9, m[1] === "GR" ? "EL" : m[1]);
-    cells.set(10, fit(m[2], 13, "USt-IdNr.", notes));
+    // Wie im Buchungsstapel: nur geprueftes EU-Format; Drittland-Nummern bleiben leer.
+    const problem = vatIdFormatProblem(vat);
+    if (problem) notes.push(`USt-IdNr. nicht uebernommen (${problem})`);
+    else {
+      cells.set(9, m[1]);
+      cells.set(10, fit(m[2], 13, "USt-IdNr.", notes));
+    }
   } else if (vat !== "") {
     notes.push("USt-IdNr. ohne Laenderkuerzel nicht uebernommen");
   }

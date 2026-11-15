@@ -107,7 +107,7 @@ export interface PreviewDto {
   debtorCount: number;
   newDebtors: number;
   issues: { code: string; message: string; key?: string; documents?: string[] }[];
-  manual: { reference: string; month: string; reason: string; amountCents: number }[];
+  manual: { reference: string; month: string; reason: string; amountCents: number; currency: string }[];
   repeats: { month: string; exportId: string; createdAt: string; identical: boolean | null }[];
 }
 
@@ -123,7 +123,7 @@ export function toPreviewDto(plan: DatevPlan): PreviewDto {
     issues: plan.issues.map((i) => ({ code: i.code, message: i.message, ...(i.key ? { key: i.key } : {}), ...(i.documents ? { documents: i.documents } : {}) })),
     manual: plan.items
       .filter((i) => i.status === "MANUAL")
-      .map((i) => ({ reference: i.reference, month: i.month, reason: i.reason ?? "", amountCents: i.amountCents })),
+      .map((i) => ({ reference: i.reference, month: i.month, reason: i.reason ?? "", amountCents: i.amountCents, currency: i.currency ?? "EUR" })),
     repeats: plan.repeats.map((r) => ({ month: r.month, exportId: r.exportId, createdAt: r.createdAt.toISOString(), identical: r.identical })),
   };
 }
