@@ -81,11 +81,18 @@ describe("Ablauf-Spalten", () => {
     expect(row).toEqual({ supplierContactId: "k1", internalNote: null, dueAt: null, checkedBy: "u" });
   });
 
+  let unchanged: { number: string | null; dueDate: Date | null; grossCents: number | null; originalSha256: string; supplierName: string | null; receivedAt: Date; orgId: string };
+  beforeAll(async () => {
+    unchanged = await dbInternal.incomingInvoice.findUniqueOrThrow({ where: { id: invId }, select: { number: true, dueDate: true, grossCents: true, originalSha256: true, supplierName: true, receivedAt: true, orgId: true } });
+  });
+
   for (const key of ["number", "dueDate", "grossCents", "originalSha256", "supplierName", "receivedAt", "orgId"] as const) {
     it(`${key} bleibt gesperrt`, async () => {
       const data = { [key]: key === "receivedAt" || key === "dueDate" ? new Date() : key === "grossCents" ? 1 : "x" } as never;
       await expect(prisma.incomingInvoice.update({ where: { id: invId }, data })).rejects.toThrow(IncomingInvoiceImmutableError);
       await expect(prisma.incomingInvoice.updateMany({ where: { id: invId }, data })).rejects.toThrow(IncomingInvoiceImmutableError);
+      const after = await dbInternal.incomingInvoice.findUniqueOrThrow({ where: { id: invId }, select: { number: true, dueDate: true, grossCents: true, originalSha256: true, supplierName: true, receivedAt: true, orgId: true } });
+      expect(after).toEqual(unchanged);
     });
   }
 
@@ -118,6 +125,36 @@ describe("Benachrichtigungstyp und Migration", () => {
     expect(NOTIFICATION_TYPES.INCOMING_DUE).toBe("Eingangsrechnung faellig");
     expect(ALL_NOTIFICATION_TYPES).toContain("INCOMING_DUE");
     expect(isMandatoryNotificationType("INCOMING_DUE")).toBe(false);
+  });
+
+  it("SQLite-Migration: Bestand bekommt dueAt = dueDate und INCOMING_DUE (idempotent)", async () => {
+    const sql = fs.readFileSync(path.resolve(__dirname, "../../prisma/migrations/20261130090000_eingang_ablauf/migration.sql"), "utf8");
+    const dueAtUpdate = sql.slice(sql.indexOf('UPDATE "IncomingInvoice"'), sql.indexOf("-- Bestands-Organisationen")).trim().replace(/;$/, "");
+    const typeUpdate = sql.slice(sql.indexOf('UPDATE "NotificationSettings"')).trim().replace(/;$/, "");
+    const due = new Date("2240-05-05T00:00:00.000Z");
+    const withDue = await dbInternal.incomingInvoice.create({ data: { ...base("e".repeat(64)), dueDate: due }, select: { id: true } });
+    const noDue = await dbInternal.incomingInvoice.create({ data: base("f".repeat(64)), select: { id: true } });
+    const mk = async (n: string) => (await dbInternal.organization.create({ data: { legalName: `Mig Eingang ${n}`, addressLine1: "x", postalCode: "1", city: "y" }, select: { id: true } })).id;
+    const [a, b, c] = [await mk("a"), await mk("b"), await mk("c")];
+    await dbInternal.notificationSettings.createMany({
+      data: [
+        { orgId: a, enabledTypesJson: '["INVOICE_OVERDUE"]' },
+        { orgId: b, enabledTypesJson: "[]" },
+        { orgId: c, enabledTypesJson: '["INCOMING_DUE"]' },
+      ],
+    });
+    for (let i = 0; i < 2; i++) {
+      await dbInternal.$executeRawUnsafe(dueAtUpdate);
+      await dbInternal.$executeRawUnsafe(typeUpdate);
+    }
+    const rows = await dbInternal.incomingInvoice.findMany({ where: { id: { in: [withDue.id, noDue.id] } }, select: { id: true, dueAt: true } });
+    expect(rows.find((r) => r.id === withDue.id)?.dueAt?.toISOString()).toBe(due.toISOString());
+    expect(rows.find((r) => r.id === noDue.id)?.dueAt).toBeNull();
+    const sets = await dbInternal.notificationSettings.findMany({ where: { orgId: { in: [a, b, c] } }, select: { orgId: true, enabledTypesJson: true } });
+    const by = Object.fromEntries(sets.map((r) => [r.orgId, r.enabledTypesJson]));
+    expect(by[a]).toBe('["INVOICE_OVERDUE","INCOMING_DUE"]');
+    expect(by[b]).toBe('["INCOMING_DUE"]');
+    expect(by[c]).toBe('["INCOMING_DUE"]');
   });
 
   it("SQLite-Migration ist additiv", () => {

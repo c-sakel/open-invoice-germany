@@ -58,7 +58,7 @@ describe("planTransition", () => {
   it("Zahldatum: nicht nach heute, gueltiger Kalendertag, Notiz hoechstens 500 Zeichen", () => {
     expect(planTransition("APPROVED", { action: "MARK_PAID", paidOn: "2034-06-11" }, ctx)).toEqual({ ok: false, code: "PAID_DATE_INVALID" });
     expect(planTransition("APPROVED", { action: "MARK_PAID", paidOn: "2034-02-31" }, ctx)).toEqual({ ok: false, code: "PAID_DATE_INVALID" });
-    expect(planTransition("APPROVED", { action: "MARK_PAID", paidNote: "x".repeat(501) }, ctx)).toEqual({ ok: false, code: "PAID_DATE_INVALID" });
+    expect(planTransition("APPROVED", { action: "MARK_PAID", paidNote: "x".repeat(501) }, ctx)).toEqual({ ok: false, code: "NOTE_TOO_LONG" });
     expect(planTransition("APPROVED", { action: "MARK_PAID", paidOn: "2034-06-10", paidNote: "x".repeat(500) }, ctx).ok).toBe(true);
   });
 });

@@ -31,7 +31,7 @@ export interface WorkflowPatch {
 
 export type TransitionResult =
   | { ok: true; from: IncomingStatus; to: IncomingStatus; patch: WorkflowPatch }
-  | { ok: false; code: "INVALID_TRANSITION" | "REASON_REQUIRED" | "PAID_DATE_INVALID" };
+  | { ok: false; code: "INVALID_TRANSITION" | "REASON_REQUIRED" | "PAID_DATE_INVALID" | "NOTE_TOO_LONG" };
 
 const FORWARD: Partial<Record<IncomingStatus, Partial<Record<IncomingAction, IncomingStatus>>>> = {
   NEW: { CHECK: "CHECKED", REJECT: "REJECTED" },
@@ -82,7 +82,7 @@ export function planTransition(
       const paid = dayToDate(day);
       if (!paid || day > ctx.todayBerlin) return { ok: false, code: "PAID_DATE_INVALID" };
       const note = (input.paidNote ?? "").trim();
-      if (note.length > MAX_PAID_NOTE_LENGTH) return { ok: false, code: "PAID_DATE_INVALID" };
+      if (note.length > MAX_PAID_NOTE_LENGTH) return { ok: false, code: "NOTE_TOO_LONG" };
       return done({ status: to, paidMarkedAt: paid, paidNote: note === "" ? null : note });
     }
     case "REJECT": {
