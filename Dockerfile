@@ -114,7 +114,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     rm -f /etc/apt/apt.conf.d/docker-clean \
  && apt-get update \
  && apt-get install -y --no-install-recommends binutils openjdk-21-jdk-headless
-RUN jlink --add-modules java.base,java.compiler,java.desktop,java.logging,jdk.httpserver,jdk.crypto.ec \
+# Module fuer den Pruefer: java.base (Kern), java.xml (Schema/XSLT/XPath, explizit statt nur ueber java.desktop),
+# java.desktop (Bildlaufzeit, die der Validator mitzieht), java.compiler/java.logging (Abhaengigkeiten der Bibliotheken),
+# jdk.httpserver (Dienstmodus des Validators), jdk.crypto.ec (TLS-/Signaturalgorithmen).
+RUN jlink --add-modules java.base,java.xml,java.compiler,java.desktop,java.logging,jdk.httpserver,jdk.crypto.ec \
           --strip-debug --no-header-files --no-man-pages --compress=zip-9 --output /opt/jre \
  && /opt/jre/bin/java -version
 

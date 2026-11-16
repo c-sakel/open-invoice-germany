@@ -92,9 +92,29 @@ describe("Pruefmaschine (Kindprozess)", () => {
   it("Prozessfehler ohne Bericht und unlesbarer Bericht -> ENGINE_ERROR", async () => {
     expect(await engineWith("exit 2").run("<Invoice/>")).toEqual({ notChecked: "ENGINE_ERROR" });
     expect(await engineWith(`echo "<kaputt" > "$out/invoice-report.xml"`).run("<Invoice/>")).toEqual({ notChecked: "ENGINE_ERROR" });
-    expect(await selectEngine({ ...process.env, EINVOICE_VALIDATOR_DIR: dir, EINVOICE_JAVA: path.join(dir, "gibt-es-nicht") }).run("<Invoice/>")).toEqual({
-      notChecked: "ENGINE_ERROR",
-    });
+  });
+
+  it("fehlende Java-Laufzeit (absoluter Pfad) -> ENGINE_UNAVAILABLE statt Dauerfehler", async () => {
+    const e = selectEngine({ ...process.env, EINVOICE_VALIDATOR_DIR: dir, EINVOICE_JAVA: path.join(dir, "gibt-es-nicht") });
+    expect(await e.run("<Invoice/>")).toEqual({ notChecked: "ENGINE_UNAVAILABLE" });
+  });
+
+  it("zu viel Ausgabe (maxBuffer) ist ENGINE_ERROR und kein TIMEOUT", async () => {
+    const e = engineWith("yes x | head -c 3000000\nsleep 5");
+    const started = Date.now();
+    expect(await e.run("<Invoice/>", { timeoutMs: 20_000 })).toEqual({ notChecked: "ENGINE_ERROR" });
+    expect(Date.now() - started).toBeLessThan(10_000);
+  });
+
+  it("Bericht ueber 20 MB wird nicht eingelesen -> ENGINE_ERROR", async () => {
+    const e = engineWith('head -c 21000000 /dev/zero > "$out/invoice-report.xml"\nexit 1');
+    expect(await e.run("<Invoice/>")).toEqual({ notChecked: "ENGINE_ERROR" });
+  });
+
+  it("Bericht mit Ablehnung ohne gezaehlten Fehler ist nie VALID", async () => {
+    const report = `${REPORT_HEAD}<rep:scenarioMatched><rep:validationStepResult id="val-sch.1" valid="false"/></rep:scenarioMatched>${REJECT}`;
+    const e = engineWith(`cat > "$out/invoice-report.xml" <<'EOF2'\n${report}\nEOF2\nexit 1`);
+    expect(await e.run("<Invoice/>")).toEqual({ notChecked: "ENGINE_ERROR" });
   });
 
   it("raeumt das Arbeitsverzeichnis auf", async () => {

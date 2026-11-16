@@ -3,6 +3,7 @@ import { parseValidatorReport, ReportParseError } from "@/domain/incoming/valida
 
 const HEAD =
   '<?xml version="1.0" encoding="UTF-8"?><rep:report xmlns:rep="http://www.xoev.de/de/validator/varl/1" xmlns:s="http://www.xoev.de/de/validator/framework/1/scenarios" varlVersion="1.0.0" valid="false"><rep:engine><rep:name>Validator</rep:name></rep:engine>';
+const ACCEPT_TAIL = '<rep:assessment><rep:accept><rep:explanation><html xmlns="http://www.w3.org/1999/xhtml"><body>Bericht</body></html></rep:explanation></rep:accept></rep:assessment></rep:report>';
 const TAIL = '<rep:assessment><rep:reject><rep:explanation><html xmlns="http://www.w3.org/1999/xhtml"><body>Bericht</body></html></rep:explanation></rep:reject></rep:assessment></rep:report>';
 
 function matched(steps: string): string {
@@ -54,9 +55,42 @@ describe("Pruefbericht des Validators", () => {
     expect(f.location.length).toBeLessThanOrEqual(200);
   });
 
-  it("Stufen ausser Fehler und Warnung werden nicht gezaehlt", () => {
-    const r = parseValidatorReport(matched(`<rep:validationStepResult id="val-sch.1" valid="true">${msg("i", "information", "X", "i")}</rep:validationStepResult>`));
-    expect(r).toMatchObject({ formatErrors: 0, ruleErrors: 0, warnings: 0, findings: [] });
+  it("Stufen ausser Fehler und Warnung werden nicht gezaehlt (angenommen)", () => {
+    const xml = matched(`<rep:validationStepResult id="val-sch.1" valid="true">${msg("i", "information", "X", "i")}</rep:validationStepResult>`)
+      .replace(TAIL, ACCEPT_TAIL)
+      .replace('valid="false"', 'valid="true"');
+    expect(parseValidatorReport(xml)).toMatchObject({ formatErrors: 0, ruleErrors: 0, warnings: 0, findings: [] });
+  });
+
+  it("angenommen ohne Befunde ist gueltig, abgelehnt mit Fehler ist ungueltig", () => {
+    const ok = matched("").replace(TAIL, ACCEPT_TAIL).replace('valid="false"', 'valid="true"');
+    expect(parseValidatorReport(ok)).toMatchObject({ scenarioMatched: true, formatErrors: 0, ruleErrors: 0 });
+    const bad = matched(`<rep:validationStepResult id="val-sch.1" valid="false">${msg("a", "error", "BR-16", "x")}</rep:validationStepResult>`);
+    expect(parseValidatorReport(bad)).toMatchObject({ ruleErrors: 1 });
+  });
+
+  it("abgelehnt oder ungueltiger Schritt ohne gezaehlten Fehler ist nicht auswertbar (nie gueltig)", () => {
+    expect(() => parseValidatorReport(matched(""))).toThrow(ReportParseError);
+    const stepOnly = matched('<rep:validationStepResult id="val-sch.1" valid="false"><rep:message id="m" level="information">x</rep:message></rep:validationStepResult>')
+      .replace(TAIL, ACCEPT_TAIL)
+      .replace('valid="false"', 'valid="true"');
+    expect(() => parseValidatorReport(stepOnly)).toThrow(ReportParseError);
+    const rootOnly = matched("").replace(TAIL, ACCEPT_TAIL);
+    expect(() => parseValidatorReport(rootOnly)).toThrow(ReportParseError);
+  });
+
+  it("fehlende Bewertung ist nicht auswertbar", () => {
+    const xml = matched("").replace(TAIL, "</rep:report>");
+    expect(() => parseValidatorReport(xml)).toThrow(ReportParseError);
+  });
+
+  it("anderer Namensraumpraefix: der eingebettete Bericht wird trotzdem abgeschnitten und die Bewertung gelesen", () => {
+    const xml = matched("")
+      .replace(/rep:/g, "v:")
+      .replace("xmlns:rep=", "xmlns:v=")
+      .replace(/<v:assessment>[\s\S]*$/, '<v:assessment><v:accept>' + "<x>".repeat(5) + '</v:accept></v:assessment></v:report>')
+      .replace('valid="false"', 'valid="true"');
+    expect(parseValidatorReport(xml)).toMatchObject({ scenarioMatched: true, ruleErrors: 0 });
   });
 
   it.each([

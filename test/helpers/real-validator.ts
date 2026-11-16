@@ -1,7 +1,8 @@
 /**
  * Findet den echten Validator fuer Integrationstests: Ordner aus EINVOICE_VALIDATOR_DIR oder dem lokalen Cache
  * (scripts/fetch-einvoice-validator.sh validation/.cache/einvoice-validator) und eine Java-Laufzeit ab Version 17
- * (EINVOICE_JAVA oder `java` im Pfad). Fehlt eines davon, liefert der Helfer null und die Tests ueberspringen sich.
+ * (EINVOICE_JAVA oder `java` im Pfad). Fehlt eines davon, liefert der Helfer null und die Tests ueberspringen sich;
+ * in CI (`CI` gesetzt) ist das ein Fehler, damit ein fehlgeschlagener Abruf nicht still zu null Rundlauftests fuehrt.
  */
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -20,6 +21,14 @@ function parseMajor(text: string): number | null {
 }
 
 export function realValidatorEngine(): ValidationEngine | null {
+  const engine = findRealValidatorEngine();
+  if (engine === null && process.env.CI) {
+    throw new Error("Validator oder Java ab 17 fehlt in CI (scripts/fetch-einvoice-validator.sh und setup-java pruefen)");
+  }
+  return engine;
+}
+
+function findRealValidatorEngine(): ValidationEngine | null {
   const dir = process.env.EINVOICE_VALIDATOR_DIR || path.resolve(process.cwd(), "validation/.cache/einvoice-validator");
   if (!existsSync(path.join(dir, "validator.jar"))) return null;
   const java = process.env.EINVOICE_JAVA || "java";

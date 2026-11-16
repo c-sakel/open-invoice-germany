@@ -7,11 +7,11 @@
  */
 import { execFile } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { VALIDATE_TIMEOUT_MS } from "./limits";
-import { parseValidatorReport, ReportParseError, type Finding } from "./validator-report";
+import { MAX_REPORT_BYTES, parseValidatorReport, ReportParseError, type Finding } from "./validator-report";
 
 export type NotCheckedReason =
   | "TIMEOUT"
@@ -20,7 +20,8 @@ export type NotCheckedReason =
   | "ENGINE_UNAVAILABLE"
   | "ENGINE_ERROR"
   | "PROFILE_NOT_COVERED"
-  | "TOO_MANY_LINES";
+  | "TOO_MANY_LINES"
+  | "ARCHIVE_TAMPERED";
 
 export type EngineOutcome =
   | { findings: Finding[]; formatErrors: number; ruleErrors: number; warnings: number }
@@ -94,7 +95,7 @@ function kositEngine(dir: string, java: string): ValidationEngine {
         const input = path.join(work, "invoice.xml");
         await writeFile(input, xml, { encoding: "utf8", mode: 0o600 });
         const args = [...JAVA_ARGS, `-Djava.io.tmpdir=${work}`, "-jar", jar, "-s", scenarios, "-r", configDir, "-o", work, input];
-        const done = await new Promise<{ err: (Error & { killed?: boolean; signal?: string | null }) | null; output: string }>((resolve) => {
+        const done = await new Promise<{ err: (Error & { killed?: boolean; signal?: string | null; code?: string | number | null }) | null; output: string }>((resolve) => {
           execFile(
             java,
             args,
@@ -102,14 +103,19 @@ function kositEngine(dir: string, java: string): ValidationEngine {
             (err, stdout, stderr) => resolve({ err, output: `${stdout}\n${stderr}`.slice(0, 20_000) }),
           );
         });
+        // Zu viel Ausgabe beendet den Prozess ebenfalls ("killed"), ist aber kein Zeitablauf.
+        if (done.err?.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") return { notChecked: "ENGINE_ERROR" };
+        const reportPath = path.join(work, "invoice-report.xml");
         let reportText: string | null = null;
         try {
-          reportText = await readFile(path.join(work, "invoice-report.xml"), "utf8");
+          // Groesse vor dem Einlesen pruefen: der eingebettete HTML-Bericht ist gross, der Heap der Anwendung nicht begrenzt.
+          if ((await stat(reportPath)).size > MAX_REPORT_BYTES) return { notChecked: "ENGINE_ERROR" };
+          reportText = await readFile(reportPath, "utf8");
         } catch {
           // Kein Bericht: Zeit/Speicher/Fehler weiter unten.
         }
         // Rueckgabecode 1 heisst "abgelehnt" und ist kein Fehler; ein Bericht ist massgeblich, ausser der Prozess wurde beendet.
-        if (done.err?.killed === true) return { notChecked: "TIMEOUT" };
+        if (done.err?.killed === true && done.err.signal === "SIGKILL") return { notChecked: "TIMEOUT" };
         if (reportText === null) return { notChecked: classifyFailure(done.output) };
         try {
           const report = parseValidatorReport(reportText);
@@ -137,5 +143,8 @@ export function selectEngine(env: Env = process.env): ValidationEngine {
   if (env.INCOMING_VALIDATION === "off") return OFF_ENGINE;
   const dir = validatorDir(env);
   if (!existsSync(path.join(dir, "validator.jar")) || !existsSync(path.join(dir, "config", "scenarios.xml"))) return UNAVAILABLE_ENGINE;
-  return kositEngine(dir, javaBinary(env));
+  const java = javaBinary(env);
+  // Bei absolutem Pfad: fehlende Java-Laufzeit ist "nicht verfuegbar", kein dauerhafter Fehler.
+  if (path.isAbsolute(java) && !existsSync(java)) return UNAVAILABLE_ENGINE;
+  return kositEngine(dir, java);
 }

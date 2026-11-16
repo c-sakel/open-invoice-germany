@@ -176,6 +176,7 @@ const REASON_TEXT: Record<string, string> = {
   ENGINE_ERROR: "Die Prüfung ist technisch fehlgeschlagen.",
   PROFILE_NOT_COVERED: "Für dieses Profil gibt es keine Prüfregeln; die Datei wurde nicht geprüft.",
   TOO_MANY_LINES: "Mehr als 5.000 Positionen; die Datei wurde nicht geprüft.",
+  ARCHIVE_TAMPERED: "Die archivierte Datei stimmt nicht mit ihrer Prüfsumme überein; sie wurde nicht geprüft.",
 };
 
 export function incomingReasonText(reason: string | null): string | null {

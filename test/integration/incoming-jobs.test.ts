@@ -87,7 +87,7 @@ describe("Nachlauf der Pruefungen", () => {
     expect(await statusOf(fresh)).toBe("VALID");
   });
 
-  it("ein dauerhaft fehlschlagender Beleg blockiert die uebrigen nicht (NOT_CHECKED/ENGINE_ERROR)", async () => {
+  it("eine manipulierte Datei blockiert die uebrigen nicht und wird sofort mit eigenem Grund festgehalten", async () => {
     const bad = await recvAt("kaputt", minutes(100));
     const good = await recvAt("gut", minutes(101));
     const row = await dbInternal.incomingInvoice.findUniqueOrThrow({ where: { id: bad }, select: { originalPath: true } });
@@ -96,8 +96,34 @@ describe("Nachlauf der Pruefungen", () => {
     expect(run).toEqual({ validated: 1, failed: 1 });
     expect(await statusOf(good)).toBe("VALID");
     expect(await statusOf(bad)).toBe("NOT_CHECKED");
-    expect((await dbInternal.incomingInvoiceValidation.findFirstOrThrow({ where: { incomingInvoiceId: bad } })).reason).toBe("ENGINE_ERROR");
+    expect((await dbInternal.incomingInvoiceValidation.findFirstOrThrow({ where: { incomingInvoiceId: bad } })).reason).toBe("ARCHIVE_TAMPERED");
     expect(await runIncomingValidationBacklog(minutes(111), { max: 5, engine })).toEqual({ validated: 0, failed: 0 });
+  });
+
+  it("vorruebergehende Fehler: erst der dritte Fehlschlag markiert, ein hakender Beleg kommt nach den uebrigen", async () => {
+    const flaky = await recvAt("haengt", minutes(120));
+    const other = await recvAt("andere", minutes(121));
+    let broken = true;
+    const eng: ValidationEngine = {
+      ...engine,
+      run: (...a) => (broken ? Promise.reject(new Error("DB gesperrt")) : engine.run(...a)),
+    };
+    // Lauf 1: nur der erste Beleg (max 1) scheitert, bleibt PENDING.
+    expect(await runIncomingValidationBacklog(minutes(130), { max: 1, engine: eng })).toEqual({ validated: 0, failed: 1 });
+    expect(await statusOf(flaky)).toBe("PENDING");
+    // Lauf 2: der andere Beleg kommt vor dem hakenden dran (der scheitert hier ebenfalls, bleibt aber PENDING).
+    broken = false;
+    const second = await runIncomingValidationBacklog(minutes(131), { max: 1, engine: eng });
+    expect(second).toEqual({ validated: 1, failed: 0 });
+    expect(await statusOf(other)).toBe("VALID");
+    expect(await statusOf(flaky)).toBe("PENDING");
+    // Weitere Fehlschlaege des hakenden Belegs: Versuch 2, dann 3 -> dauerhaft.
+    broken = true;
+    expect(await runIncomingValidationBacklog(minutes(132), { max: 1, engine: eng })).toEqual({ validated: 0, failed: 1 });
+    expect(await statusOf(flaky)).toBe("PENDING");
+    expect(await runIncomingValidationBacklog(minutes(133), { max: 1, engine: eng })).toEqual({ validated: 0, failed: 1 });
+    expect(await statusOf(flaky)).toBe("NOT_CHECKED");
+    expect((await dbInternal.incomingInvoiceValidation.findFirstOrThrow({ where: { incomingInvoiceId: flaky } })).reason).toBe("ENGINE_ERROR");
   });
 
   it("der Archiv-Job startet den Nachlauf mit hoechstens 5 Pruefungen", async () => {

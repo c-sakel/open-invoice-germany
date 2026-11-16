@@ -63,7 +63,7 @@ describe("Dockerfile", () => {
     expect(dockerfile).toMatch(/^FROM base AS einvoice-validator$/m);
     expect(dockerfile).toMatch(/^FROM base AS jre$/m);
     expect(dockerfile).toMatch(/fetch-einvoice-validator\.sh \/opt\/validator/);
-    expect(dockerfile).toMatch(/jlink --add-modules java\.base,/);
+    expect(dockerfile).toMatch(/jlink --add-modules java\.base,java\.xml,/);
     expect(runnerStage).toMatch(/COPY --from=einvoice-validator \/opt\/validator \/opt\/validator/);
     expect(runnerStage).toMatch(/COPY --from=jre \/opt\/jre \/opt\/jre/);
     expect(runnerStage).toMatch(/EINVOICE_VALIDATOR_DIR=\/opt\/validator/);

@@ -53,10 +53,24 @@ function elementsNamed(el: XmlElement, local: string): XmlElement[] {
   return el.children.filter((c) => c.namespaceURI === REPORT_NS && c.localName === local);
 }
 
+type Assessment = "accept" | "reject";
+
+/**
+ * Bewertung des Validators vor dem Abschneiden lesen. Der Namensraumpraefix ist nicht fest, deshalb
+ * wird er aus dem Wurzelelement bzw. dem Element selbst gelesen.
+ */
+function splitAssessment(xml: string): { head: string; assessment: Assessment } {
+  const rootPrefix = /<([A-Za-z0-9_-]+):report[\s>]/.exec(xml)?.[1];
+  const cut = /<[A-Za-z0-9_-]+:assessment[\s>]/.exec(xml);
+  if (!rootPrefix || !cut) throw new ReportParseError();
+  const verdict = /^<[A-Za-z0-9_-]+:assessment[^>]*>\s*<[A-Za-z0-9_-]+:(accept|reject)[\s/>]/.exec(xml.slice(cut.index, cut.index + 2_000));
+  if (!verdict) throw new ReportParseError();
+  return { head: `${xml.slice(0, cut.index)}</${rootPrefix}:report>`, assessment: verdict[1] as Assessment };
+}
+
 export function parseValidatorReport(xml: string): ValidatorReport {
   if (xml.length > MAX_REPORT_BYTES) throw new ReportParseError();
-  const cut = xml.indexOf("<rep:assessment");
-  const head = cut === -1 ? xml : `${xml.slice(0, cut)}</rep:report>`;
+  const { head, assessment } = splitAssessment(xml);
   let root: XmlElement;
   try {
     assertSafeXml(head);
@@ -70,6 +84,9 @@ export function parseValidatorReport(xml: string): ValidatorReport {
     if (elementsNamed(root, "noScenarioMatched").length === 0) throw new ReportParseError();
     return { scenarioMatched: false, findings: [], formatErrors: 0, ruleErrors: 0, warnings: 0 };
   }
+  // Bewertung "abgelehnt" oder ungueltiger Schritt ohne gezaehlten Fehler (z. B. Verarbeitungsfehler im Schritt):
+  // nie als gueltig melden, sondern als nicht auswertbar behandeln.
+  const stepsInvalid = elementsNamed(matched, "validationStepResult").some((st) => st.getAttribute("valid") === "false");
   const all: Finding[] = [];
   let formatErrors = 0;
   let ruleErrors = 0;
@@ -97,6 +114,7 @@ export function parseValidatorReport(xml: string): ValidatorReport {
       }
     }
   }
+  if (formatErrors + ruleErrors === 0 && (assessment === "reject" || root.getAttribute("valid") === "false" || stepsInvalid)) throw new ReportParseError();
   // Fehler vor Warnungen, damit die Kappung auf MAX_FINDINGS nie einen Fehler zugunsten einer Warnung verdraengt.
   const rank: Record<FindingLevel, number> = { FORMAT: 0, ERROR: 1, WARNING: 2 };
   const findings = all.map((f, i) => ({ f, i })).sort((a, b) => rank[a.f.level] - rank[b.f.level] || a.i - b.i).map((x) => x.f).slice(0, MAX_FINDINGS);
