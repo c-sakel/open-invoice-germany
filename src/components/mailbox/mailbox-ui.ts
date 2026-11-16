@@ -33,6 +33,8 @@ const ERROR_TEXTS: Record<string, string> = {
   NOT_CONFIGURED: "Server, Benutzer und Passwort sind noch nicht vollständig eingetragen.",
   COOLDOWN: "Bitte kurz warten und dann erneut versuchen.",
   SECRET_UNREADABLE: "Das gespeicherte Passwort ist nicht lesbar. Bitte neu eingeben.",
+  DISABLED: "Das Postfach ist ausgeschaltet. Bitte zuerst einschalten.",
+  MARK_SEEN_FAILED: "Der Server erlaubt das Markieren als gelesen nicht (Ordner nur lesbar?). Bereits abgerufene Mails werden nicht doppelt aufgenommen.",
   QUOTA_FULL: "Der Abruf ist pausiert: Die Sichtung ist voll. Bitte Belege übernehmen oder verwerfen.",
   TEST_REQUIRED: "Das Postfach kann erst nach einem erfolgreichen Verbindungstest eingeschaltet werden.",
   FETCH_SINCE_INVALID: "Das Datum darf nicht in der Zukunft und höchstens 365 Tage zurück liegen.",
@@ -62,6 +64,8 @@ export const SKIP_TEXTS: Record<string, string> = {
   TOO_LARGE: "Anlage zu groß",
   TOO_MANY: "zu viele Anlagen in der Mail",
   NESTED: "zu tief verschachtelt",
+  MAIL_TOO_LARGE: "Mail zu groß (über 25 MB), nicht gelesen; sie liegt als gelesen im Postfach",
+  MAIL_UNREADABLE: "Mail konnte nicht gelesen werden; sie liegt als gelesen im Postfach",
 };
 
 export function skipText(reason: string | null): string {

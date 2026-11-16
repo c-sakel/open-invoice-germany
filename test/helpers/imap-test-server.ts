@@ -31,6 +31,8 @@ export interface ImapTestServerOptions {
   oauthOnly?: boolean;
   /** Server meldet falsche (kleine) Groesse und ignoriert Teilbereiche. */
   lieAboutSize?: boolean;
+  /** Abruf des Mailtexts kommt in kleinen Stuecken im Abstand von `trickleMs` (haengender Server). */
+  trickleMs?: number;
   expectedUser?: string;
   expectedPassword?: string;
 }
@@ -180,8 +182,13 @@ export async function startImapTestServer(opts: ImapTestServerOptions): Promise<
             const unseen = /UNSEEN/i.test(args);
             const since = /SINCE (\S+)/i.exec(args)?.[1];
             const sinceMs = since ? parseImapDate(since) : null;
+            // NOT FROM "@domain" bzw. NOT OR FROM ... FROM ...: alle genannten Domains werden ausgeschlossen.
+            const excluded = /\bNOT\b/i.test(args) ? [...args.matchAll(/\bFROM "?@?([^"\s)]+)"?/gi)].map((x) => (x[1] ?? "").toLowerCase()) : [];
+            const domainOfMail = (k: number): string =>
+              /^From:[^\r\n]*@([A-Za-z0-9.-]+)/im.exec(Buffer.from(mails[k]?.raw.subarray(0, 4096) ?? []).toString("latin1"))?.[1]?.toLowerCase() ?? "";
             const uids = mails
               .map((_, k) => k + 1)
+              .filter((u) => !excluded.includes(domainOfMail(u - 1)))
               .filter((u) => !unseen || !seen.has(u))
               .filter((u) => sinceMs === null || Date.parse(mails[u - 1]?.internalDate ?? "2026-11-10T10:00:00Z") >= sinceMs);
             w(`* SEARCH ${uids.join(" ")}\r\n${tag} OK done\r\n`);
@@ -203,7 +210,19 @@ export async function startImapTestServer(opts: ImapTestServerOptions): Promise<
                 const s = Number(range[1]);
                 const chunk = raw.subarray(s, s + Number(range[2]));
                 parts.push(`BODY[]<${s}> {${chunk.length}}\r\n`);
-                w(`* ${u} FETCH (${parts.join(" ")}`); sock.write(chunk); w(")\r\n");
+                w(`* ${u} FETCH (${parts.join(" ")}`);
+                if (opts.trickleMs) {
+                  let pos = 0;
+                  const drip = setInterval(() => {
+                    if (sock.destroyed || pos >= chunk.length) return clearInterval(drip);
+                    sock.write(chunk.subarray(pos, pos + 16));
+                    pos += 16;
+                  }, opts.trickleMs);
+                  sock.on("close", () => clearInterval(drip));
+                  return;
+                }
+                sock.write(chunk);
+                w(")\r\n");
               } else if (/BODY(?:\.PEEK)?\[\]/.test(items)) {
                 parts.push(`BODY[] {${raw.length}}\r\n`);
                 w(`* ${u} FETCH (${parts.join(" ")}`); sock.write(raw); w(")\r\n");

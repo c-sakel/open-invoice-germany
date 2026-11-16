@@ -17,6 +17,8 @@ export interface FakeMailboxOptions {
   markSeenThrows?: boolean;
   /** fetchRaw wartet so lange (ms) und gibt erst dann zurueck; close() bricht ab. */
   fetchDelayMs?: number;
+  /** close() haengt endlos (wie ein abmeldender Client hinter einer langsamen Antwort); nur abort() beendet. */
+  closeHangs?: boolean;
   /** fetchRaw scheitert fuer diese UIDs jedes Mal mit PROTOCOL_ERROR (Sitzung wird geschlossen). */
   failFetchUids?: string[];
 }
@@ -25,6 +27,8 @@ export class FakeMailboxClient implements MailboxClient {
   opens = 0;
   accounts: MailboxAccount[] = [];
   searchedSince: (Date | null)[] = [];
+  searchedExcluded: string[][] = [];
+  aborted = 0;
   markedSeen: string[] = [];
   fetched: string[] = [];
   senderCalls = 0;
@@ -46,10 +50,18 @@ export class FakeMailboxClient implements MailboxClient {
     };
     return {
       uidValidity: this.opts.uidValidity ?? "1700000000",
-      searchUnseen: async (since) => {
+      searchUnseen: async (since, excludeDomains = []) => {
         alive();
         this.searchedSince.push(since);
-        return this.opts.mails.filter((m) => !m.seen).map((m) => m.uid).sort((a, b) => Number(a) - Number(b));
+        this.searchedExcluded.push(excludeDomains);
+        const domainOf = (m: FakeMail): string | null =>
+          /^From:[^\r\n]*@([A-Za-z0-9.-]+)/im.exec(Buffer.from(m.raw.subarray(0, 4096)).toString("latin1"))?.[1]?.toLowerCase() ?? null;
+        // Wie der Adapter: ausgeschlossene Domains serverseitig, danach hoechstens 5.000 aelteste UIDs.
+        return this.opts.mails
+          .filter((m) => !m.seen && !excludeDomains.includes(domainOf(m) ?? "\0"))
+          .map((m) => m.uid)
+          .sort((a, b) => Number(a) - Number(b))
+          .slice(0, 5000);
       },
       meta: async (uid) => {
         alive();
@@ -102,6 +114,14 @@ export class FakeMailboxClient implements MailboxClient {
       },
       close: async () => {
         this.closed += 1;
+        if (this.opts.closeHangs) return new Promise<void>(() => undefined);
+        const a = abort;
+        abort = null;
+        dead = true;
+        a?.();
+      },
+      abort: () => {
+        this.aborted += 1;
         const a = abort;
         abort = null;
         dead = true;

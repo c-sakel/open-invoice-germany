@@ -120,7 +120,7 @@ export async function fetchMailboxNowCore(orgId: string, client?: MailboxClient)
     rateLimit(`mailbox-fetch-now:${orgId}`, { limit: 2, windowMs: 60_000 });
     const res = await runMailboxForOrg(orgId, new Date(), client);
     if (res.locked) return { ok: false, error: "Ein Abruf läuft bereits. Bitte später erneut versuchen." };
-    if (res.error !== null) return { ok: false, error: GENERIC_MAILBOX_ERROR };
+    if (res.error !== null) return { ok: false, error: mailboxErrorText(res.error) };
     return { ok: true, data: { staged: res.staged, messages: res.messages } };
   } catch (e) {
     return failure(e, "Abruf");

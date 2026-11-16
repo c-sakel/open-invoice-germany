@@ -21,6 +21,6 @@ export const spec = {
     scope: "write",
     response: apiDataResponseSchema(inboundMailSchema),
     errors: [401, 403, 404, 409, 429],
-    errorNotes: { 409: "NOT_INBOX, PURGED (Kopie bereits entfernt) oder CONFLICT (Code in error.reason)." },
+    errorNotes: { 409: "NOT_INBOX, PURGED (Kopie bereits entfernt), QUOTA_FULL (Sichtung voll) oder CONFLICT (Code in error.reason)." },
   },
 } satisfies Record<string, RouteSpec>;

@@ -5,10 +5,12 @@
  */
 import { normalizeSenderDomain } from "@/schemas/mailbox";
 import type { Readable } from "node:stream";
-import { ImapFlow } from "imapflow";
+import type { ImapFlow } from "imapflow";
 import {
   MAIL_COMMAND_TIMEOUT_MS,
   MAIL_CONNECT_TIMEOUT_MS,
+  MAIL_LOGOUT_TIMEOUT_MS,
+  MAX_SEARCH_EXCLUDED_DOMAINS,
   MAX_SEARCH_UIDS,
 } from "@/domain/mailbox/limits";
 import {
@@ -20,7 +22,7 @@ import {
 } from "./client";
 import { assertAllowedPort, mailboxNetworkBlocked, resolveMailHost, type ResolvedTarget } from "./net-guard";
 
-/** Nur fuer Tests: umgeht Netzsperre und Sperrliste, nutzt eigene CA und festen Zielport. */
+/** Nur fuer Tests: umgeht Netzsperre und Sperrliste, nutzt eigene CA und festen Zielport. Wirkt nur bei gesperrtem Netz. */
 export interface TestConnector {
   ca: string | Buffer;
   target: (host: string) => ResolvedTarget;
@@ -81,8 +83,19 @@ function oauthOnlyCapabilities(client: ImapFlow): boolean {
   return oauth && (!password || has("LOGINDISABLED"));
 }
 
+/** Suchausdruck ohne die Mails der Domains; die Domain wird mit "@" angegeben, damit nur Adressen dieser Domain treffen. */
+function searchQuery(since: Date | null, excludeDomains: string[]): Record<string, unknown> {
+  const domains = excludeDomains.filter((d) => /^[a-z0-9.-]{1,253}$/.test(d)).slice(0, MAX_SEARCH_EXCLUDED_DOMAINS);
+  const query: Record<string, unknown> = since ? { seen: false, since } : { seen: false };
+  if (domains.length === 1) query.not = { from: `@${domains[0]}` };
+  else if (domains.length > 1) query.not = { or: domains.map((d) => ({ from: `@${d}` })) };
+  return query;
+}
+
 export function createImapClient(opts: { connector?: TestConnector } = {}): MailboxClient {
-  const connector = opts.connector;
+  // Ein Testverbinder umgeht Netzsperre und Sperrliste und gilt deshalb nur, wo das Netz ohnehin gesperrt ist.
+  const connector = opts.connector && mailboxNetworkBlocked() ? opts.connector : undefined;
+  if (opts.connector && !connector) throw new MailboxError("NETWORK_BLOCKED");
   return {
     async open(account: MailboxAccount): Promise<MailboxSession> {
       assertAllowedPort(account.port, account.security);
@@ -94,6 +107,8 @@ export function createImapClient(opts: { connector?: TestConnector } = {}): Mail
         target = await resolveMailHost(account.host, account.port);
       }
       const starttls = account.security === "STARTTLS";
+      // Dynamisch geladen: faellt das Paket aus, trifft das nur den Postfach-Abruf und keinen anderen Scheduler-Job.
+      const { ImapFlow } = await import("imapflow");
       const client = new ImapFlow({
         host: target.address,
         port: target.port,
@@ -140,9 +155,9 @@ export function createImapClient(opts: { connector?: TestConnector } = {}): Mail
       };
       return {
         uidValidity,
-        searchUnseen: (since) =>
+        searchUnseen: (since, excludeDomains) =>
           run(async () => {
-            const found = await client.search(since ? { seen: false, since } : { seen: false }, { uid: true });
+            const found = await client.search(searchQuery(since, excludeDomains ?? []), { uid: true });
             if (!Array.isArray(found)) return [];
             return found
               .slice()
@@ -186,12 +201,23 @@ export function createImapClient(opts: { connector?: TestConnector } = {}): Mail
             return Array.isArray(found) ? found.length : 0;
           }),
         close: async () => {
+          // Abmelden hoechstens kurz abwarten; danach (oder bei Fehler) wird der Socket hart getrennt.
+          let timer: NodeJS.Timeout | undefined;
           try {
-            await client.logout();
+            await Promise.race([
+              client.logout(),
+              new Promise<void>((resolve) => {
+                timer = setTimeout(resolve, MAIL_LOGOUT_TIMEOUT_MS);
+              }),
+            ]);
           } catch {
+            // Hart trennen.
+          } finally {
+            if (timer) clearTimeout(timer);
             client.close();
           }
         },
+        abort: () => client.close(),
       };
     },
   };

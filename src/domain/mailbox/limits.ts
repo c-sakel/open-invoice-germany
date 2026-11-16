@@ -19,6 +19,10 @@ export const MAX_MAIL_HEADER_BYTES = 64 * 1024;
 export const MAX_SUBJECT_CHARS = 200;
 /** Gelesene UIDs je Suche. */
 export const MAX_SEARCH_UIDS = 5000;
+/** Zurueckgestellte Absenderdomains, die je Suche serverseitig ausgeschlossen werden. */
+export const MAX_SEARCH_EXCLUDED_DOMAINS = 20;
+/** Hoechstdauer des regulaeren Abmeldens, danach wird die Verbindung hart getrennt. */
+export const MAIL_LOGOUT_TIMEOUT_MS = 5_000;
 
 /** Zeitgrenzen (ms). */
 export const MAIL_CONNECT_TIMEOUT_MS = 20_000;

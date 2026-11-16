@@ -24,6 +24,7 @@ import {
   MAX_MAIL_BYTES,
   MAX_MAILS_PER_RUN,
   MAX_PARSE_ATTEMPTS,
+  MAX_SEARCH_EXCLUDED_DOMAINS,
   MAX_STAGED_PER_DOMAIN_PER_DAY,
   MAX_SUBJECT_CHARS,
 } from "./limits";
@@ -50,6 +51,7 @@ interface AttachmentRow {
   duplicateOfAttachmentId: string | null;
 }
 
+const MAX_PREVIEW_XML_BYTES = 2 * 1024 * 1024;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const EMPTY_SHA = sha256Hex(Buffer.alloc(0));
 
@@ -95,6 +97,16 @@ export function getDeferredDomain(orgId: string, domain: string, nowMs: number =
     return undefined;
   }
   return until;
+}
+/** Domains der Firma, die gerade zurueckgestellt sind (hoechstens `max`, die mit dem spaetesten Fensterende zuerst). */
+export function activeDeferredDomains(orgId: string, nowMs: number = Date.now(), max: number = MAX_SEARCH_EXCLUDED_DOMAINS): string[] {
+  const m = deferredStore().get(orgId);
+  if (!m) return [];
+  return [...m.entries()]
+    .filter(([, until]) => until > nowMs)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, max)
+    .map(([d]) => d);
 }
 /** Merkt eine Domain vor. Bei Ueberlauf verliert nur diese Firma Eintraege: zuerst abgelaufene, dann die aeltesten. */
 export function parkDeferredDomain(orgId: string, domain: string, until: number, nowMs: number, max: number = MAX_DEFERRED_DOMAINS_PER_ACCOUNT): void {
@@ -146,6 +158,7 @@ const ERROR_TITLES: Record<string, string> = {
   QUOTA_FULL: "Postfach-Abruf pausiert: Die Sichtung ist voll. Bitte Belege uebernehmen oder verwerfen.",
   SECRET_UNREADABLE: "Postfach-Abruf nicht moeglich: Das gespeicherte Passwort ist nicht lesbar. Bitte neu eingeben.",
   AUTH_FAILED: "Postfach-Abruf: Die Anmeldung wurde abgelehnt.",
+  MARK_SEEN_FAILED: "Postfach: Mails konnten nicht als gelesen markiert werden (Ordner nur lesbar?). Bereits abgerufene Mails werden nicht doppelt aufgenommen.",
   OAUTH_REQUIRED: "Dieses Postfach erlaubt keine Anmeldung mit Passwort. Bitte ein App-Passwort oder ein eigenes Postfach fuer Rechnungen verwenden.",
 };
 function errorTitle(code: string): string {
@@ -206,8 +219,15 @@ export async function fetchMailboxForOrg(
   let timedOut = false;
   const timer = setTimeout(() => {
     timedOut = true;
-    const s = session;
-    if (s) void s.close().catch(() => undefined);
+    // Harter Abbruch: ein regulaeres Abmelden wuerde hinter dem laufenden Abruf warten.
+    const s = session as MailboxSession | null;
+    if (s) {
+      try {
+        s.abort();
+      } catch {
+        // Verbindung ist ohnehin weg.
+      }
+    }
   }, opts.runTimeoutMs ?? MAIL_RUN_TIMEOUT_MS);
   const open = async (): Promise<MailboxSession> => {
     const s = await client.open({ host, port, security, username, password, folder: row.folder });
@@ -238,6 +258,20 @@ export async function fetchMailboxForOrg(
   /** Absenderdomains, deren Tageslimit erreicht ist; ihre Mails bleiben ungelesen und werden spaeter erneut versucht. */
   const limitedDomains = new Set<string>();
   let downloads = 0;
+  /** UID, deren Download gerade laeuft (Zeitueberschreitungen zaehlen nur dort als Versuch). */
+  let fetchingUid: string | null = null;
+  /** Mails ohne lesbaren Inhalt (zu gross, defekt) in diesem Lauf. */
+  let unreadable = 0;
+  /** Erlaubt der Server das Setzen von \Seen nicht, wird nicht weiter versucht (sonst Neuaufbau je Mail). */
+  let markSeenFailed = false;
+  const markSeen = async (uid: string): Promise<void> => {
+    if (markSeenFailed) return;
+    try {
+      await op((s) => s.markSeen(uid));
+    } catch {
+      markSeenFailed = true;
+    }
+  };
   /** Prueft das Tageslimit der Domain gegen die Datenbank und merkt sie bis zum Fensterende vor; true, wenn erreicht. */
   const deferIfLimited = async (domain: string): Promise<boolean> => {
     const since = new Date(now.getTime() - DAY_MS);
@@ -254,7 +288,8 @@ export async function fetchMailboxForOrg(
     return true;
   };
   try {
-    const uids = await op((s) => s.searchUnseen(row.fetchSince));
+    const excluded = activeDeferredDomains(orgId, now.getTime());
+    const uids = await op((s) => s.searchUnseen(row.fetchSince, excluded));
     const known = new Set(
       (
         await dbInternal.inboundMailMessage.findMany({
@@ -265,7 +300,7 @@ export async function fetchMailboxForOrg(
     );
     for (const uid of uids.filter((u) => known.has(u))) {
       // Nach einem Absturz zwischen Speichern und Markieren: nur noch markieren.
-      await op((s) => s.markSeen(uid)).catch(() => undefined);
+      await markSeen(uid);
     }
     const fresh = uids.filter((u) => !known.has(u));
     // Absender aller ungelesenen Mails mit einem einzigen Kommando holen (nur Kopfdaten, kein Inhalt). Mails gesperrter
@@ -300,8 +335,12 @@ export async function fetchMailboxForOrg(
         }
         // Dauerhafter Protokollfehler an genau dieser Mail (z. B. defekte Nachricht): nach mehreren Versuchen
         // vermerken und als gelesen markieren, sonst blockiert sie jeden Folgelauf.
-        const poison =
-          e instanceof MailboxError && e.code === "PROTOCOL_ERROR" && !timedOut && uidValidity !== "" && countAttempt(`fetch:${orgId}:${accountKey}:${uidValidity}:${uid}`) >= MAX_PARSE_ATTEMPTS;
+        // Auch Zeitueberschreitungen beim Laden derselben UID zaehlen, sonst blockiert eine dauerhaft zu langsame Mail jeden Lauf.
+        const inFetch = fetchingUid === uid;
+        const countable =
+          e instanceof MailboxError && ((inFetch && (timedOut || e.code === "TIMEOUT" || e.code === "PROTOCOL_ERROR")) || (!timedOut && e.code === "PROTOCOL_ERROR"));
+        const poison = countable && uidValidity !== "" && countAttempt(`fetch:${orgId}:${accountKey}:${uidValidity}:${uid}`) >= MAX_PARSE_ATTEMPTS;
+        fetchingUid = null;
         if (!poison) throw e;
         r = await commit(uid, { orgId, accountKey, uidValidity, uid, internalDate: null, fetchedAt: now, size: 0, result: "FETCH_FAILED", messageIdHash: null, senderDomain: null, subject: null }, []);
       }
@@ -310,17 +349,29 @@ export async function fetchMailboxForOrg(
       messages += 1;
       staged += r;
     }
-    if (retries > 0) error = "TIMEOUT";
+    if (retries > 0 || (timedOut && error === null)) error = "TIMEOUT";
+    if (markSeenFailed && error === null) error = "MARK_SEEN_FAILED";
   } catch (e) {
     error = timedOut ? "TIMEOUT" : e instanceof MailboxError ? e.code : "PROTOCOL_ERROR";
   } finally {
     clearTimeout(timer);
     const s = session as MailboxSession | null;
-    if (s) await s.close().catch(() => undefined);
+    if (s) {
+      if (timedOut) {
+        try {
+          s.abort();
+        } catch {
+          // schon getrennt
+        }
+      } else await s.close().catch(() => undefined);
+    }
   }
   const day = berlinDateKey(now);
   for (const domain of limitedDomains) {
     await notify(orgId, now, "INBOUND_MAIL_ERROR", `Postfach: Das Tageslimit fuer den Absender ${domain} ist erreicht. Weitere Mails bleiben ungelesen und werden spaeter erneut versucht.`, `SENDER_LIMIT:${domain}:${day}`);
+  }
+  if (unreadable > 0) {
+    await notify(orgId, now, "INBOUND_MAIL_ERROR", `Postfach: ${unreadable} Mail(s) konnten nicht gelesen werden (zu groß oder beschädigt). Sie stehen unter "Übersprungen" und liegen als gelesen im Postfach.`, `MAIL_UNREADABLE:${day}`);
   }
   return finish(orgId, now, error, messages, staged);
 
@@ -336,10 +387,14 @@ export async function fetchMailboxForOrg(
     if (!tooLarge) {
       try {
         downloads += 1;
+        fetchingUid = uid;
         raw = await op((s) => s.fetchRaw(uid, MAX_MAIL_BYTES));
+        fetchingUid = null;
       } catch (e) {
-        if (e instanceof MailboxError && e.code === "TOO_LARGE") tooLarge = true;
-        else throw e;
+        if (e instanceof MailboxError && e.code === "TOO_LARGE") {
+          fetchingUid = null;
+          tooLarge = true;
+        } else throw e;
       }
     }
     if (tooLarge || raw === null) return commit(uid, { ...base, result: "TOO_LARGE", messageIdHash: null, senderDomain: null, subject: null }, []);
@@ -414,7 +469,8 @@ export async function fetchMailboxForOrg(
       await writeStagingFile(rel, buf);
       let previewJson: string | null = null;
       try {
-        previewJson = JSON.stringify(await previewIncomingFile(buf));
+        // Grosse XML-Dateien werden ohne Nutzeraktion nicht im Hauptprozess ausgewertet; die Vorschau entfaellt.
+        if (ext === "pdf" || buf.length <= MAX_PREVIEW_XML_BYTES) previewJson = JSON.stringify(await previewIncomingFile(buf));
       } catch {
         previewJson = null;
       }
@@ -430,8 +486,13 @@ export async function fetchMailboxForOrg(
   async function commit(
     uid: string,
     head: { orgId: string; accountKey: string; uidValidity: string; uid: string; internalDate: Date | null; fetchedAt: Date; size: number; result: string; messageIdHash: string | null; senderDomain: string | null; subject: string | null },
-    rows: AttachmentRow[],
+    given: AttachmentRow[],
   ): Promise<number | null> {
+    // Mails ohne lesbaren Inhalt bekommen eine sichtbare Zeile im Reiter "Uebersprungen".
+    const unreadableMail = given.length === 0 && (head.result === "TOO_LARGE" || head.result === "PARSE_FAILED" || head.result === "FETCH_FAILED");
+    const rows: AttachmentRow[] = unreadableMail
+      ? [{ partIndex: 0, fileName: `mail-${head.uid}`, mime: "message/rfc822", size: head.size, sha256: EMPTY_SHA, stagingPath: null, status: "SKIPPED", skipReason: head.result === "TOO_LARGE" ? "MAIL_TOO_LARGE" : "MAIL_UNREADABLE", previewJson: null, duplicateOfIncomingId: null, duplicateOfAttachmentId: null }]
+      : given;
     let created = true;
     try {
       await dbInternal.$transaction(async (tx) => {
@@ -446,7 +507,8 @@ export async function fetchMailboxForOrg(
       created = false;
     }
     // Fehler beim Markieren sind unkritisch: der naechste Lauf erkennt die Mail an der Protokollzeile.
-    await op((s) => s.markSeen(uid)).catch(() => undefined);
+    await markSeen(uid);
+    if (created && unreadableMail) unreadable += 1;
     return created ? rows.filter((r) => r.status === "INBOX").length : null;
   }
 }

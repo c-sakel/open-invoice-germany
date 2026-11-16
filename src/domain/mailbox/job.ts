@@ -52,10 +52,18 @@ export async function runMailboxForOrg(
   now: Date = new Date(),
   client?: MailboxClient,
 ): Promise<{ locked: true } | { locked: false; messages: number; staged: number; error: string | null }> {
+  let outcome: { messages: number; staged: number; error: string | null } = { messages: 0, staged: 0, error: null };
   const r = await withJobLock("mailbox", "MANUAL", now, async () => {
+    // Wie der Scheduler nur bei eingeschaltetem Postfach (Einschalten setzt einen erfolgreichen Verbindungstest voraus).
+    const settings = await dbInternal.inboundMailboxSettings.findUnique({ where: { orgId }, select: { enabled: true } });
+    if (!settings || !settings.enabled) {
+      outcome = { messages: 0, staged: 0, error: "DISABLED" };
+      return { orgs: 0, messages: 0, staged: 0, errors: 1 };
+    }
     const res = await fetchMailboxForOrg(orgId, now, client);
+    outcome = { messages: res.messages, staged: res.staged, error: res.error };
     return { orgs: 1, messages: res.messages, staged: res.staged, errors: res.error === null ? 0 : 1 };
   });
   if (r.locked) return { locked: true };
-  return { locked: false, messages: r.value.messages, staged: r.value.staged, error: r.value.errors > 0 ? "ERROR" : null };
+  return { locked: false, ...outcome };
 }

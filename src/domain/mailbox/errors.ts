@@ -21,7 +21,7 @@ export class StagingTamperedError extends Error {
   }
 }
 
-export type InboundMailErrorCode = "NOT_INBOX" | "CONFLICT" | "PURGED" | "STAGING_MISSING" | "ALREADY_RECEIVED";
+export type InboundMailErrorCode = "NOT_INBOX" | "CONFLICT" | "PURGED" | "STAGING_MISSING" | "ALREADY_RECEIVED" | "QUOTA_FULL";
 
 const INBOUND_MESSAGES: Record<InboundMailErrorCode, string> = {
   NOT_INBOX: "Die Anlage wartet nicht mehr auf eine Entscheidung.",
@@ -29,6 +29,7 @@ const INBOUND_MESSAGES: Record<InboundMailErrorCode, string> = {
   PURGED: "Die verworfene Anlage ist nicht mehr wiederherstellbar.",
   STAGING_MISSING: "Die Datei in der Zwischenablage fehlt oder wurde veraendert.",
   ALREADY_RECEIVED: "Diese Datei wurde bereits als Eingangsrechnung angenommen.",
+  QUOTA_FULL: "Die Sichtung ist voll. Bitte zuerst Belege uebernehmen oder verwerfen.",
 };
 
 /** Entscheidung ueber eine Postfach-Anlage nicht moeglich; 409. */

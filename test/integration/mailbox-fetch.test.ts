@@ -509,7 +509,7 @@ describe("Abruf", () => {
     const c = client([mail("1")], { fetchDelayMs: 5000 });
     const r = await fetchMailboxForOrg(orgId, NOW, c, { runTimeoutMs: 100 });
     expect(r.error).toBe("TIMEOUT");
-    expect(c.closed).toBeGreaterThan(0);
+    expect(c.aborted).toBeGreaterThan(0);
     expect(await dbInternal.inboundMailMessage.count({ where: { orgId } })).toBe(0);
   });
 

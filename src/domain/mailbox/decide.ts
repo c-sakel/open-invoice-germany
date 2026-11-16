@@ -15,6 +15,7 @@ import { inboundAcceptBatchSchema, inboundDiscardInputSchema } from "@/schemas/m
 import { InboundMailError, StagingTamperedError } from "./errors";
 import { getInboundAttachment, type InboundAttachmentRow } from "./list";
 import { readStagingFile, removeStagingFile } from "./staging";
+import { inboxUsage } from "./settings";
 
 export { InboundMailError } from "./errors";
 
@@ -147,7 +148,8 @@ export async function discardInboundAttachment(orgId: string, id: string, raw: u
     data: { status: "DISCARDED", decidedAt: now, decidedBy: actor, discardReason: reason },
   });
   if (upd.count !== 1) throw new InboundMailError("CONFLICT");
-  await activity(orgId, id, "INBOUND_MAIL_DISCARDED", actor, now, { reasonLength: reason?.length ?? 0 });
+  // Die Entscheidung gilt bereits: ein Fehler im Protokoll darf sie nicht als gescheitert melden.
+  await activity(orgId, id, "INBOUND_MAIL_DISCARDED", actor, now, { reasonLength: reason?.length ?? 0 }).catch(() => console.error("Postfach: Aktivitaetsprotokoll nicht geschrieben"));
   return getInboundAttachment(orgId, id);
 }
 
@@ -155,11 +157,13 @@ export async function restoreInboundAttachment(orgId: string, id: string, actor:
   const current = await getInboundAttachment(orgId, id);
   if (current.status !== "DISCARDED") throw new InboundMailError("NOT_INBOX");
   if (current.purgedAt !== null) throw new InboundMailError("PURGED");
+  // Wiederherstellen legt die Anlage wieder in die Sichtung: auch hier gilt das Kontingent.
+  if ((await inboxUsage(orgId)).quotaReached) throw new InboundMailError("QUOTA_FULL");
   const upd = await dbInternal.inboundMailAttachment.updateMany({
     where: { id, orgId, status: "DISCARDED", purgedAt: null },
     data: { status: "INBOX", decidedAt: null, decidedBy: null, discardReason: null },
   });
   if (upd.count !== 1) throw new InboundMailError("CONFLICT");
-  await activity(orgId, id, "INBOUND_MAIL_RESTORED", actor, now, {});
+  await activity(orgId, id, "INBOUND_MAIL_RESTORED", actor, now, {}).catch(() => console.error("Postfach: Aktivitaetsprotokoll nicht geschrieben"));
   return getInboundAttachment(orgId, id);
 }
