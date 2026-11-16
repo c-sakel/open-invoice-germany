@@ -142,7 +142,7 @@ export function IncomingWorkflow({ id, workflow, allowedActions, today }: Props)
             key={a}
             ref={a === "REJECT" ? rejectRef : revertRef}
             aria-label={ACTION_LABELS[a]}
-            className="w-[min(92vw,28rem)] rounded-md border border-rule bg-sheet p-4 text-sm backdrop:bg-black/30"
+            className="w-full max-w-md rounded-md border border-rule bg-sheet p-4 text-sm backdrop:bg-black/30"
           >
             <form
               method="dialog"
@@ -173,7 +173,7 @@ export function IncomingWorkflow({ id, workflow, allowedActions, today }: Props)
         <dialog
           ref={paidRef}
           aria-label={ACTION_LABELS.MARK_PAID}
-          className="w-[min(92vw,28rem)] rounded-md border border-rule bg-sheet p-4 text-sm backdrop:bg-black/30"
+          className="w-full max-w-md rounded-md border border-rule bg-sheet p-4 text-sm backdrop:bg-black/30"
         >
           <form
             method="dialog"
