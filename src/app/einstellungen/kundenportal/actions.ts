@@ -5,8 +5,7 @@
  */
 import { revalidatePath } from "next/cache";
 import { ZodError } from "zod";
-import { getActiveOrg } from "@/lib/org";
-import { getCurrentUserId } from "@/lib/auth/server";
+import { requireActionOrg, requireSessionActor } from "@/lib/auth/require-session";
 import { describeError } from "@/lib/safe-error";
 import { loadPortalSettings, savePortalSettings, type PortalSettingsView } from "@/domain/portal/settings";
 
@@ -14,8 +13,8 @@ export type SavePortalSettingsResult = { ok: true; settings: PortalSettingsView 
 
 export async function savePortalSettingsAction(input: unknown): Promise<SavePortalSettingsResult> {
   try {
-    const org = await getActiveOrg();
-    const actor = (await getCurrentUserId()) ?? "system";
+    const org = await requireActionOrg();
+    const actor = await requireSessionActor();
     await savePortalSettings(org.id, input, actor);
     revalidatePath("/einstellungen/kundenportal");
     revalidatePath("/kunden/[id]", "page");

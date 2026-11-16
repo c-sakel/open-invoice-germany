@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { getActiveOrg } from "@/lib/org";
+import { requireActionOrg } from "@/lib/auth/require-session";
 import { loadDocumentSettings, saveDocumentSettings } from "@/domain/document/settings";
 import { parseKuExternalRows } from "@/lib/ku-external-input";
 import type { ActionResult } from "./result";
@@ -50,7 +50,7 @@ export async function saveDocumentSettingsAction(_prev: ActionResult, fd: FormDa
   // REST/MCP gesetzten) Werte erhalten statt auf die Defaults zurueckzufallen.
   let current: Awaited<ReturnType<typeof loadDocumentSettings>>;
   try {
-    current = await loadDocumentSettings((await getActiveOrg()).id);
+    current = await loadDocumentSettings((await requireActionOrg()).id);
   } catch (e) {
     console.error("saveDocumentSettingsAction:", e);
     return { ok: false, error: "Speichern fehlgeschlagen." };
@@ -106,7 +106,7 @@ export async function saveDocumentSettingsAction(_prev: ActionResult, fd: FormDa
   };
 
   try {
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     await saveDocumentSettings(org.id, raw);
   } catch (e) {
     if (e instanceof z.ZodError) {

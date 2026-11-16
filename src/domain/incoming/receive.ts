@@ -41,6 +41,10 @@ export interface ReceiveOptions {
   channel: IncomingChannel;
   actor: string;
   now?: Date;
+  /** Herkunft bei Kanal MAILBOX; erscheint im Aenderungsprotokoll (ohne Betreff und Absenderadresse). */
+  source?: { inboundAttachmentId: string; mailInternalDate: Date | null; fetchedAt: Date; senderDomain: string | null };
+  /** Weitere Schreibvorgaenge in derselben Transaktion (nach dem Anlegen, vor dem Aenderungsprotokoll). */
+  withinTx?: (tx: Prisma.TransactionClient, incomingInvoiceId: string) => Promise<void>;
 }
 
 /** Timeouts je Datei (Organisation + Hash) im Prozess; ab MAX_PDF_TIMEOUTS wird die Datei abgelegt statt erneut versucht. */
@@ -176,6 +180,45 @@ async function classify(bytes: Uint8Array, timeoutKey: string): Promise<Classifi
   return { ...base, kind: "OTHER", parsed: null, xmlBytes: null, hints: ["EMBEDDED_XML_INVALID"] };
 }
 
+export interface IncomingFilePreview {
+  kind: IncomingKind;
+  isEInvoice: boolean;
+  syntax: string | null;
+  profile: string | null;
+  number: string | null;
+  supplierName: string | null;
+  grossCents: number | null;
+  currency: string | null;
+  hints: string[];
+}
+
+const PREVIEW_TEXT_MAX = 200;
+const clip = (v: string | null | undefined): string | null => (v ? v.slice(0, PREVIEW_TEXT_MAX) : null);
+
+/**
+ * Liest Kopfdaten aus einer Datei, ohne etwas zu schreiben und ohne das Annahme-Kontingent zu verbrauchen.
+ * Fuer die Sichtung vor der Uebernahme; Fehler und ein ausgelasteter PDF-Worker werfen wie bei der Annahme.
+ */
+export async function previewIncomingFile(bytes: Uint8Array): Promise<IncomingFilePreview> {
+  if (bytes.byteLength === 0) throw new IncomingFormatError("Die Datei ist leer.", "EMPTY");
+  if (bytes.byteLength > MAX_INCOMING_BYTES) throw new IncomingFormatError("Die Datei ist zu gross (maximal 15 MB).", "TOO_LARGE");
+  const buf = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const cls = await classify(bytes, `preview:${sha256Hex(buf)}`);
+  const p = cls.parsed;
+  const tooMany = cls.tooMany !== undefined;
+  return {
+    kind: cls.kind,
+    isEInvoice: p?.isEInvoice ?? tooMany,
+    syntax: p?.syntax ?? cls.tooMany?.syntax ?? null,
+    profile: clip(p?.profile ?? null),
+    number: clip(p?.number ?? null),
+    supplierName: clip(p?.seller.name ?? null),
+    grossCents: p?.totals.grossCents ?? null,
+    currency: clip(p?.currency ?? null),
+    hints: [...new Set([...(p?.hints.map((h) => h.code) ?? []), ...cls.hints])].slice(0, 20),
+  };
+}
+
 export async function receiveIncomingInvoice(orgId: string, bytes: Uint8Array, opts: ReceiveOptions): Promise<ReceiveResult> {
   if (bytes.byteLength === 0) throw new IncomingFormatError("Die Datei ist leer.", "EMPTY");
   if (bytes.byteLength > MAX_INCOMING_BYTES) throw new IncomingFormatError("Die Datei ist zu gross (maximal 15 MB).", "TOO_LARGE");
@@ -287,6 +330,7 @@ export async function receiveIncomingInvoice(orgId: string, bytes: Uint8Array, o
             select: { id: true },
           });
         }
+        if (opts.withinTx) await opts.withinTx(tx, row.id);
         await appendChangeLog(tx, {
           orgId,
           entity: "INCOMING_INVOICE",
@@ -294,7 +338,22 @@ export async function receiveIncomingInvoice(orgId: string, bytes: Uint8Array, o
           action: "RECEIVE",
           actor: opts.actor,
           at: receivedAt,
-          diff: { sha256, size: bytes.byteLength, channel: opts.channel, kind: cls.kind },
+          diff: {
+            sha256,
+            size: bytes.byteLength,
+            channel: opts.channel,
+            kind: cls.kind,
+            ...(opts.source
+              ? {
+                  source: {
+                    inboundAttachmentId: opts.source.inboundAttachmentId,
+                    mailInternalDate: opts.source.mailInternalDate?.toISOString() ?? null,
+                    fetchedAt: opts.source.fetchedAt.toISOString(),
+                    senderDomain: opts.source.senderDomain,
+                  },
+                }
+              : {}),
+          },
         });
         return row;
       }),

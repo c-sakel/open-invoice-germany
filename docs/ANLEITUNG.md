@@ -317,6 +317,18 @@ Im Menü „Eingang“ wählst du einen Zeitraum nach Eingangsdatum (höchstens 
 
 REST und MCP bieten dieselben Schritte: [API.md](API.md#eingangsrechnungen), [MCP.md](MCP.md#eingangsrechnungen).
 
+### Rechnungen aus einem Postfach abrufen (optional)
+
+Die Anwendung kann ein **eigens für Rechnungen eingerichtetes** Postfach per IMAP abrufen. Das ist standardmäßig ausgeschaltet. Verwende kein Postfach mit privater oder allgemeiner Post: Es werden zwar nur Anlagen gelesen, aber ungelesene Mails werden als gelesen markiert. Mails werden **nie gelöscht oder verschoben**.
+
+1. **Einrichten:** Einstellungen → **Rechnungs-Postfach**. Trage Server, Port (993 mit TLS oder 143 mit STARTTLS), Benutzer, Passwort bzw. App-Passwort, Ordner (Standard INBOX), Abrufbeginn und Absender-Domains ein (eine je Zeile, dringend empfohlen). Postfächer, die nur eine OAuth-Anmeldung erlauben, funktionieren nicht. Das Passwort wird nie angezeigt und nie vorbefüllt; ändern sich Server, Port, Sicherheit oder Benutzer, wird das gespeicherte Passwort entfernt und muss neu eingegeben werden.
+2. **Testen und einschalten:** „Verbindung testen“ geht nur zum gespeicherten Server. Erst nach einem erfolgreichen Test lässt sich „Einschalten“ wählen. Abgerufen wird im Takt des Schedulers (Standard alle 15 Minuten) oder sofort mit „Jetzt abrufen“. Die Verbindung nach außen läuft nur über Port 993 oder 143; Betreiberhinweise in [BETRIEB-VORLAGE.md](BETRIEB-VORLAGE.md).
+3. **Sichten:** Anlagen (XML und PDF) ungelesener Mails erscheinen unter Eingang → **Postfach** in den Reitern „Zu sichten“, „Übernommen“, „Verworfen“ und „Übersprungen“ (mit Grund, z. B. Dateityp oder Größe, und doppelte Dateien; auch Mails, die zu groß oder nicht lesbar sind, stehen dort und lösen eine Benachrichtigung aus). Jede Zeile zeigt Absender-Domain, Betreff, Dateiname und eine Vorschau. Die Absender-Domain ist eine Angabe der Mail und nicht geprüft.
+4. **Entscheiden:** „Übernehmen“ legt die Datei wie ein Upload als Eingangsrechnung ab (unveränderlich, Prüfung, Herkunft sichtbar); mehrere markierte Anlagen lassen sich gemeinsam übernehmen. „Verwerfen“ (mit Bestätigung und optionalem Grund) entfernt die Anlage aus der Sichtung; bis 30 Tage danach holt „Wiederherstellen“ sie zurück, später wird die Kopie entfernt (die Mail bleibt im Postfach). Alle Entscheidungen stehen im Aktivitätsprotokoll.
+5. **Herkunft:** Eine übernommene Eingangsrechnung zeigt im Detail „per E-Mail empfangen am …, abgerufen am …, Absender-Domain …“ und den Kanal „Postfach“.
+
+Ist die Sichtung voll (500 Anlagen oder 2 GB), pausiert der Abruf, bis Anlagen entschieden sind. Je Absender-Domain werden in 24 Stunden höchstens 50 neue Mails aufgenommen; weitere bleiben ungelesen und werden später abgerufen. Grenzen: [LIMITATIONEN.md](LIMITATIONEN.md#eingangsrechnungen). Dieselben Schritte bieten REST und MCP ([API.md](API.md#rechnungs-postfach), [MCP.md](MCP.md#rechnungs-postfach)); Einrichtung und Abruf nur in der Oberfläche.
+
 ### Weitere Hinweise
 
 - **Mögliche Dublette:** Dieselbe Rechnungsnummer desselben Lieferanten in einer anderen Datei wird angenommen und gekennzeichnet.

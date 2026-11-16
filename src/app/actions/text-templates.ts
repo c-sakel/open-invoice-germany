@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { getActiveOrg } from "@/lib/org";
+import { requireActionOrg } from "@/lib/auth/require-session";
 import {
   saveTextTemplate,
   deleteTextTemplate,
@@ -36,7 +36,7 @@ export async function saveTextTemplateAction(_prev: ActionResult, fd: FormData):
   };
 
   try {
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     await saveTextTemplate(org.id, input);
   } catch (e) {
     if (e instanceof TemplateNameConflictError) return { ok: false, error: e.message };
@@ -55,7 +55,7 @@ export async function deleteTextTemplateAction(_prev: ActionResult, fd: FormData
   if (!id) return { ok: false, error: "Vorlage nicht gefunden." };
 
   try {
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     await deleteTextTemplate(org.id, id);
   } catch (e) {
     if (e instanceof TemplateNotFoundError) return { ok: false, error: "Vorlage nicht gefunden." };
@@ -73,7 +73,7 @@ export async function setDefaultTextTemplateAction(_prev: ActionResult, fd: Form
   if (!id) return { ok: false, error: "Vorlage nicht gefunden." };
 
   try {
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     await setDefaultTextTemplate(org.id, id);
   } catch (e) {
     if (e instanceof TemplateNotFoundError) return { ok: false, error: "Vorlage nicht gefunden." };

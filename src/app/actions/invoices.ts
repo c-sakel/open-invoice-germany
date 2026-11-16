@@ -7,7 +7,7 @@ import { collectFinalizeWarnings, warningCodesParam, type FinalizeWarning } from
 import { ZodError } from "zod";
 import { cancelInvoice, CancelError } from "@/domain/invoice/cancel";
 import { NotFoundError } from "@/domain/errors";
-import { getActiveOrg } from "@/lib/org";
+import { requireActionOrg } from "@/lib/auth/require-session";
 import { parseCancelFormData } from "@/schemas";
 
 export async function finalizeAction(formData: FormData) {
@@ -15,7 +15,7 @@ export async function finalizeAction(formData: FormData) {
   let errorMessage = "";
   let warnings: FinalizeWarning[] = [];
   try {
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     warnings = await collectFinalizeWarnings(org.id, id);
     await finalizeInvoice(id);
   } catch (e) {
@@ -38,7 +38,7 @@ export async function cancelAction(formData: FormData) {
     const input = parseCancelFormData(formData);
     id = input.id;
     sendAfter = input.sendAfter;
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     const res = await cancelInvoice(input.id, { orgId: org.id, reason: input.reason, fxOverrideRate: input.fxOverrideRate });
     creditId = res.creditNote.id;
   } catch (e) {

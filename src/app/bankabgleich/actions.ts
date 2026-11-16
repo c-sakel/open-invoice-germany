@@ -6,8 +6,7 @@
  */
 import { revalidatePath } from "next/cache";
 import { z, ZodError } from "zod";
-import { getActiveOrg } from "@/lib/org";
-import { getCurrentUserId } from "@/lib/auth/server";
+import { requireActionOrg, requireSessionActor } from "@/lib/auth/require-session";
 import { describeError } from "@/lib/safe-error";
 import { NotFoundError } from "@/domain/errors";
 import { PaymentError } from "@/domain/invoice/payment";
@@ -22,8 +21,8 @@ type Ctx = { orgId: string; actor: string };
 
 async function run<T>(fn: (ctx: Ctx) => Promise<T>): Promise<BankActionResult<T>> {
   try {
-    const org = await getActiveOrg();
-    const actor = (await getCurrentUserId()) ?? "system";
+    const org = await requireActionOrg();
+    const actor = await requireSessionActor();
     const data = await fn({ orgId: org.id, actor });
     revalidatePath("/bankabgleich");
     revalidatePath("/rechnungen");
@@ -81,7 +80,7 @@ const searchSchema = z.object({ q: z.string().trim().min(1, "Bitte einen Suchbeg
 
 export async function searchInvoicesAction(input: unknown): Promise<BankActionResult<OpenInvoiceHit[]>> {
   try {
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     const { q } = searchSchema.parse(input);
     return { ok: true, data: await searchOpenInvoices(org.id, q) };
   } catch (e) {

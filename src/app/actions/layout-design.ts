@@ -7,7 +7,7 @@
  */
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { getActiveOrg } from "@/lib/org";
+import { requireActionOrg } from "@/lib/auth/require-session";
 import { InvalidOperationError, NotFoundError, ValidationError } from "@/domain/errors";
 import { archiveLayoutDesign, saveLayoutDesign } from "@/domain/layout-design/save";
 
@@ -34,7 +34,7 @@ function failure(e: unknown, label: string): LayoutDesignActionResult {
 
 export async function saveLayoutDesignAction(input: unknown): Promise<LayoutDesignActionResult> {
   try {
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     const design = await saveLayoutDesign(org.id, input, "user");
     revalidatePath("/einstellungen/briefpapier");
     return { ok: true, id: design.id, name: design.name, currentVersion: design.currentVersion, archived: design.archived };
@@ -45,7 +45,7 @@ export async function saveLayoutDesignAction(input: unknown): Promise<LayoutDesi
 
 export async function archiveLayoutDesignAction(id: string, archived: boolean): Promise<LayoutDesignActionResult> {
   try {
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     const design = await archiveLayoutDesign(org.id, z.string().min(1).parse(id), archived, "user");
     revalidatePath("/einstellungen/briefpapier");
     return { ok: true, id: design.id, name: design.name, currentVersion: design.currentVersion, archived: design.archived };

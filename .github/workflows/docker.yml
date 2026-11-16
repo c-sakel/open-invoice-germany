@@ -125,6 +125,12 @@ jobs:
           probe gen-base-cii.xml 0
           probe cii-summen-falsch.xml 1
           docker run --rm --entrypoint sh oig:ci -c 'test -f /opt/validator/LICENSES/NOTICE-validator.txt && /opt/jre/bin/java -version'
+      - name: Postfach-Bibliothek und Mail-Worker im Image (Nutzer node, Image-Laufzeit)
+        run: |
+          set -eu
+          # Wie in der Anwendung: Arbeitsverzeichnis /app, Nutzer 1000. imapflow muss im Standalone-Output ladbar sein,
+          # der Mail-Worker zerlegt eine kleine Testmail mit postal-mime.
+          docker run --rm -i --user 1000:1000 --entrypoint node oig:ci --input-type=module - < scripts/probe-mail-runtime.mjs
       - name: Gegen PostgreSQL starten
         run: |
           set -eu

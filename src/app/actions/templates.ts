@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { dbInternal } from "@/lib/db";
-import { getActiveOrg } from "@/lib/org";
+import { requireActionOrg } from "@/lib/auth/require-session";
 import { emailTemplateInputSchema } from "@/schemas/email";
 import {
   saveEmailTemplate,
@@ -39,7 +39,7 @@ export async function saveEmailTemplateAction(_prev: ActionResult, fd: FormData)
   if (!parsed.success) return { ok: false, error: firstError(parsed.error.issues) };
 
   try {
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     await saveEmailTemplate(org.id, parsed.data);
   } catch (e) {
     // G6: eine verstaendliche Meldung bei doppeltem Namen/docType; alle anderen Fehler
@@ -61,7 +61,7 @@ export async function deleteEmailTemplateAction(_prev: ActionResult, fd: FormDat
   if (!id) return { ok: false, error: "Vorlage nicht gefunden." };
 
   try {
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     await deleteEmailTemplate(org.id, id);
   } catch (e) {
     if (e instanceof TemplateNotFoundError) return { ok: false, error: "Vorlage nicht gefunden." };
@@ -80,7 +80,7 @@ export async function setDefaultEmailTemplateAction(_prev: ActionResult, fd: For
   if (!id) return { ok: false, error: "Vorlage nicht gefunden." };
 
   try {
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     const tpl = await dbInternal.emailTemplate.findFirst({ where: { id, orgId: org.id } });
     if (!tpl) return { ok: false, error: "Vorlage nicht gefunden." };
 

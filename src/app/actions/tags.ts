@@ -11,7 +11,7 @@
  */
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { getActiveOrg } from "@/lib/org";
+import { requireActionOrg } from "@/lib/auth/require-session";
 import { saveTag, deleteTag, TagNotFoundError, TagNameConflictError } from "@/domain/tag/manage";
 import { tagDocument, untagDocument } from "@/domain/tag/assign";
 import { NotFoundError } from "@/domain/errors";
@@ -35,7 +35,7 @@ function firstError(issues: { message: string; path: PropertyKey[] }[]): string 
 /** Legt einen Tag an (`id: null`) oder aendert Name/Farbe. */
 export async function saveTagAction(input: { id: string | null; name: string; color?: TagColor }): Promise<TagActionResult> {
   try {
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     await saveTag(org.id, input.id, { name: input.name, color: input.color });
   } catch (e) {
     if (e instanceof TagNotFoundError) return { ok: false, error: "Tag nicht gefunden." };
@@ -52,7 +52,7 @@ export async function saveTagAction(input: { id: string | null; name: string; co
  *  (Bestaetigungshinweis in TagManager). */
 export async function deleteTagAction(input: { id: string }): Promise<DeleteTagActionResult> {
   try {
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     const { removedAssignments } = await deleteTag(org.id, input.id);
     revalidatePath("/einstellungen/tags");
     return { ok: true, removedAssignments };
@@ -68,7 +68,7 @@ export async function deleteTagAction(input: { id: string }): Promise<DeleteTagA
  *  Tag-Chips ohne manuellen Reload aktuell sind. */
 export async function tagDocumentAction(input: { docType: TagDocType; docId: string; tagId: string }): Promise<TagActionResult> {
   try {
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     await tagDocument(org.id, input.tagId, { docType: input.docType, docId: input.docId });
   } catch (e) {
     if (e instanceof NotFoundError) return { ok: false, error: "Tag nicht gefunden." };
@@ -83,7 +83,7 @@ export async function tagDocumentAction(input: { docType: TagDocType; docId: str
 /** Entfernt die Zuordnung eines Tags von einem Beleg. */
 export async function untagDocumentAction(input: { docType: TagDocType; docId: string; tagId: string }): Promise<TagActionResult> {
   try {
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     await untagDocument(org.id, input.tagId, { docType: input.docType, docId: input.docId });
   } catch (e) {
     if (e instanceof NotFoundError) return { ok: false, error: "Tag nicht gefunden." };

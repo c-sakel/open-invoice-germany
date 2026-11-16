@@ -50,6 +50,7 @@ import { registerPostalTools } from "./tools/postal";
 import { registerCsvTools } from "./tools/csv";
 import { registerBankTools } from "./tools/bank";
 import { registerIncomingTools } from "./tools/incoming";
+import { registerMailboxTools } from "./tools/mailbox";
 import { registerPaymentRuleTools } from "./tools/payment-rules";
 import { registerDatevTools } from "./tools/datev";
 
@@ -93,6 +94,7 @@ registerOnlinePaymentTools(server, mcpContext);
 registerCsvTools(server, mcpContext);
 registerBankTools(server, mcpContext);
 registerIncomingTools(server, mcpContext);
+registerMailboxTools(server, mcpContext);
 registerPaymentRuleTools(server, mcpContext);
 registerDatevTools(server, mcpContext);
 

@@ -40,6 +40,7 @@ export const SETTINGS_KEYS = [
   "marke",
   "email",
   "post",
+  "postfach",
   "kundenportal",
   "vorlagen",
   "textvorlagen",
@@ -118,6 +119,7 @@ export const SETTINGS_ITEMS: readonly SettingsNavItem[] = [
   { href: "/einstellungen/marke", label: "Marke", key: "marke" },
   { href: "/einstellungen/email", label: "E-Mail-Versand", key: "email" },
   { href: "/einstellungen/post", label: "Postversand", key: "post" },
+  { href: "/einstellungen/postfach", label: "Rechnungs-Postfach", key: "postfach" },
   { href: "/einstellungen/kundenportal", label: "Kundenportal", key: "kundenportal" },
   { href: "/einstellungen/vorlagen", label: "Textvorlagen", key: "vorlagen" },
   { href: "/einstellungen/textvorlagen", label: "Dokumenttexte", key: "textvorlagen" },
@@ -146,7 +148,7 @@ export const SETTINGS_ITEMS: readonly SettingsNavItem[] = [
 export const SETTINGS_GROUPS: readonly { label: string; keys: readonly SettingsKey[] }[] = [
   { label: "Firma", keys: ["stammdaten", "marke", "briefpapier", "zahlungsmethoden", "online-zahlung"] },
   { label: "Belege", keys: ["belege", "nummernkreise", "kurse", "vorlagen", "textvorlagen", "mahnwesen", "kundenfelder", "tags"] },
-  { label: "Kommunikation", keys: ["email", "post", "kundenportal", "benachrichtigungen"] },
+  { label: "Kommunikation", keys: ["email", "post", "postfach", "kundenportal", "benachrichtigungen"] },
   { label: "System", keys: ["automatisierung", "zahlungsregeln", "api", "webhooks", "pruefung", "datev", "konto"] },
 ];
 

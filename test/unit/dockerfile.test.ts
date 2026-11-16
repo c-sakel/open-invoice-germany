@@ -32,6 +32,10 @@ describe("Dockerfile", () => {
     "assets/fonts/SourceSerif4-Regular.ttf",
     "src/app/favicon.ico",
     "src/workers/incoming-worker.mjs",
+    "src/workers/mail-worker.mjs",
+    "node_modules/postal-mime/dist/esm/postal-mime.js",
+    "node_modules/imapflow/dist/esm/imap-flow.js",
+    "node_modules/pino/package.json",
     "assets/einvoice-validation/pins.env",
     "assets/einvoice-validation/LICENSES/LICENSE-en16931-validation-EUPL-1.2.txt",
     "node_modules/swagger-ui-dist/swagger-ui-bundle.js",
@@ -97,10 +101,20 @@ describe("Dockerfile", () => {
     for (const f of ["gen-base-cii.xml", "cii-summen-falsch.xml"]) expect(read(`test/fixtures/incoming/${f}`).length).toBeGreaterThan(100);
   });
 
+  it("docker.yml laedt imapflow und den Mail-Worker im Image wie in der Anwendung", () => {
+    const wf = read(".github/workflows/docker.yml");
+    expect(wf).toMatch(/--user 1000:1000 --entrypoint node oig:ci --input-type=module - < scripts\/probe-mail-runtime\.mjs/);
+    const probe = read("scripts/probe-mail-runtime.mjs");
+    expect(probe).toContain('import("imapflow")');
+    expect(probe).toContain("mail-worker.mjs");
+  });
+
   it("next.config.ts nimmt Worker-Skript und Pruefartefakte ins Tracing auf", () => {
     const cfg = read("next.config.ts");
     expect(cfg).toContain("outputFileTracingIncludes");
     expect(cfg).toContain("./src/workers/**/*");
+    expect(cfg).toContain("./node_modules/postal-mime/**/*");
+    expect(cfg).toContain("imapflow");
     expect(cfg).toContain("./assets/einvoice-validation/**/*");
   });
 

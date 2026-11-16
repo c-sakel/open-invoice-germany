@@ -106,9 +106,9 @@ describe("Portal-Karte", () => {
 });
 
 describe("Navigation", () => {
-  it("Kundenportal steht nach Postversand und in der Gruppe Kommunikation", () => {
+  it("Kundenportal steht nach Postversand und Postfach und in der Gruppe Kommunikation", () => {
     const keys = SETTINGS_ITEMS.map((i) => i.key);
-    expect(keys.indexOf("kundenportal")).toBe(keys.indexOf("post") + 1);
+    expect(keys.indexOf("kundenportal")).toBe(keys.indexOf("postfach") + 1);
     expect(SETTINGS_GROUPS.find((g) => g.label === "Kommunikation")?.keys).toContain("kundenportal");
   });
 });

@@ -6,8 +6,7 @@
  */
 import { revalidatePath } from "next/cache";
 import { z, ZodError } from "zod";
-import { getActiveOrg } from "@/lib/org";
-import { getCurrentUserId } from "@/lib/auth/server";
+import { requireActionOrg, requireSessionActor } from "@/lib/auth/require-session";
 import { describeError } from "@/lib/safe-error";
 import { NotFoundError } from "@/domain/errors";
 import { MailNotConfiguredError } from "@/domain/email/settings";
@@ -33,9 +32,9 @@ function errorText(e: unknown): string {
 
 async function context(customerId: unknown) {
   const id = idSchema.parse(customerId);
-  const org = await getActiveOrg();
+  const org = await requireActionOrg();
   await assertPortalCustomer(org.id, id);
-  return { id, orgId: org.id, actor: (await getCurrentUserId()) ?? "system" };
+  return { id, orgId: org.id, actor: await requireSessionActor() };
 }
 
 function refresh(id: string): void {

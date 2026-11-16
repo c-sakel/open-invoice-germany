@@ -15,6 +15,7 @@ import { OSS_NOTICE } from "@/schemas/oss";
 import { createInvoiceSchema } from "@/schemas";
 
 vi.mock("@/lib/org", () => ({ getActiveOrg: vi.fn() }));
+vi.mock("@/lib/auth/server", () => ({ getCurrentUserId: async () => "tester" }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/domain/reporting/oss", async (importOriginal) => {
   const orig = await importOriginal<typeof import("@/domain/reporting/oss")>();

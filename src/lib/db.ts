@@ -618,6 +618,75 @@ function assertIncomingInvoiceUpdateAllowed(data: unknown): void {
 }
 
 /**
+ * Postfach-Abruf: Das Abrufprotokoll je Mail ist append-only (Doppelabruf-Schutz, Nachweis); einzig der Betreff
+ * darf nach Ablauf der Aufbewahrungsfrist auf NULL gesetzt werden. Loeschen ist nie erlaubt.
+ */
+export class InboundMailMessageImmutableError extends Error {
+  constructor(detail: string) {
+    super(`Postfach-Protokoll ist unveraenderlich: ${detail}`);
+    this.name = "InboundMailMessageImmutableError";
+  }
+}
+
+/**
+ * Anlage einer abgerufenen Mail: Dateiangaben (Name, Groesse, Hash, Zuordnung zur Mail) sind gesperrt;
+ * aenderbar sind nur Entscheidung und Verknuepfungen. Der Pfad der Zwischenablage darf nur geleert werden.
+ */
+export class InboundMailAttachmentImmutableError extends Error {
+  constructor(detail: string) {
+    super(`Postfach-Anlage ist ein Nachweis und nicht aenderbar: ${detail}`);
+    this.name = "InboundMailAttachmentImmutableError";
+  }
+}
+
+const INBOUND_MAIL_MESSAGE_MUTABLE_KEYS: ReadonlySet<string> = new Set(["subject"]);
+
+const INBOUND_MAIL_ATTACHMENT_MUTABLE_KEYS: ReadonlySet<string> = new Set([
+  "status",
+  "decidedAt",
+  "decidedBy",
+  "discardReason",
+  "incomingInvoiceId",
+  "duplicateOfIncomingId",
+  "stagingPath",
+  "purgedAt",
+  "updatedAt",
+]);
+
+/** Wert eines Update-Feldes; Prisma erlaubt `{ set: x }` neben dem Direktwert. */
+function updateFieldValue(value: unknown): unknown {
+  if (value !== null && typeof value === "object" && !(value instanceof Date) && "set" in value) {
+    return (value as { set: unknown }).set;
+  }
+  return value;
+}
+
+function assertInboundMessageUpdateAllowed(data: unknown): void {
+  assertOnlyKeys(data, INBOUND_MAIL_MESSAGE_MUTABLE_KEYS, (d) => new InboundMailMessageImmutableError(d));
+  const record = (data ?? {}) as Record<string, unknown>;
+  if ("subject" in record && updateFieldValue(record.subject) !== null) {
+    throw new InboundMailMessageImmutableError("subject darf nur geleert werden");
+  }
+}
+
+function assertInboundAttachmentUpdateAllowed(data: unknown): void {
+  assertOnlyKeys(data, INBOUND_MAIL_ATTACHMENT_MUTABLE_KEYS, (d) => new InboundMailAttachmentImmutableError(d));
+  const record = (data ?? {}) as Record<string, unknown>;
+  if ("stagingPath" in record && updateFieldValue(record.stagingPath) !== null) {
+    throw new InboundMailAttachmentImmutableError("stagingPath darf nur geleert werden");
+  }
+}
+
+/** Nach der Uebernahme (ACCEPTED) sind Status und Verknuepfung zur Eingangsrechnung endgueltig. */
+async function guardInboundAttachmentAccepted(where: unknown, data: unknown): Promise<void> {
+  const record = (data ?? {}) as Record<string, unknown>;
+  if (!("status" in record) && !("incomingInvoiceId" in record)) return;
+  const filter = { AND: [(where ?? {}) as never, { status: "ACCEPTED" }] } as never;
+  const row = await base.inboundMailAttachment.findFirst({ where: filter, select: { id: true } });
+  if (row) throw new InboundMailAttachmentImmutableError("uebernommene Anlage: status/incomingInvoiceId nicht aenderbar");
+}
+
+/**
  * Phase 17a: Das VIES-Pruefprotokoll (`VatIdCheck`) ist append-only; nur `create` ist erlaubt.
  */
 export class VatIdCheckImmutableError extends Error {
@@ -1168,6 +1237,55 @@ export const prisma = base.$extends({
       },
       async deleteMany() {
         throw new IncomingInvoiceValidationImmutableError();
+      },
+    },
+    inboundMailMessage: {
+      async update({ args, query }) {
+        assertInboundMessageUpdateAllowed(args.data);
+        return query(args);
+      },
+      async updateMany({ args, query }) {
+        assertInboundMessageUpdateAllowed(args.data);
+        return query(args);
+      },
+      async updateManyAndReturn({ args, query }) {
+        assertInboundMessageUpdateAllowed(args.data);
+        return query(args);
+      },
+      async upsert() {
+        throw new InboundMailMessageImmutableError("upsert");
+      },
+      async delete() {
+        throw new InboundMailMessageImmutableError("delete");
+      },
+      async deleteMany() {
+        throw new InboundMailMessageImmutableError("deleteMany");
+      },
+    },
+    inboundMailAttachment: {
+      async update({ args, query }) {
+        assertInboundAttachmentUpdateAllowed(args.data);
+        await guardInboundAttachmentAccepted(args.where, args.data);
+        return query(args);
+      },
+      async updateMany({ args, query }) {
+        assertInboundAttachmentUpdateAllowed(args.data);
+        await guardInboundAttachmentAccepted(args.where, args.data);
+        return query(args);
+      },
+      async updateManyAndReturn({ args, query }) {
+        assertInboundAttachmentUpdateAllowed(args.data);
+        await guardInboundAttachmentAccepted(args.where, args.data);
+        return query(args);
+      },
+      async upsert() {
+        throw new InboundMailAttachmentImmutableError("upsert");
+      },
+      async delete() {
+        throw new InboundMailAttachmentImmutableError("delete");
+      },
+      async deleteMany() {
+        throw new InboundMailAttachmentImmutableError("deleteMany");
       },
     },
     postalJobEvent: {

@@ -14,17 +14,22 @@ export interface IsolatedJob<I> {
   params?: Record<string, number>;
   timeoutMs: number;
   maxHeapMb: number;
+  /** Welches Produktivskript laeuft; Standard "incoming". */
+  script?: WorkerScript;
   /** Nur fuer Tests: anderes Worker-Skript. */
   scriptPath?: string;
 }
+
+export type WorkerScript = "incoming" | "mail";
 
 export type IsolatedResult<O> =
   | { ok: true; value: O }
   | { ok: false; reason: "TIMEOUT" | "OUT_OF_MEMORY" | "CRASHED" | "ERROR"; code?: string };
 
 /** Pfad des Worker-Skripts, relativ zum Arbeitsverzeichnis (auch im Standalone-Output aufloesbar). */
-export function workerScriptPath(): string {
-  return path.resolve(/*turbopackIgnore: true*/ process.cwd(), "src", "workers", "incoming-worker.mjs");
+export function workerScriptPath(script: WorkerScript = "incoming"): string {
+  const file = script === "mail" ? "mail-worker.mjs" : "incoming-worker.mjs";
+  return path.resolve(/*turbopackIgnore: true*/ process.cwd(), "src", "workers", file);
 }
 
 interface WorkerMessage {
@@ -49,7 +54,7 @@ export function runIsolated<I, O>(spec: IsolatedJob<I>): Promise<IsolatedResult<
       resolve(r);
     };
     try {
-      worker = new Worker(spec.scriptPath ?? workerScriptPath(), {
+      worker = new Worker(spec.scriptPath ?? workerScriptPath(spec.script), {
         workerData: { job: spec.job, input: spec.input, params: spec.params ?? {} },
         // Hinweis: env: {} sperrt weder Netz noch Dateizugriff des Threads. Der Schutz besteht nur darin,
         // dass das Skript eigener Code ist, fremde Bytes nie ausfuehrt und Heap/Zeit begrenzt sind.

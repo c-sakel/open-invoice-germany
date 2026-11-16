@@ -12,7 +12,7 @@
  * Namenskollision mit einer fachlich unverwandten Funktion.
  */
 import { revalidatePath } from "next/cache";
-import { getActiveOrg } from "@/lib/org";
+import { requireActionOrg } from "@/lib/auth/require-session";
 import { saveTemplateFromDocument, deleteTemplate, renameTemplate, TemplateNameConflictError } from "@/domain/template/save";
 import { z } from "zod";
 import { applyTemplate, TemplateCustomerRequiredError } from "@/domain/template/apply";
@@ -35,7 +35,7 @@ export interface ApplyTemplateActionResult extends TemplateActionResult {
  *  (Beleg-/Listen-Mehr-Menue) UND spaeter das Anlegeformular auf /vorlagen. */
 export async function saveTemplateFromDocumentAction(input: { docType: TagDocType; docId: string; name: string }): Promise<TemplateActionResult> {
   try {
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     await saveTemplateFromDocument(org.id, input);
   } catch (e) {
     if (e instanceof NotFoundError) return { ok: false, error: "Beleg nicht gefunden." };
@@ -50,7 +50,7 @@ export async function saveTemplateFromDocumentAction(input: { docType: TagDocTyp
 /** Benennt eine Vorlage um (/vorlagen, inline). */
 export async function renameTemplateAction(input: { id: string; name: string }): Promise<TemplateActionResult> {
   try {
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     await renameTemplate(org.id, input.id, input.name);
   } catch (e) {
     if (e instanceof NotFoundError) return { ok: false, error: "Vorlage nicht gefunden." };
@@ -66,7 +66,7 @@ export async function renameTemplateAction(input: { id: string; name: string }):
 /** Loescht eine Vorlage (/vorlagen). */
 export async function deleteTemplateAction(input: { id: string }): Promise<TemplateActionResult> {
   try {
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     await deleteTemplate(org.id, input.id);
   } catch (e) {
     if (e instanceof NotFoundError) return { ok: false, error: "Vorlage nicht gefunden." };
@@ -81,7 +81,7 @@ export async function deleteTemplateAction(input: { id: string }): Promise<Templ
  *  liefert die Zielseite fuer die Weiterleitung. */
 export async function applyTemplateAction(input: { id: string }): Promise<ApplyTemplateActionResult> {
   try {
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     const { docType, id } = await applyTemplate(org.id, input.id, {});
     revalidatePath("/vorlagen");
     return { ok: true, editHref: editHrefFor(docType, id) };

@@ -133,6 +133,8 @@ export interface IncomingDetail {
   /** Bearbeitungsstand ohne Zahlungsvermerk. */
   workflow: IncomingWorkflowState;
   allowedActions: IncomingAction[];
+  /** Herkunft bei Kanal MAILBOX (ohne Betreff und Absenderadresse). */
+  mailSource: { internalDate: Date | null; fetchedAt: Date; senderDomain: string | null } | null;
   /** Interne Notiz (nur Detail, nie in Listen oder Exporten). */
   internalNote: string | null;
   /** Zahlungsvermerk (Detail; auch in REST und MCP, nie in Listen oder Exporten). */
@@ -215,7 +217,7 @@ export async function getIncomingInvoiceDetail(
       : null;
   if (!found) throw new NotFoundError("Eingangsrechnung nicht gefunden.");
   const { internalNote, paidNote, ...header } = found;
-  const [org, parsed, latest, validations, history] = await Promise.all([
+  const [org, parsed, latest, validations, history, mailRow] = await Promise.all([
     dbInternal.organization.findUnique({ where: { id: orgId }, select: { vatId: true } }),
     hasInvoiceXml(header) ? readParsed(orgId, id) : Promise.resolve(null),
     dbInternal.incomingInvoiceValidation.findFirst({
@@ -230,6 +232,9 @@ export async function getIncomingInvoiceDetail(
       select: VALIDATION_HEAD_SELECT,
     }),
     incomingHistory(orgId, id),
+    header.channel === "MAILBOX"
+      ? dbInternal.inboundMailAttachment.findFirst({ where: { incomingInvoiceId: id, orgId }, select: { message: { select: { internalDate: true, fetchedAt: true, senderDomain: true } } } })
+      : Promise.resolve(null),
   ]);
   const view = buildIncomingView({ ...header, hintCodes: hintCodesOf(header.hintsJson) }, parsed, { ...opts, ownVatId: org?.vatId ?? null });
   const validation: IncomingValidationDetail | null = latest
@@ -291,6 +296,7 @@ export async function getIncomingInvoiceDetail(
       paidMarkedAt: header.paidMarkedAt,
       dueAt: header.dueAt,
     },
+    mailSource: mailRow?.message ?? null,
     allowedActions: STATUS_SET.has(header.status) ? allowedActions(header.status as IncomingStatus) : [],
     internalNote,
     paidNote,

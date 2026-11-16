@@ -113,3 +113,15 @@ Sind Authenticator-Gerät **und** Wiederherstellungscodes verloren, schaltet der
 6. **Ablage:** Eingangsrechnungen liegen unter `ARCHIVE_DIR/incoming/<Firma>/<Jahr>/` write-once und gehören zur Sicherung (Belegarchiv-Volume). Es gibt keine Löschfunktion; die wöchentliche Kettenprüfung vergleicht die Dateien mit ihren Hashes und meldet veränderte oder fehlende Dateien als `ARCHIVE_TAMPERED`.
 7. **Nachlauf:** Der Archiv-Job holt Prüfungen nach, die nach der Annahme nicht abgeschlossen wurden (höchstens 5 je Lauf, ab 2 Minuten Alter).
 8. **Reverse-Proxy:** `client_max_body_size` muss mindestens 21 MB erlauben (REST-Annahme Base64, Datei bis 15 MB), für den Upload der Oberfläche mindestens 16 MB.
+
+## Eingangsrechnungen: Postfach-Abruf
+
+Der Abruf eines Rechnungs-Postfachs ist ab Werk **aus** (Einstellungen → Rechnungs-Postfach). Wer ihn einschaltet, beachtet:
+
+1. **Ausgehende Verbindung (Egress):** Die Anwendung verbindet sich nur zum eingetragenen IMAP-Server und nur auf Port **993** (TLS) oder **143** (STARTTLS). Firewall und Container-Netz müssen genau diesen Weg erlauben; andere Ports sind in der Anwendung gesperrt.
+2. **Notschalter und Eingrenzung (`.env`):** `INBOUND_MAIL_NETWORK=0` sperrt jeden Verbindungsaufbau (Einstellungen und Daten bleiben). `INBOUND_MAIL_HOSTS` (Komma-Liste) beschränkt die erlaubten Server; ohne Eintrag ist jeder öffentliche Server zulässig. `INBOUND_MAIL_ALLOW_PRIVATE=1` erlaubt zusätzlich private Netzbereiche (z. B. ein Mailserver im eigenen Netz); Loopback, Link-Local und eingebettete Adressen bleiben gesperrt.
+3. **Zertifikate:** Die Verbindung prüft das Serverzertifikat. Ein Server mit privater Zertifizierungsstelle braucht deren Zertifikat über `NODE_EXTRA_CA_CERTS` (Pfad zu einer PEM-Datei im Container).
+4. **Zwischenablage und Sicherung:** Anlagen vor der Entscheidung liegen unter `ATTACHMENTS_DIR/mail-inbox/<Firma>/`; das Verzeichnis gehört zur Sicherung des Anhänge-Volumes (`oig-attachments`). Übernommene Dateien liegen im write-once-Belegarchiv (Abschnitt oben). Kontingent der Sichtung: 500 Anlagen oder 2 GB je Firma, danach pausiert der Abruf.
+5. **Speicher:** Die Zerlegung einer Mail läuft in einem eigenen Prozess mit höchstens 256 MB Heap (15 Sekunden Frist).
+6. **Scheduler:** Der Job `mailbox` läuft im Takt des Schedulers (`SCHEDULER_INTERVAL_MINUTES`, Standard 15) nach `archive`.
+7. **Passwort:** Es liegt nur verschlüsselt in der Datenbank (Schlüssel aus `AUTH_SECRET`); wird `AUTH_SECRET` geändert, muss es neu eingegeben werden.

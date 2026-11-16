@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { getActiveOrg } from "@/lib/org";
+import { requireActionOrg } from "@/lib/auth/require-session";
 import { rateFor } from "@/domain/fx/rate-for";
 import { refreshExchangeRates, upsertManualRate } from "@/domain/fx/store";
 import { exchangeRateQuerySchema, exchangeRateUpsertSchema } from "@/schemas/fx";
@@ -27,7 +27,7 @@ const DAY_FORMAT = new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-
 export async function previewFxRateAction(input: { currency: string; stichtag: string }): Promise<FxPreviewResult> {
   const query = exchangeRateQuerySchema.safeParse({ currency: input.currency, date: input.stichtag });
   if (!query.success) return { found: false };
-  const org = await getActiveOrg();
+  const org = await requireActionOrg();
   const pick = await rateFor(org.id, query.data.currency, query.data.date, undefined, new Date());
   if (!pick) return { found: false };
   const label = pick.source === "BMF_MONTHLY" ? `Monatsdurchschnitt ${MONTH_FORMAT.format(pick.rateDate)}` : `EZB-Tageskurs vom ${DAY_FORMAT.format(pick.rateDate)}`;
@@ -53,7 +53,7 @@ export async function upsertExchangeRateAction(_prev: ActionResult, fd: FormData
   });
   if (!parsed.success) return { ok: false, error: firstError(parsed.error.issues) };
   try {
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     await upsertManualRate(parsed.data, "user", org.id);
   } catch (e) {
     if (e instanceof z.ZodError) return { ok: false, error: firstError(e.issues) };
@@ -69,7 +69,7 @@ export async function upsertExchangeRateAction(_prev: ActionResult, fd: FormData
 export async function refreshExchangeRatesAction(): Promise<ActionResult> {
   if (process.env.FX_AUTO_FETCH === "0") return { ok: false, error: "Der automatische Kursabruf ist abgeschaltet (FX_AUTO_FETCH=0)." };
   try {
-    await getActiveOrg();
+    await requireActionOrg();
     const r = await refreshExchangeRates(new Date());
     revalidatePath("/einstellungen/kurse");
     const parts = [`${r.inserted} neue Tageskurse`, r.months > 0 ? "Monatsmittel berechnet" : null, r.incompleteMonths.length > 0 ? `Monatsmittel unvollständig (${r.incompleteMonths.join(", ")}) — bitte manuell pflegen` : null];

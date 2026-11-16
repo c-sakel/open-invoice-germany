@@ -17,6 +17,7 @@ import { IncomingNote } from "@/components/incoming/IncomingNote";
 import { IncomingHistory } from "@/components/incoming/IncomingHistory";
 import { girocodeImages } from "@/components/incoming/girocode-image";
 import { formatLabel, formatReceivedAt, sizeLabel, statusLabel } from "@/components/incoming/incoming-ui";
+import { channelLabel, mailOriginText } from "@/components/mailbox/mailbox-ui";
 import { dbInternal } from "@/lib/db";
 import { berlinDateKey } from "@/lib/berlin-time";
 import { EDITABLE_STATUSES, manualAllowed } from "@/domain/incoming/update";
@@ -77,6 +78,14 @@ export default async function EingangDetailPage({ params }: { params: Promise<{ 
         }
       />
       <AutoRefresh active={detail.validationStatus === "PENDING"} />
+
+      {detail.channel === "MAILBOX" && detail.mailSource ? (
+        <p role="note" className="rounded-md border border-rule bg-paper px-3 py-2 text-sm text-ink-soft [overflow-wrap:anywhere]">
+          Herkunft: {mailOriginText(detail.mailSource, formatReceivedAt)}
+        </p>
+      ) : detail.channel !== "UPLOAD" ? (
+        <p className="text-xs text-ink-muted">Eingangskanal: {channelLabel(detail.channel)}</p>
+      ) : null}
 
       {detail.duplicateOfId ? (
         <p role="note" className="rounded-md border border-seal/30 bg-seal/10 px-3 py-2 text-sm text-ink">
