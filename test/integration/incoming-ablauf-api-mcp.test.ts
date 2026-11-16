@@ -7,6 +7,7 @@ import fs from "node:fs";
 import { promises as fsp } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 
 const orgStore: { id: string | null } = vi.hoisted(() => ({ id: null }));
 vi.mock("@/lib/org", () => ({
@@ -115,6 +116,29 @@ const call = (name: string, args: Record<string, unknown> = {}): Promise<ToolRes
   return tool.handler(args);
 };
 const parse = (r: ToolResult): Json => JSON.parse(r.content[0]!.text) as Json;
+
+const PAY_NOTE = "ZAHLVERMERK-2243-nur-intern";
+/** ZIP entpacken (die Eintraege sind komprimiert, Rohbytes beweisen nichts). */
+function unzipTexts(zip: Buffer, names: string[]): Record<string, string> {
+  const file = path.join(tmp, `export-${Math.random().toString(36).slice(2)}.zip`);
+  fs.writeFileSync(file, zip);
+  try {
+    execFileSync("unzip", ["-t", file]);
+    const all = execFileSync("unzip", ["-Z1", file]).toString("utf8").split("\n").filter(Boolean);
+    for (const n of names) expect(all).toContain(n);
+    return Object.fromEntries(names.map((n) => [n, execFileSync("unzip", ["-p", file, n], { maxBuffer: 50_000_000 }).toString("utf8")]));
+  } finally {
+    fs.rmSync(file, { force: true });
+  }
+}
+async function markedPaidWithNotes(i: number): Promise<string> {
+  const id = await receive(png(900 + i), `bezahlt-${i}.png`);
+  expect((await patch(id, writeToken, { internalNote: NOTE, manual: { supplierName: "Notiz KG", number: `N-2243-${i}`, issueDate: today, grossCents: 1190, currency: "EUR" } })).status).toBe(200);
+  expect((await status(id, writeToken, { action: "CHECK" })).status).toBe(200);
+  expect((await status(id, writeToken, { action: "APPROVE" })).status).toBe(200);
+  expect((await status(id, writeToken, { action: "MARK_PAID", paidOn: today, paidNote: PAY_NOTE })).status).toBe(200);
+  return id;
+}
 
 const today = berlinDateKey(new Date());
 const shift = (day: string, n: number): string => new Date(Date.parse(`${day}T00:00:00.000Z`) + n * 86_400_000).toISOString().slice(0, 10);
@@ -229,6 +253,17 @@ describe("REST: Bearbeitung", () => {
     expect(b.data.paidNote).toBeNull();
   });
 
+  it("Detail liefert Zahlungsvermerk und interne Notiz (Round-Trip), Liste nicht", async () => {
+    const id = await markedPaidWithNotes(1);
+    const d = await detail(id);
+    expect(d.data.paidNote).toBe(PAY_NOTE);
+    expect(d.data.internalNote).toBe(NOTE);
+    const list = await listGet(req("/api/v1/IncomingInvoice?limit=100", readToken));
+    const text = await list.text();
+    expect(text).not.toContain(PAY_NOTE);
+    expect(text).not.toContain(NOTE);
+  });
+
   it("Liste: ?due=OVERDUE enthaelt offene mit vergangener Faelligkeit, abgelehnte nicht", async () => {
     const rejectedId = await receive(ubl("A-2243-3"), "c.xml");
     expect((await status(rejectedId, writeToken, { action: "REJECT", reason: "falscher Empfaenger" })).status).toBe(200);
@@ -250,7 +285,14 @@ describe("REST und Session: Uebergabe", () => {
     expect(res.headers.get("cache-control")).toBe("no-store");
     const bytes = Buffer.from(await res.arrayBuffer());
     expect(bytes.subarray(0, 2).toString()).toBe("PK");
-    expect(bytes.includes(Buffer.from(NOTE))).toBe(false);
+    await markedPaidWithNotes(2);
+    const again = Buffer.from(await (await exportGet(req(`/api/v1/IncomingInvoice/export?${RANGE}`, readToken))).arrayBuffer());
+    const t = unzipTexts(again, ["eingangsrechnungen.csv", "liesmich.txt"]);
+    expect(t["eingangsrechnungen.csv"]).toContain("N-2243-2");
+    for (const text of Object.values(t)) {
+      expect(text).not.toContain(NOTE);
+      expect(text).not.toContain(PAY_NOTE);
+    }
   });
 
   it("from > to -> 400; Zeitraum > 366 Tage -> 400; fehlende Daten -> 400", async () => {
@@ -337,7 +379,10 @@ describe("MCP", () => {
     expect(path.basename(out.path)).toMatch(/^eingang-\d{4}-\d{2}-\d{2}-\d{4}-\d{2}-\d{2}-\d{8}T\d{6}\.zip$/);
     const bytes = await fsp.readFile(out.path);
     expect(bytes.subarray(0, 2).toString()).toBe("PK");
-    expect(bytes.includes(Buffer.from(NOTE))).toBe(false);
+    for (const text of Object.values(unzipTexts(bytes, ["eingangsrechnungen.csv", "liesmich.txt"]))) {
+      expect(text).not.toContain(NOTE);
+      expect(text).not.toContain(PAY_NOTE);
+    }
     expect(out.count).toBe((parse(dry) as unknown as { count: number }).count);
 
     for (const dir of ["relativ", "/tmp/../etc", path.join(tmp, "gibt-es-nicht"), out.path]) {

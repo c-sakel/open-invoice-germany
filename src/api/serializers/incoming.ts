@@ -228,7 +228,7 @@ export const incomingDetailSchema = incomingHeaderSchema.extend({
   validation: incomingValidationSchema.nullable(),
   validations: z.array(validationHeadSchema),
   internalNote: z.string().nullable().describe("Interne Notiz (nur Detail, nie in Listen, Exporten oder Mails)"),
-  paidNote: z.string().nullable().describe("Nur in der Oberflaeche; in REST und MCP immer null"),
+  paidNote: z.string().nullable().describe("Zahlungsvermerk (nur Detail, nie in Listen, Exporten oder Mails)"),
   workflow: z.object({
     status: z.enum(INCOMING_STATUSES),
     dueAt: z.string().nullable(),

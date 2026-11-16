@@ -292,7 +292,7 @@ export async function getIncomingInvoiceDetail(
     },
     allowedActions: STATUS_SET.has(header.status) ? allowedActions(header.status as IncomingStatus) : [],
     internalNote,
-    paidNote: opts.ibanMode === "full" ? paidNote : null,
+    paidNote,
     supplierContact: contact,
     manual,
     suggestions,
