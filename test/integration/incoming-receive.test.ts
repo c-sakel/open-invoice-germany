@@ -13,11 +13,23 @@ import { resetRateLimits, RateLimitError } from "@/lib/rate-limit";
 import { archiveRoot } from "@/lib/archive/storage";
 import { verifyOrgChain } from "@/domain/audit/verify-chain";
 import { ArchiveTamperedError, NotFoundError } from "@/domain/errors";
-import { IncomingDuplicateError, IncomingFormatError } from "@/domain/incoming/errors";
+import { IncomingBusyError, IncomingDuplicateError, IncomingFormatError } from "@/domain/incoming/errors";
 import { receiveIncomingInvoice } from "@/domain/incoming/receive";
 import { getIncomingAttachment, getIncomingFile } from "@/domain/incoming/files";
 import { verifyIncomingFiles } from "@/domain/incoming/verify";
 import { pdfWithAttachments } from "../helpers/pdf-craft";
+
+const pdfExtract = vi.hoisted(() => ({ override: null as null | (() => Promise<{ status: "UNREADABLE"; reason: string }>), calls: 0 }));
+vi.mock("@/domain/incoming/pdf-attachments", async (orig) => {
+  const actual = await orig<typeof import("@/domain/incoming/pdf-attachments")>();
+  return {
+    ...actual,
+    extractPdfInvoiceXml: (bytes: Uint8Array) => {
+      pdfExtract.calls++;
+      return pdfExtract.override ? pdfExtract.override() : actual.extractPdfInvoiceXml(bytes);
+    },
+  };
+});
 
 const fx = (n: string) => fs.readFileSync(path.resolve(__dirname, "../fixtures/incoming", n));
 const NOW = new Date("2233-03-01T10:00:00.000Z");
@@ -57,7 +69,11 @@ afterAll(async () => {
   await fsp.rm(tmp, { recursive: true, force: true });
 });
 
-beforeEach(() => resetRateLimits());
+beforeEach(() => {
+  resetRateLimits();
+  pdfExtract.override = null;
+  pdfExtract.calls = 0;
+});
 
 describe("Annahme", () => {
   it("UBL: Zeile, Hash, Datei byte-gleich, Aenderungsprotokoll mit festem Diff, Kette gueltig", async () => {
@@ -143,16 +159,59 @@ describe("Annahme", () => {
     expect(fs.existsSync(path.join(archiveRoot(), rows[0].originalPath))).toBe(true);
   });
 
-  it("Fehler in der Transaktion: keine Zeile, keine Dateileiche", async () => {
+  it("Fehler in der Transaktion: keine Zeile, Datei bleibt, Wiederholung nutzt sie", async () => {
     const org = await mkOrg("Eingang Fehler GmbH");
     const bytes = pngVariant(3);
     const spy = vi.spyOn(dbInternal, "$transaction").mockRejectedValueOnce(new Error("DB kaputt"));
     await expect(receiveIncomingInvoice(org, bytes, opts("f.png"))).rejects.toThrow("DB kaputt");
     spy.mockRestore();
     expect(await dbInternal.incomingInvoice.count({ where: { orgId: org } })).toBe(0);
-    expect(fs.existsSync(path.join(archiveRoot(), `incoming/${org}/2233/${sha(bytes)}.png`))).toBe(false);
-    // Wiederholung funktioniert
+    const abs = path.join(archiveRoot(), `incoming/${org}/2233/${sha(bytes)}.png`);
+    expect(fs.existsSync(abs)).toBe(true);
     await expect(receiveIncomingInvoice(org, bytes, opts("f.png"))).resolves.toMatchObject({ kind: "OTHER" });
+    expect(fs.readFileSync(abs).equals(bytes)).toBe(true);
+    expect(await dbInternal.incomingInvoice.count({ where: { orgId: org } })).toBe(1);
+  });
+
+  it("Aktivitaetsprotokoll schlaegt fehl: Annahme gelingt trotzdem", async () => {
+    const org = await mkOrg("Eingang Protokollfehler GmbH");
+    const spy = vi.spyOn(dbInternal.activityLog, "create").mockRejectedValueOnce(new Error("Protokoll kaputt"));
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const res = await receiveIncomingInvoice(org, pngVariant(4), opts("a.png"));
+    spy.mockRestore();
+    err.mockRestore();
+    expect(await dbInternal.incomingInvoice.count({ where: { orgId: org, id: res.id } })).toBe(1);
+  });
+
+  it("bekannte Dublette ruft den PDF-Worker nicht auf", async () => {
+    const org = await mkOrg("Eingang Dublette Worker GmbH");
+    const pdf = await pdfWithAttachments([{ name: "anlage.txt", bytes: Buffer.from("x") }]);
+    await receiveIncomingInvoice(org, pdf, opts("d.pdf"));
+    const before = pdfExtract.calls;
+    await expect(receiveIncomingInvoice(org, pdf, opts("d.pdf"))).rejects.toBeInstanceOf(IncomingDuplicateError);
+    expect(pdfExtract.calls).toBe(before);
+  });
+
+  it("PDF-Timeout: zweimal 503, beim dritten Mal als OTHER mit eigenem Hinweis abgelegt", async () => {
+    const org = await mkOrg("Eingang Timeout GmbH");
+    const pdf = await pdfWithAttachments([{ name: "anlage.txt", bytes: Buffer.from("timeout") }]);
+    pdfExtract.override = async () => ({ status: "UNREADABLE", reason: "TIMEOUT" });
+    await expect(receiveIncomingInvoice(org, pdf, opts("t.pdf"))).rejects.toBeInstanceOf(IncomingBusyError);
+    await expect(receiveIncomingInvoice(org, pdf, opts("t.pdf"))).rejects.toBeInstanceOf(IncomingBusyError);
+    const res = await receiveIncomingInvoice(org, pdf, opts("t.pdf"));
+    expect(res.kind).toBe("OTHER");
+    expect(res.hints).toContain("PDF_TIMEOUT");
+    expect(res.hints).not.toContain("PDF_UNREADABLE");
+  });
+
+  it("PDF defekt: OTHER mit PDF_UNREADABLE, Speichermangel wie Timeout zunaechst 503", async () => {
+    const org = await mkOrg("Eingang Defekt GmbH");
+    const pdf = await pdfWithAttachments([{ name: "anlage.txt", bytes: Buffer.from("defekt") }]);
+    pdfExtract.override = async () => ({ status: "UNREADABLE", reason: "OUT_OF_MEMORY" });
+    await expect(receiveIncomingInvoice(org, pdf, opts("o.pdf"))).rejects.toBeInstanceOf(IncomingBusyError);
+    pdfExtract.override = async () => ({ status: "UNREADABLE", reason: "BROKEN" });
+    const res = await receiveIncomingInvoice(org, pdf, opts("o.pdf"));
+    expect(res.hints).toContain("PDF_UNREADABLE");
   });
 
   it("unsicheres XML wird abgelehnt, nichts abgelegt", async () => {
@@ -235,6 +294,23 @@ describe("Ausgabe mit Hash-Pruefung", () => {
 
     fs.writeFileSync(abs, good);
     expect(await verifyIncomingFiles(org)).toEqual({ checked: 1, tampered: 0 });
+  });
+
+  it("nicht lesbare Datei zaehlt als Abweichung, die Pruefung laeuft weiter", async () => {
+    const org = await mkOrg("Eingang Lesefehler GmbH");
+    const a = await receiveIncomingInvoice(org, fx("gen-base-ubl.xml"), opts());
+    const b = await receiveIncomingInvoice(org, pngVariant(9), opts("l.png"));
+    const rowA = await dbInternal.incomingInvoice.findUniqueOrThrow({ where: { id: a.id }, select: { originalPath: true } });
+    const absA = path.join(archiveRoot(), rowA.originalPath);
+    const good = fs.readFileSync(absA);
+    fs.rmSync(absA);
+    fs.mkdirSync(absA); // Lesen schlaegt mit EISDIR fehl (kein ENOENT)
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    expect(await verifyIncomingFiles(org)).toEqual({ checked: 2, tampered: 1 });
+    err.mockRestore();
+    expect(b.id).toBeTruthy();
+    fs.rmdirSync(absA);
+    fs.writeFileSync(absA, good);
   });
 
   it("eingebettete Anlage: MIME nur bei passendem Inhalt", async () => {

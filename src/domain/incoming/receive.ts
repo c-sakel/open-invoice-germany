@@ -8,7 +8,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import { withChangeLogRetry } from "@/lib/chain-retry";
 import { berlinYear } from "@/lib/berlin-time";
 import { Prisma } from "@/generated/prisma/client";
-import { removeArchiveFile, sha256Hex, writeArchiveFile } from "@/lib/archive/storage";
+import { sha256Hex, writeArchiveFile } from "@/lib/archive/storage";
 import { appendChangeLog } from "@/domain/audit";
 import { logActivity } from "@/domain/activity/log";
 import { sanitizeFileName } from "@/domain/import/types";
@@ -43,13 +43,21 @@ export interface ReceiveOptions {
   now?: Date;
 }
 
-interface Stored {
-  relPath: string;
-  created: boolean;
-}
+/** Timeouts je Datei (Organisation + Hash) im Prozess; ab MAX_PDF_TIMEOUTS wird die Datei abgelegt statt erneut versucht. */
+const MAX_PDF_TIMEOUTS = 3;
+const MAX_TIMEOUT_KEYS = 500;
+const timeoutCounts = new Map<string, number>();
 
-/** Pfade, die gerade von einer Annahme in diesem Prozess geschrieben werden (kein Aufraeumen unter fremden Fuessen). */
-const inFlight = new Map<string, number>();
+function countTimeout(key: string): number {
+  const n = (timeoutCounts.get(key) ?? 0) + 1;
+  timeoutCounts.delete(key);
+  timeoutCounts.set(key, n);
+  if (timeoutCounts.size > MAX_TIMEOUT_KEYS) {
+    const oldest = timeoutCounts.keys().next();
+    if (!oldest.done) timeoutCounts.delete(oldest.value);
+  }
+  return n;
+}
 
 const LEGAL_FORM_TOKENS = new Set(["gmbh", "mbh", "ag", "kg", "ug", "ohg", "gbr", "se", "ltd", "llc", "inc", "co", "und", "haftungsbeschraenkt", "haftungsbeschrankt", "haftungsbeschränkt"]);
 
@@ -82,37 +90,13 @@ function decodeUtf8(bytes: Uint8Array): string | null {
   }
 }
 
-async function storeFile(relPath: string, bytes: Buffer): Promise<Stored> {
-  inFlight.set(relPath, (inFlight.get(relPath) ?? 0) + 1);
-  try {
-    return { relPath, created: await writeArchiveFile(relPath, bytes) };
-  } catch (e) {
-    release(relPath);
-    throw e;
-  }
-}
-
-function release(relPath: string): void {
-  const n = (inFlight.get(relPath) ?? 1) - 1;
-  if (n <= 0) inFlight.delete(relPath);
-  else inFlight.set(relPath, n);
-}
-
-/** Entfernt selbst neu angelegte Dateien, die keine Zeile referenziert und kein anderer Aufruf gerade nutzt. */
-async function cleanupOrphans(orgId: string, files: Stored[]): Promise<void> {
-  for (const f of files) {
-    release(f.relPath);
-    if (!f.created || inFlight.has(f.relPath)) continue;
-    try {
-      const ref = await dbInternal.incomingInvoice.findFirst({
-        where: { orgId, OR: [{ originalPath: f.relPath }, { xmlPath: f.relPath }] },
-        select: { id: true },
-      });
-      if (!ref) await removeArchiveFile(f.relPath);
-    } catch (e) {
-      console.error("Eingangsrechnung: Aufraeumen einer verwaisten Datei fehlgeschlagen", e instanceof Error ? e.message : "unbekannt");
-    }
-  }
+/**
+ * Legt die Datei inhaltsadressiert ab. Eine Datei ohne Zeile (Fehler nach dem Schreiben) bleibt
+ * bewusst liegen: der Pfad ist durch den Hash bestimmt, die naechste gleiche Annahme nutzt sie
+ * wieder. Eingangs-Originale werden nie geloescht.
+ */
+async function storeFile(relPath: string, bytes: Buffer): Promise<void> {
+  await writeArchiveFile(relPath, bytes);
 }
 
 interface Classified {
@@ -124,7 +108,7 @@ interface Classified {
   hints: string[];
 }
 
-async function classify(bytes: Uint8Array): Promise<Classified> {
+async function classify(bytes: Uint8Array, timeoutKey: string): Promise<Classified> {
   const container = detectContainer(bytes);
   if (container.type === "XML") {
     const parsed = parseIncomingXml(container.text);
@@ -137,6 +121,10 @@ async function classify(bytes: Uint8Array): Promise<Classified> {
   const base = { mime: "application/pdf", ext: "pdf" as const };
   if (res.status === "UNREADABLE") {
     if (res.reason === "BUSY") throw new IncomingBusyError();
+    if (res.reason === "TIMEOUT" || res.reason === "OUT_OF_MEMORY") {
+      if (countTimeout(timeoutKey) < MAX_PDF_TIMEOUTS) throw new IncomingBusyError();
+      return { ...base, kind: "OTHER", parsed: null, xmlBytes: null, hints: ["PDF_TIMEOUT"] };
+    }
     return { ...base, kind: "OTHER", parsed: null, xmlBytes: null, hints: ["PDF_UNREADABLE"] };
   }
   if (res.status === "NO_INVOICE_XML") {
@@ -160,15 +148,17 @@ export async function receiveIncomingInvoice(orgId: string, bytes: Uint8Array, o
   if (bytes.byteLength > MAX_INCOMING_BYTES) throw new IncomingFormatError("Die Datei ist zu gross (maximal 15 MB).", "TOO_LARGE");
   rateLimit(`incoming-receive:${orgId}`, { limit: INCOMING_RECEIVE_PER_MINUTE, windowMs: 60_000 });
 
-  const cls = await classify(bytes);
   const buf = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const sha256 = sha256Hex(buf);
 
+  // Bekannte Dublette vor jeder Pruefung (kein PDF-Worker, kein Parser).
   const existing = await dbInternal.incomingInvoice.findUnique({
     where: { orgId_originalSha256: { orgId, originalSha256: sha256 } },
     select: { id: true },
   });
   if (existing) throw new IncomingDuplicateError(existing.id);
+
+  const cls = await classify(bytes, `${orgId}:${sha256}`);
 
   const receivedAt = opts.now ?? new Date();
   const dir = `incoming/${orgId}/${berlinYear(receivedAt)}`;
@@ -177,14 +167,8 @@ export async function receiveIncomingInvoice(orgId: string, bytes: Uint8Array, o
   const xmlSha256 = xmlBuf ? sha256Hex(xmlBuf) : null;
   const xmlPath = xmlSha256 ? `${dir}/${xmlSha256}.xml` : null;
 
-  const stored: Stored[] = [];
-  try {
-    stored.push(await storeFile(originalPath, buf));
-    if (xmlBuf && xmlPath) stored.push(await storeFile(xmlPath, xmlBuf));
-  } catch (e) {
-    await cleanupOrphans(orgId, stored);
-    throw e;
-  }
+  await storeFile(originalPath, buf);
+  if (xmlBuf && xmlPath) await storeFile(xmlPath, xmlBuf);
 
   const p = cls.parsed;
   const hints = [...new Set([...(p?.hints.map((h) => h.code) ?? []), ...cls.hints])];
@@ -280,21 +264,24 @@ export async function receiveIncomingInvoice(orgId: string, bytes: Uint8Array, o
           select: { id: true },
         })
       : null;
-    await cleanupOrphans(orgId, stored);
     if (winner) throw new IncomingDuplicateError(winner.id);
     throw e;
   }
-  for (const f of stored) release(f.relPath);
+  timeoutCounts.delete(`${orgId}:${sha256}`);
 
-  await logActivity(dbInternal, {
-    orgId,
-    entityType: "INCOMING_INVOICE",
-    entityId: created.id,
-    type: "CREATED",
-    actor: opts.actor,
-    at: receivedAt,
-    data: { number: p?.number ?? null, supplierName: p?.seller.name ?? null },
-  });
+  try {
+    await logActivity(dbInternal, {
+      orgId,
+      entityType: "INCOMING_INVOICE",
+      entityId: created.id,
+      type: "CREATED",
+      actor: opts.actor,
+      at: receivedAt,
+      data: { number: p?.number ?? null, supplierName: p?.seller.name ?? null },
+    });
+  } catch (e) {
+    console.error("Eingangsrechnung: Aktivitaetsprotokoll nicht geschrieben", e instanceof Error ? e.message : "unbekannt");
+  }
   try {
     queueIncomingValidation(created.id);
   } catch (e) {

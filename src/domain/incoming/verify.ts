@@ -24,8 +24,17 @@ export async function verifyIncomingFiles(orgId: string): Promise<{ checked: num
     for (const row of rows) {
       checked++;
       const bad: string[] = [];
-      if ((await hashArchiveFile(row.originalPath)) !== row.originalSha256) bad.push("ORIGINAL");
-      if (row.xmlPath !== null && row.xmlSha256 !== null && (await hashArchiveFile(row.xmlPath)) !== row.xmlSha256) bad.push("XML");
+      // Nicht lesbar (EIO, EACCES, ...) zaehlt wie Fehlen/Manipulation; die Pruefung laeuft weiter.
+      const matches = async (path: string, sha: string): Promise<boolean> => {
+        try {
+          return (await hashArchiveFile(path)) === sha;
+        } catch (e) {
+          console.error("Eingangsrechnung: Datei nicht lesbar", e instanceof Error ? e.message : "unbekannt");
+          return false;
+        }
+      };
+      if (!(await matches(row.originalPath, row.originalSha256))) bad.push("ORIGINAL");
+      if (row.xmlPath !== null && row.xmlSha256 !== null && !(await matches(row.xmlPath, row.xmlSha256))) bad.push("XML");
       if (bad.length > 0) {
         tampered++;
         for (const kind of bad) await onIncomingArchiveTampered(orgId, { incomingInvoiceId: row.id, kind });
