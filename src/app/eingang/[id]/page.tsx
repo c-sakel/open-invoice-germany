@@ -63,7 +63,11 @@ export default async function EingangDetailPage({ params }: { params: Promise<{ 
     <div className="space-y-6">
       <PageHeader
         title={title}
-        subtitle={`${statusLabel(detail.status)} · Nummer ${detail.number ?? detail.manual?.number ?? "–"} · Eingang ${formatReceivedAt(detail.receivedAt)} · ${formatLabel(detail)}`}
+        subtitle={
+          <span className="[overflow-wrap:anywhere]">
+            {`${statusLabel(detail.status)} · Nummer ${detail.number ?? detail.manual?.number ?? "–"} · Eingang ${formatReceivedAt(detail.receivedAt)} · ${formatLabel(detail)}`}
+          </span>
+        }
         backHref="/eingang"
         backLabel="Eingang"
         actions={
