@@ -37,6 +37,15 @@ export class IncomingDuplicateError extends Error {
   }
 }
 
+/** Die PDF-Pruefung ist ausgelastet; die Annahme wird nicht als "ohne Rechnungsdaten" abgelegt, sondern spaeter wiederholt (503). */
+export class IncomingBusyError extends Error {
+  readonly status = 503;
+  constructor() {
+    super("Die Annahme ist gerade ausgelastet. Bitte in einigen Sekunden erneut versuchen.");
+    this.name = "IncomingBusyError";
+  }
+}
+
 /** Uebersetzt Fehler der Sicherheitspruefung in Annahmefehler. */
 export function toFormatError(e: unknown): unknown {
   if (!(e instanceof XmlSafetyError)) return e;

@@ -10,7 +10,7 @@
  * nie ueberschrieben.
  */
 import { createHash, randomBytes } from "node:crypto";
-import { promises as fs } from "node:fs";
+import { createReadStream, promises as fs } from "node:fs";
 import path from "node:path";
 
 export function archiveRoot(): string {
@@ -74,4 +74,17 @@ export async function readArchiveFile(relPath: string): Promise<Buffer | null> {
 /** Entfernt eine (verwaiste, nie referenzierte) Archivdatei; fehlt sie, passiert nichts. */
 export async function removeArchiveFile(relPath: string): Promise<void> {
   await fs.rm(resolveInsideRoot(relPath), { force: true });
+}
+
+/** SHA-256 einer Archivdatei per Stream (ohne die Datei im Speicher zu halten); `null`, wenn sie fehlt. */
+export async function hashArchiveFile(relPath: string): Promise<string | null> {
+  const abs = resolveInsideRoot(relPath);
+  const hash = createHash("sha256");
+  try {
+    for await (const chunk of createReadStream(abs)) hash.update(chunk as Buffer);
+  } catch (e) {
+    if (e instanceof Error && "code" in e && (e as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw e;
+  }
+  return hash.digest("hex");
 }

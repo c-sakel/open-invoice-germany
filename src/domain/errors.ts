@@ -74,11 +74,14 @@ const TAMPER_MESSAGES: Record<ArchiveTamperReason, (kind: string) => string> = {
   incomplete: (kind) => `Archivsatz ist unvollstaendig (fehlt: ${kind}) — Beleg wird nicht neu erzeugt.`,
 };
 
+/** Dateiarten einer Eingangsrechnung (Original, ausgelesene Rechnungs-XML). */
+export type IncomingArchiveKind = "ORIGINAL" | "XML";
+
 export class ArchiveTamperedError extends Error {
   readonly status = 500;
   readonly invoiceId: string;
-  readonly kind: ArchiveKind;
-  constructor(invoiceId: string, kind: ArchiveKind, reason: ArchiveTamperReason) {
+  readonly kind: ArchiveKind | IncomingArchiveKind;
+  constructor(invoiceId: string, kind: ArchiveKind | IncomingArchiveKind, reason: ArchiveTamperReason) {
     super(TAMPER_MESSAGES[reason](kind));
     this.name = "ArchiveTamperedError";
     this.invoiceId = invoiceId;
