@@ -344,9 +344,23 @@ describe("Abruf", () => {
     await dbInternal.inboundMailMessage.createMany({
       data: Array.from({ length: 50 }, (_, i) => ({ orgId, accountKey: "t".repeat(32), uidValidity: "1", uid: `s${i}`, fetchedAt: new Date(NOW.getTime() - 3600_000), size: 1, result: "STAGED", senderDomain: "lieferant.example.org" })),
     });
-    await fetchMailboxForOrg(orgId, NOW, client([mail("1"), mail("2", { from: "Z <z@anders.example.org>" })]));
+    const mails = [mail("1"), mail("2", { from: "Z <z@anders.example.org>" })];
+    await fetchMailboxForOrg(orgId, NOW, client(mails));
     const msgs = await dbInternal.inboundMailMessage.findMany({ where: { orgId, uid: { in: ["1", "2"] } }, orderBy: { uid: "asc" } });
-    expect(msgs.map((x) => x.result)).toEqual(["SENDER_LIMIT", "STAGED"]);
+    // Die Mail ueber dem Limit wird weder protokolliert noch als gelesen markiert; die naechste Mail kommt trotzdem durch.
+    expect(msgs.map((x) => [x.uid, x.result])).toEqual([["2", "STAGED"]]);
+    expect(mails[0]?.seen).toBeFalsy();
+    expect(mails[1]?.seen).toBe(true);
+    const warn = () => dbInternal.notification.count({ where: { orgId, type: "INBOUND_MAIL_ERROR", dedupeKey: { contains: "SENDER_LIMIT:lieferant.example.org" } } });
+    expect(await warn()).toBe(1);
+    // Spaeterer Lauf am selben Tag: erneut versucht, keine zweite Meldung.
+    await fetchMailboxForOrg(orgId, new Date(NOW.getTime() + 60_000), client(mails));
+    expect(await warn()).toBe(1);
+    expect(mails[0]?.seen).toBeFalsy();
+    // Nach Ablauf des Fensters wird sie uebernommen.
+    await fetchMailboxForOrg(orgId, new Date(NOW.getTime() + 2 * DAY), client(mails));
+    expect(mails[0]?.seen).toBe(true);
+    expect((await dbInternal.inboundMailMessage.findFirstOrThrow({ where: { orgId, uid: "1" } })).result).toBe("STAGED");
   });
 
   it("gleiche Anlage in zwei Mails und bereits hochgeladene Datei sind Dubletten", async () => {

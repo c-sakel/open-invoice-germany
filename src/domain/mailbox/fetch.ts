@@ -190,6 +190,8 @@ export async function fetchMailboxForOrg(
   let staged = 0;
   let retries = 0;
   let error: string | null = null;
+  /** Absenderdomains, deren Tageslimit erreicht ist; ihre Mails bleiben ungelesen und werden spaeter erneut versucht. */
+  const limitedDomains = new Set<string>();
   try {
     const uids = await op((s) => s.searchUnseen(row.fetchSince));
     const known = new Set(
@@ -204,8 +206,14 @@ export async function fetchMailboxForOrg(
       // Nach einem Absturz zwischen Speichern und Markieren: nur noch markieren.
       await op((s) => s.markSeen(uid)).catch(() => undefined);
     }
-    const fresh = uids.filter((u) => !known.has(u)).slice(0, MAX_MAILS_PER_RUN);
+    const fresh = uids.filter((u) => !known.has(u));
+    // Zurueckgestellte Mails (Tageslimit) zaehlen nicht gegen die Grenze je Lauf, damit sie andere Absender nicht
+    // verdraengen; die Zahl der geprueften Mails bleibt trotzdem begrenzt.
+    let handled = 0;
+    let examined = 0;
     for (const uid of fresh) {
+      if (handled >= MAX_MAILS_PER_RUN || examined >= MAX_MAILS_PER_RUN * 3) break;
+      examined += 1;
       if (timedOut) throw new MailboxError("TIMEOUT");
       // Kontingent je Mail pruefen: ein Lauf darf die Sichtung nicht ueber die Grenze fuellen.
       if ((await inboxUsage(orgId)).quotaReached) {
@@ -228,6 +236,7 @@ export async function fetchMailboxForOrg(
         r = await commit(uid, { orgId, accountKey, uidValidity, uid, internalDate: null, fetchedAt: now, size: 0, result: "FETCH_FAILED", messageIdHash: null, senderDomain: null, subject: null }, []);
       }
       if (r === null) continue;
+      handled += 1;
       messages += 1;
       staged += r;
     }
@@ -239,9 +248,13 @@ export async function fetchMailboxForOrg(
     const s = session as MailboxSession | null;
     if (s) await s.close().catch(() => undefined);
   }
+  const day = berlinDateKey(now);
+  for (const domain of limitedDomains) {
+    await notify(orgId, now, "INBOUND_MAIL_ERROR", `Postfach: Das Tageslimit fuer den Absender ${domain} ist erreicht. Weitere Mails bleiben ungelesen und werden spaeter erneut versucht.`, `SENDER_LIMIT:${domain}:${day}`);
+  }
   return finish(orgId, now, error, messages, staged);
 
-  /** Liefert die Zahl neuer Anlagen in der Sichtung, oder null, wenn die Mail uebersprungen wurde. */
+  /** Liefert die Zahl neuer Anlagen in der Sichtung, oder null, wenn die Mail uebersprungen oder zurueckgestellt wurde. */
   async function processUid(uid: string): Promise<number | null> {
     const meta = await op((s) => s.meta(uid));
     if (meta === null) return null;
@@ -279,7 +292,11 @@ export async function fetchMailboxForOrg(
       const stagedToday = await dbInternal.inboundMailMessage.count({
         where: { orgId, senderDomain: mail.senderDomain, result: "STAGED", fetchedAt: { gt: new Date(now.getTime() - DAY_MS) } },
       });
-      if (stagedToday >= MAX_STAGED_PER_DOMAIN_PER_DAY) return commit(uid, { ...head, result: "SENDER_LIMIT" }, []);
+      if (stagedToday >= MAX_STAGED_PER_DOMAIN_PER_DAY) {
+        // Weder protokollieren noch als gelesen markieren: die Mail wird in einem spaeteren Lauf erneut versucht.
+        limitedDomains.add(mail.senderDomain);
+        return null;
+      }
     }
 
     const rows: AttachmentRow[] = [];
