@@ -7,6 +7,7 @@ import { normalizeIban } from "@/lib/iban";
 import { normalizeVatId } from "@/lib/vat-id";
 import { parsedIncomingInvoiceSchema } from "@/schemas/incoming";
 import { normalizeName } from "./receive";
+import { pickTransferMeans } from "./payment-instruction";
 import { firstNameToken } from "./supplier";
 
 export interface IncomingRowForIban {
@@ -25,21 +26,31 @@ export interface PreviousIban {
 
 export type IbanWarning = { code: "IBAN_CHANGED" | "FIRST_IBAN"; previous: PreviousIban | null };
 
-const MAX_PREVIOUS = 50;
+const PAGE_SIZE = 200;
+const MAX_PAGES = 50;
 
-function ibanOfPayment(paymentJson: string | null): string | null {
+export function ibanOfPayment(paymentJson: string | null): string | null {
   if (paymentJson === null) return null;
   try {
     const r = parsedIncomingInvoiceSchema.shape.payment.safeParse(JSON.parse(paymentJson));
     if (!r.success) return null;
-    const m = r.data.means.find((x) => x.iban !== null && normalizeIban(x.iban) !== "");
+    const m = pickTransferMeans(r.data.means);
     return m?.iban != null ? normalizeIban(m.iban) : null;
   } catch {
     return null;
   }
 }
 
-export async function previousSupplierIban(orgId: string, row: IncomingRowForIban): Promise<PreviousIban | null> {
+/**
+ * Letzte frueher angenommene IBAN desselben Lieferanten. Ohne Kontakt-Zuordnung wird ueber den
+ * Lieferanten-Schluessel (USt-IdNr., sonst Name) verglichen; die Abfrage laeuft in Bloecken, damit
+ * fremde Lieferanten mit gleichem Laendercode den Vorgaenger nicht verdraengen.
+ */
+export async function previousSupplierIban(
+  orgId: string,
+  row: IncomingRowForIban,
+  pageSize: number = PAGE_SIZE,
+): Promise<PreviousIban | null> {
   const vat = row.supplierVatId !== null && row.supplierVatId.trim() !== "" ? normalizeVatId(row.supplierVatId) : null;
   const name = normalizeName(row.supplierName);
   const token = firstNameToken(row.supplierName);
@@ -50,28 +61,34 @@ export async function previousSupplierIban(orgId: string, row: IncomingRowForIba
   else if (name !== null && token !== null) supplier = { supplierName: ciContains(token) };
   else return null;
 
-  const cands = await dbInternal.incomingInvoice.findMany({
-    where: {
-      orgId,
-      status: { not: "REJECTED" },
-      id: { not: row.id },
-      OR: [{ receivedAt: { lt: row.receivedAt } }, { receivedAt: row.receivedAt, id: { lt: row.id } }],
-      ...supplier,
-    },
-    orderBy: [{ receivedAt: "desc" }, { id: "desc" }],
-    take: MAX_PREVIOUS,
-    select: { id: true, number: true, supplierVatId: true, supplierName: true, paymentJson: true },
-  });
-  for (const c of cands) {
-    if (row.supplierContactId === null) {
-      const same =
-        vat !== null && vat.length >= 4
-          ? c.supplierVatId !== null && normalizeVatId(c.supplierVatId) === vat
-          : name !== null && normalizeName(c.supplierName) === name;
-      if (!same) continue;
+  let bound: { receivedAt: Date; id: string } = { receivedAt: row.receivedAt, id: row.id };
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const cands = await dbInternal.incomingInvoice.findMany({
+      where: {
+        orgId,
+        status: { not: "REJECTED" },
+        id: { not: row.id },
+        OR: [{ receivedAt: { lt: bound.receivedAt } }, { receivedAt: bound.receivedAt, id: { lt: bound.id } }],
+        ...supplier,
+      },
+      orderBy: [{ receivedAt: "desc" }, { id: "desc" }],
+      take: pageSize,
+      select: { id: true, receivedAt: true, number: true, supplierVatId: true, supplierName: true, paymentJson: true },
+    });
+    for (const c of cands) {
+      if (row.supplierContactId === null) {
+        const same =
+          vat !== null && vat.length >= 4
+            ? c.supplierVatId !== null && normalizeVatId(c.supplierVatId) === vat
+            : name !== null && normalizeName(c.supplierName) === name;
+        if (!same) continue;
+      }
+      const iban = ibanOfPayment(c.paymentJson);
+      if (iban !== null) return { id: c.id, number: c.number, iban };
     }
-    const iban = ibanOfPayment(c.paymentJson);
-    if (iban !== null) return { id: c.id, number: c.number, iban };
+    const last = cands[cands.length - 1];
+    if (cands.length < pageSize || !last) break;
+    bound = { receivedAt: last.receivedAt, id: last.id };
   }
   return null;
 }

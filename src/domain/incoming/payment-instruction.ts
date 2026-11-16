@@ -25,6 +25,11 @@ export interface PaymentInstruction {
 const TRANSFER_CODES = new Set(["30", "58", "42"]);
 const CARD_CODES = new Set(["48", "54", "55"]);
 
+/** Erste Zahlungsangabe mit IBAN, die fuer eine Ueberweisung gilt (ohne Lastschrift/Karte). */
+export function pickTransferMeans<T extends { iban: string | null; code: string | null }>(means: readonly T[]): T | null {
+  return means.find((m) => m.iban !== null && (m.code === null || TRANSFER_CODES.has(m.code))) ?? null;
+}
+
 const BIC_PATTERN = /^[A-Z]{4}[A-Z]{2}[A-Z0-9]{2}([A-Z0-9]{3})?$/;
 
 /** BIC nur bei gueltiger Form, sonst null (Anzeige und QR). */
@@ -53,7 +58,7 @@ export function buildPaymentInstruction(input: {
   skonto: ReturnType<typeof skontoSchedule>;
   todayBerlin: string;
 }): PaymentInstruction {
-  const transfer = input.means.find((m) => m.iban !== null && (m.code === null || TRANSFER_CODES.has(m.code))) ?? null;
+  const transfer = pickTransferMeans(input.means);
   const iban = transfer?.iban != null ? normalizeIban(transfer.iban) : null;
   const ibanValid = iban !== null && isValidIban(iban);
   const recipient = clip(transfer?.accountName ?? input.payeeName ?? input.sellerName, MAX_EPC_NAME_LENGTH);

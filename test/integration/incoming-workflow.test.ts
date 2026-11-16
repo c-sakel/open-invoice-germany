@@ -2,17 +2,19 @@
  * Eingangsrechnungen Arbeitsablauf: Status, Zuordnung, Notiz, Kopfdaten von Hand, Lieferant,
  * IBAN-Wechsel, Faelligkeit. Testjahr 2241.
  */
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import { promises as fsp } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { dbInternal } from "@/lib/db";
+import { resetRateLimits } from "@/lib/rate-limit";
 import { receiveIncomingInvoice } from "@/domain/incoming/receive";
 import { changeIncomingStatus } from "@/domain/incoming/status";
 import { updateIncomingInvoice } from "@/domain/incoming/update";
 import { createContactFromIncoming, suggestSupplierContacts } from "@/domain/incoming/supplier";
 import { incomingHistory } from "@/domain/incoming/history";
+import { ibanOfPayment, previousSupplierIban } from "@/domain/incoming/payment-check";
 import { processIncomingDue } from "@/domain/incoming/due-notify";
 import { countIncomingByStatus, getIncomingInvoiceDetail, listIncomingInvoices } from "@/domain/incoming/list";
 import { IncomingWorkflowError } from "@/domain/incoming/errors";
@@ -78,6 +80,8 @@ afterAll(async () => {
   else process.env.ARCHIVE_DIR = prevDir;
   await fsp.rm(tmp, { recursive: true, force: true });
 });
+
+beforeEach(() => resetRateLimits());
 
 describe("Status", () => {
   it("kompletter Durchlauf mit Protokoll und intakter Kette", async () => {
@@ -246,6 +250,65 @@ describe("IBAN-Wechsel", () => {
     // Vorgaenger abgelehnt -> zaehlt nicht mehr
     await changeIncomingStatus(orgId, second, { action: "REJECT", reason: "Betrugsverdacht" }, actor, NOW);
     expect((await getIncomingInvoiceDetail(orgId, third, { ibanMode: "full" }, NOW)).ibanWarning?.code).toBe("IBAN_CHANGED");
+  });
+});
+
+describe("IBAN-Vergleich", () => {
+  it("viele fremde Lieferanten mit gleichem Laendercode verdraengen den Vorgaenger nicht", async () => {
+    const vat = "DE700800700";
+    const t = (n: number) => new Date(NOW.getTime() + n * 3_600_000);
+    await receive(ubl({ vat, name: "Vorgaenger Test GmbH", iban: IBAN_A }), t(1));
+    for (let i = 0; i < 60; i++) {
+      if (i % 20 === 0) resetRateLimits();
+      await receive(ubl({ vat: `DE61${String(i).padStart(5, "0")}`, name: `Fremd ${i} GmbH`, iban: IBAN_B }), t(2 + i / 100));
+    }
+    resetRateLimits();
+    const next = await receive(ubl({ vat, name: "Vorgaenger Test GmbH", iban: IBAN_B }), t(5));
+    const w = (await getIncomingInvoiceDetail(orgId, next, { ibanMode: "full" }, NOW)).ibanWarning;
+    expect(w?.code).toBe("IBAN_CHANGED");
+    expect(w?.previous?.iban).toBe(IBAN_A);
+    // kleine Blockgroesse erzwingt mehrere Seiten
+    const head = await dbInternal.incomingInvoice.findUniqueOrThrow({
+      where: { id: next },
+      select: { id: true, receivedAt: true, supplierContactId: true, supplierVatId: true, supplierName: true },
+    });
+    expect((await previousSupplierIban(orgId, head, 7))?.iban).toBe(IBAN_A);
+  });
+
+  it("Vergleichs- und aktuelle IBAN nutzen dieselbe Auswahlregel (Lastschrift zaehlt nicht)", () => {
+    const means = (list: { code: string | null; iban: string | null }[]) =>
+      JSON.stringify({ means: list.map((m) => ({ ...m, bic: null, accountName: null, cardLast4: null, mandateRef: null })), terms: null, dueDate: null, remittance: null });
+    expect(ibanOfPayment(means([{ code: "59", iban: IBAN_B }, { code: "58", iban: IBAN_A }]))).toBe(IBAN_A);
+    expect(ibanOfPayment(means([{ code: "59", iban: IBAN_B }]))).toBeNull();
+    expect(ibanOfPayment(means([{ code: null, iban: IBAN_A }]))).toBe(IBAN_A);
+  });
+});
+
+describe("Zuordnung und Faelligkeit (Randfaelle)", () => {
+  it("Kontakt-Anlage aus Rechnung einer fremden Organisation ist identisch zu unbekannter Id (404)", async () => {
+    const id = await receive(ubl({ vat: "DE555000111", name: "Fremd Handel GmbH" }));
+    const foreign = await createContactFromIncoming(otherOrgId, id, {}, actor, NOW).catch((e: unknown) => e);
+    const missing = await createContactFromIncoming(otherOrgId, "gibt-es-nicht", {}, actor, NOW).catch((e: unknown) => e);
+    expect(foreign).toBeInstanceOf(Error);
+    expect((foreign as Error).constructor).toBe((missing as Error).constructor);
+    expect((foreign as Error).message).toBe((missing as Error).message);
+    expect(await dbInternal.customer.count({ where: { orgId: otherOrgId, vatId: "DE555000111" } })).toBe(0);
+  });
+
+  it("mehr offene Rechnungen als eine Blockgroesse: alle werden gemeldet; Wechsel auf ueberfaellig meldet neu", async () => {
+    const o = await dbInternal.organization.create({ data: { legalName: "Eingang Faellig Bloecke GmbH", addressLine1: "Weg 1", postalCode: "12345", city: "Teststadt" }, select: { id: true } });
+    const ids: string[] = [];
+    for (let i = 0; i < 7; i++) ids.push(await receive(ubl({ due: "2241-06-17" }), NOW, o.id));
+    const on: Set<NotificationType> = new Set(["INCOMING_DUE"]);
+    const by: Record<string, number> = {};
+    await processIncomingDue(o.id, new Date("2241-06-15T10:00:00.000Z"), on, by, 3);
+    expect(by.INCOMING_DUE).toBe(7);
+    const later: Record<string, number> = {};
+    await processIncomingDue(o.id, new Date("2241-06-20T10:00:00.000Z"), on, later, 3);
+    expect(later.INCOMING_DUE).toBe(7);
+    const titles = (await dbInternal.notification.findMany({ where: { orgId: o.id, type: "INCOMING_DUE" }, select: { title: true } })).map((n) => n.title);
+    expect(titles.filter((x) => x.includes("ueberfaellig seit 17.06.2241"))).toHaveLength(7);
+    expect(new Set(ids).size).toBe(7);
   });
 });
 
