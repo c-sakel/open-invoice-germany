@@ -1360,3 +1360,6 @@ export * from "./online-payment";
 
 // ── DATEV-Export ─────────────────────────────────────────────────────────────
 export * from "./datev";
+
+// ── Eingangsrechnungen ───────────────────────────────────────────────────────
+export * from "./incoming";
