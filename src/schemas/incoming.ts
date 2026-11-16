@@ -124,6 +124,8 @@ export const parsedIncomingInvoiceSchema = z.object({
       .max(MAX_LIST_ITEMS),
     terms: text.nullable(),
     dueDate: isoDate.nullable(),
+    /** BT-83 Verwendungszweck. */
+    remittance: text.nullable().default(null),
   }),
   attachments: z
     .array(

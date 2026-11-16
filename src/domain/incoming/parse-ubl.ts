@@ -184,6 +184,7 @@ export function parseUbl(root: XmlElement, ctx: ParseCtx): ParsedBody {
       means,
       terms: ctx.str(textAt(root, NS, "cac:PaymentTerms/cbc:Note"), "payment.terms"),
       dueDate,
+      remittance: ctx.str(textAt(root, NS, "cac:PaymentMeans/cbc:PaymentID"), "payment.remittance"),
     },
     attachments,
   };
