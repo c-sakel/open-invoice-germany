@@ -22,6 +22,22 @@ describe("assertSafeXml", () => {
     expect(codeOf('<?xml version="1.0"?>\n<!DOCTYPE d [<!ENTITY x SYSTEM "file:///etc/passwd">]>\n<d>&x;</d>')).toBe("FORBIDDEN_MARKUP");
   });
 
+  it("erkennt DOCTYPE nur als echtes Markup, nicht in Kommentar, CDATA oder Attribut", () => {
+    expect(codeOf("<r><!-- <!DOCTYPE x> --></r>")).toBeUndefined();
+    expect(codeOf("<r><![CDATA[<!DOCTYPE x>]]></r>")).toBeUndefined();
+    expect(codeOf('<r a="<!DOCTYPE x>"/>')).toBeUndefined();
+    expect(codeOf("<r><!DOCTYPE x></r>")).toBe("FORBIDDEN_MARKUP");
+  });
+
+  it("lehnt bedingte Abschnitte ab", () => {
+    expect(codeOf("<r><![INCLUDE[x]]></r>")).toBe("FORBIDDEN_MARKUP");
+  });
+
+  it("lehnt die Deklaration nach Leerraum ab und toleriert eine BOM davor", () => {
+    expect(codeOf('\n<?xml version="1.0"?><r/>')).toBe("MALFORMED");
+    expect(codeOf('\uFEFF<?xml version="1.0"?><r/>')).toBeUndefined();
+  });
+
   it("lehnt Billion Laughs ab", () => {
     const xml =
       '<?xml version="1.0"?>\n<!DOCTYPE lolz [<!ENTITY a0 "lol"><!ENTITY a1 "&a0;&a0;&a0;&a0;&a0;&a0;&a0;&a0;&a0;&a0;">]>\n<lolz>&a1;</lolz>';

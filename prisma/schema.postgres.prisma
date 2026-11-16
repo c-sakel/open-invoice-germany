@@ -2153,7 +2153,8 @@ model IncomingInvoice {
   @@index([orgId, status, receivedAt])
   @@index([orgId, supplierVatId, number])
   @@index([orgId, updatedAt])
-  @@index([validationStatus])
+  @@index([orgId, validationStatus])
+  @@index([duplicateOfId])
 }
 
 /// Pruefergebnis (append-only); erneute Pruefung legt eine neue Zeile an.

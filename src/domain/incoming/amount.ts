@@ -5,6 +5,7 @@ import { MAX_AMOUNT_CENTS } from "./limits";
 
 const DECIMAL = /^[+-]?(\d+(\.\d+)?|\.\d+)$/;
 const MAX_DECIMAL_CHARS = 60;
+const MAX_PARSE_CHARS = 1000;
 
 /**
  * Cent-Wert eines XML-Betrags (Punkt als Dezimaltrenner). Ab der dritten Nachkommastelle kaufmaennisch
@@ -14,7 +15,9 @@ const MAX_DECIMAL_CHARS = 60;
 export function parseXmlAmountCents(s: string | null | undefined): { cents: number | null; overflow: boolean } {
   if (s == null) return { cents: null, overflow: false };
   const t = s.trim();
-  if (t.length === 0 || !DECIMAL.test(t)) return { cents: null, overflow: false };
+  if (t.length === 0) return { cents: null, overflow: false };
+  if (t.length > MAX_PARSE_CHARS) return { cents: null, overflow: false }; // Laenge vor der Regex pruefen
+  if (!DECIMAL.test(t)) return { cents: null, overflow: false };
   if (t.length > MAX_DECIMAL_CHARS) return { cents: null, overflow: true };
   const negative = t.startsWith("-");
   const unsigned = t.replace(/^[+-]/, "");

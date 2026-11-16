@@ -10,7 +10,8 @@ import type { ParsedBody } from "./parse-ubl";
 
 function dateAt(el: XmlElement | null, ctx: ParseCtx, path: string, field: string): string | null {
   const node = el ? find(el, NS, path) : null;
-  const dts = node ? find(node, NS, "udt:DateTimeString") : null;
+  // DateTimeString liegt je nach Feld in udt (Unqualified) oder qdt (Qualified, z. B. BT-26): nach lokalem Namen suchen.
+  const dts = node ? (node.children.find((c) => c.localName === "DateTimeString") ?? null) : null;
   const v = text(dts);
   if (v === null) return null;
   if (attr(dts, "format") !== "102") {
@@ -49,8 +50,10 @@ function parseParty(el: XmlElement | null, ctx: ParseCtx, field: string): Party 
       }
     : null;
   const c = find(el, NS, "ram:DefinedTradeContact");
-  const email =
-    textAt(c, NS, "ram:EmailURIUniversalCommunication/ram:URIID") ?? textAt(el, NS, "ram:URIUniversalCommunication/ram:URIID");
+  // ram:URIUniversalCommunication/URIID am Beteiligten ist die elektronische Adresse (BT-34/BT-49): nur mit
+  // Schema EM (E-Mail) als E-Mail gefuehrt, andere Adressarten (Leitweg-ID, Peppol ...) nie.
+  const uri = find(el, NS, "ram:URIUniversalCommunication/ram:URIID");
+  const email = textAt(c, NS, "ram:EmailURIUniversalCommunication/ram:URIID") ?? (attr(uri, "schemeID") === "EM" ? text(uri) : null);
   const phone = textAt(c, NS, "ram:TelephoneUniversalCommunication/ram:CompleteNumber");
   const contactName = textAt(c, NS, "ram:PersonName");
   const contact =
@@ -81,7 +84,7 @@ export function parseCii(root: XmlElement, ctx: ParseCtx): ParsedBody {
   const currency = ctx.currency(textAt(settlement, NS, "ram:InvoiceCurrencyCode"));
 
   const taxTotals = sum ? findAll(sum, NS, "ram:TaxTotalAmount") : [];
-  const mainTax = taxTotals.find((t) => attr(t, "currencyID") === currency) ?? taxTotals[0] ?? null;
+  const mainTax = taxTotals.find((t) => currency !== null && attr(t, "currencyID") === currency) ?? taxTotals[0] ?? null;
 
   const lineEls = trade ? findAll(trade, NS, "ram:IncludedSupplyChainTradeLineItem") : [];
   const lineCount = lineEls.length;
@@ -145,6 +148,8 @@ export function parseCii(root: XmlElement, ctx: ParseCtx): ParsedBody {
   }
   const dueDate = dateAt(terms, ctx, "ram:DueDateDateTime", "dueDate");
 
+  // `index` wird NACH dem Filter vergeben; die Extraktion der Anlagen muss denselben Filter nutzen.
+  // `externalUri` ist fremder Text: nie als Link rendern oder abrufen.
   const attachments = ctx.cap(
     agreement
       ? findAll(agreement, NS, "ram:AdditionalReferencedDocument")

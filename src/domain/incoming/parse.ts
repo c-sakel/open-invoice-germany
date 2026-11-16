@@ -4,6 +4,7 @@
 import { descendantByLocalName, text, type XmlElement } from "@/lib/xml/dom";
 import { parsedIncomingInvoiceSchema, type ParsedIncomingInvoice } from "@/schemas/incoming";
 import { classifyRoot, loadXml } from "./detect";
+import { IncomingFormatError } from "./errors";
 import { emptyParty, ParseCtx } from "./parse-common";
 import { parseCii } from "./parse-cii";
 import { parseUbl, type ParsedBody } from "./parse-ubl";
@@ -62,7 +63,7 @@ export function parseIncomingXml(xml: string): ParsedIncomingInvoice {
   const ctx = new ParseCtx();
   if (cls.profile === null && cls.syntax !== "FERD1") ctx.hint("PROFILE_MISSING", null);
   const body = cls.syntax === "UBL" ? parseUbl(root, ctx) : cls.syntax === "CII" ? parseCii(root, ctx) : parseFerd1Head(root, ctx);
-  return parsedIncomingInvoiceSchema.parse({
+  const parsed = parsedIncomingInvoiceSchema.safeParse({
     syntax: cls.syntax,
     profile: ctx.str(cls.profile, "profile"),
     isEInvoice: cls.isEInvoice,
@@ -70,4 +71,6 @@ export function parseIncomingXml(xml: string): ParsedIncomingInvoice {
     ...body,
     hints: ctx.hints,
   });
+  if (!parsed.success) throw new IncomingFormatError("Die Rechnungsdaten sind unvollstaendig oder ungueltig.", "MALFORMED");
+  return parsed.data;
 }

@@ -70,7 +70,10 @@ CREATE INDEX "IncomingInvoice_orgId_supplierVatId_number_idx" ON "IncomingInvoic
 CREATE INDEX "IncomingInvoice_orgId_updatedAt_idx" ON "IncomingInvoice"("orgId", "updatedAt");
 
 -- CreateIndex
-CREATE INDEX "IncomingInvoice_validationStatus_idx" ON "IncomingInvoice"("validationStatus");
+CREATE INDEX "IncomingInvoice_orgId_validationStatus_idx" ON "IncomingInvoice"("orgId", "validationStatus");
+
+-- CreateIndex
+CREATE INDEX "IncomingInvoice_duplicateOfId_idx" ON "IncomingInvoice"("duplicateOfId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "IncomingInvoice_orgId_originalSha256_key" ON "IncomingInvoice"("orgId", "originalSha256");

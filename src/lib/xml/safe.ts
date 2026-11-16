@@ -46,7 +46,8 @@ function tagEnd(xml: string, from: number): number {
 }
 
 /** Wirft bei DOCTYPE/ENTITY/Verarbeitungsanweisungen, zu tiefer Schachtelung oder offensichtlich kaputtem Markup. */
-export function assertSafeXml(xml: string): void {
+export function assertSafeXml(input: string): void {
+  const xml = input.charCodeAt(0) === 0xfeff ? input.slice(1) : input;
   const notXml = (): never => {
     throw new XmlSafetyError("MALFORMED");
   };

@@ -118,7 +118,22 @@ describe("classifyXml", () => {
     expect(classifyXml(fx("cii-basicwl.xml"))).toMatchObject({ isEInvoice: false, reason: "PROFILE_BASICWL" });
   });
 
+  it("fehlende Profilkennung ist ein eigener Grund", () => {
+    const xml = fx("gen-base-ubl.xml").replace(/<cbc:CustomizationID>[^<]*<\/cbc:CustomizationID>/, "");
+    expect(classifyXml(xml)).toMatchObject({ isEInvoice: false, reason: "PROFILE_MISSING" });
+  });
+
   it("ZUGFeRD 1.0", () => {
     expect(classifyXml(fx("ferd-1p0.xml"))).toMatchObject({ syntax: "FERD1", isEInvoice: false, reason: "ZUGFERD_1" });
+  });
+});
+
+describe("UTF-16", () => {
+  it.each([
+    [0xff, 0xfe],
+    [0xfe, 0xff],
+  ])("Byte-Order-Mark %i %i wird als nicht unterstuetzte Kodierung erkannt", (a, b) => {
+    const bytes = new Uint8Array([a, b, 0x3c, 0x00, 0x72, 0x00, 0x2f, 0x00, 0x3e, 0x00]);
+    expect(() => detectContainer(bytes)).toThrowError(expect.objectContaining({ code: "UNSUPPORTED_ENCODING" }));
   });
 });

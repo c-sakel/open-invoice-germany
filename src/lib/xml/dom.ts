@@ -7,6 +7,16 @@
  */
 import { SaxesParser } from "saxes";
 
+/** Obergrenze der Elementanzahl (Speicherschutz bei sehr vielen kleinen Elementen). */
+export const MAX_XML_ELEMENTS = 200_000;
+
+export class XmlTooManyElementsError extends Error {
+  constructor() {
+    super("TOO_MANY_ELEMENTS");
+    this.name = "XmlTooManyElementsError";
+  }
+}
+
 export type NsMap = Readonly<Record<string, string>>;
 
 /** Schlankes Element: lokaler Name, Namensraum, Attribute, Kinder, eigener Text. */
@@ -27,7 +37,10 @@ export class XmlElement {
     this.texts.push(t);
   }
 
-  /** Text des Elements einschliesslich aller Nachfahren (Dokumentreihenfolge ohne Mischinhalt-Garantie). */
+  /**
+   * Text des Elements einschliesslich aller Nachfahren. Bei Mischinhalt (Text und Kindelemente
+   * gemischt) steht der eigene Text vor dem Text der Kinder, nicht in Dokumentreihenfolge.
+   */
   get textContent(): string {
     if (this.children.length === 0) return this.texts.join("");
     return this.texts.join("") + this.children.map((c) => c.textContent).join("");
@@ -39,10 +52,12 @@ export function parseXmlDom(text: string): XmlElement {
   const parser = new SaxesParser({ xmlns: true, position: false });
   const stack: XmlElement[] = [];
   let root: XmlElement | null = null;
+  let elementCount = 0;
   parser.on("error", (e) => {
     throw e;
   });
   parser.on("opentag", (tag) => {
+    if (++elementCount > MAX_XML_ELEMENTS) throw new XmlTooManyElementsError();
     const attrs = new Map<string, string>();
     for (const a of Object.values(tag.attributes)) {
       // Nur Attribute ohne Praefix (unitCode, currencyID, format, schemeID ...) werden gelesen.

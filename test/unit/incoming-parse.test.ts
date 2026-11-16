@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { parseIncomingXml } from "@/domain/incoming/parse";
 import { MAX_INCOMING_LINES } from "@/domain/incoming/limits";
+import { MAX_XML_ELEMENTS } from "@/lib/xml/dom";
 import { parsedIncomingInvoiceSchema } from "@/schemas/incoming";
 
 const fx = (name: string): string => readFileSync(`test/fixtures/incoming/${name}`, "utf8");
@@ -150,5 +151,43 @@ describe("parseIncomingXml", () => {
 
   it("Entities und DTD erreichen den Parser nicht", () => {
     expect(() => parseIncomingXml('<?xml version="1.0"?><!DOCTYPE x [<!ENTITY a "b">]><Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"/>')).toThrow(/Markup/);
+  });
+
+  it("liest das BT-26-Datum der Vorgaengerrechnung aus qdt:DateTimeString", () => {
+    const r = parseIncomingXml(fx("gen-credit-note-doc-discount-cii.xml"));
+    expect(r.precedingInvoices[0]).toMatchObject({ number: "RE-2034-0002", issueDate: "2034-06-09" });
+  });
+
+  it("kuerzt die Steuerkategorie in UBL auf 10 Zeichen", () => {
+    const r = parseIncomingXml(fx("gen-base-ubl.xml").replace(/(<cac:TaxSubtotal>[\s\S]*?<cac:TaxCategory>\s*<cbc:ID>)[^<]*/, `$1${"S".repeat(40)}`));
+    expect(r.taxes[0]?.category).toHaveLength(10);
+    expect(r.hints).toContainEqual({ code: "TEXT_TRUNCATED", field: "taxes.category" });
+  });
+
+  it("meldet Schemaverletzungen als MALFORMED statt als rohen Zod-Fehler", () => {
+    const failure = parsedIncomingInvoiceSchema.safeParse({});
+    expect(failure.success).toBe(false);
+    const spy = vi.spyOn(parsedIncomingInvoiceSchema, "safeParse").mockReturnValueOnce(failure);
+    try {
+      expect(() => parseIncomingXml(fx("gen-base-ubl.xml"))).toThrowError(expect.objectContaining({ name: "IncomingFormatError", code: "MALFORMED" }));
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("fuehrt die elektronische Adresse (BT-34) in CII nicht als E-Mail", () => {
+    const base = fx("gen-base-cii.xml");
+    const withUri = base.replace(
+      /<ram:URIUniversalCommunication>\s*<ram:URIID schemeID="EM">info@muster-handwerk.de<\/ram:URIID>\s*<\/ram:URIUniversalCommunication>/,
+      '<ram:URIUniversalCommunication><ram:URIID schemeID="0204">991-12345-67</ram:URIID></ram:URIUniversalCommunication>',
+    );
+    expect(withUri).not.toBe(base);
+    const r = parseIncomingXml(withUri);
+    expect(r.seller.contact?.email ?? null).toBeNull();
+  });
+
+  it("bricht bei zu vielen Elementen mit eigenem Code ab", () => {
+    const xml = `<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">${"<a/>".repeat(MAX_XML_ELEMENTS + 1)}</Invoice>`;
+    expect(() => parseIncomingXml(xml)).toThrowError(expect.objectContaining({ code: "TOO_MANY_ELEMENTS" }));
   });
 });

@@ -65,12 +65,12 @@ export function parseUbl(root: XmlElement, ctx: ParseCtx): ParsedBody {
 
   // Betraege in Dokumentwaehrung bevorzugen (BT-110), sonst die erste Angabe.
   const taxTotals = findAll(root, NS, "cac:TaxTotal");
-  const mainTotal = taxTotals.find((t) => attr(find(t, NS, "cbc:TaxAmount"), "currencyID") === currency) ?? taxTotals[0] ?? null;
+  const mainTotal = taxTotals.find((t) => currency !== null && attr(find(t, NS, "cbc:TaxAmount"), "currencyID") === currency) ?? taxTotals[0] ?? null;
 
   const taxes = ctx.cap(
     mainTotal
       ? findAll(mainTotal, NS, "cac:TaxSubtotal").map((s) => ({
-          category: ctx.str(textAt(s, NS, "cac:TaxCategory/cbc:ID"), "taxes.category"),
+          category: ctx.str(textAt(s, NS, "cac:TaxCategory/cbc:ID"), "taxes.category", 10),
           rate: ctx.decimal(textAt(s, NS, "cac:TaxCategory/cbc:Percent"), "taxes.rate"),
           basisCents: ctx.cents(textAt(s, NS, "cbc:TaxableAmount"), "taxes.basis"),
           taxCents: ctx.cents(textAt(s, NS, "cbc:TaxAmount"), "taxes.tax"),
@@ -115,6 +115,8 @@ export function parseUbl(root: XmlElement, ctx: ParseCtx): ParsedBody {
     "payment.means",
   );
 
+  // `index` wird NACH dem Filter vergeben; die Extraktion der Anlagen muss denselben Filter nutzen.
+  // `externalUri` ist fremder Text: nie als Link rendern oder abrufen.
   const attachments = ctx.cap(
     findAll(root, NS, "cac:AdditionalDocumentReference")
       .map((d) => ({ d, bin: find(d, NS, "cac:Attachment/cbc:EmbeddedDocumentBinaryObject") }))

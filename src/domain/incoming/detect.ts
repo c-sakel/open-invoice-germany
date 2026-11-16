@@ -3,7 +3,7 @@
  */
 import { sniffMime } from "@/lib/attachments/mime";
 import { assertSafeXml, xmlDeclaredEncoding } from "@/lib/xml/safe";
-import { descendantByLocalName, find, parseXmlDom, text, type NsMap, type XmlElement } from "@/lib/xml/dom";
+import { descendantByLocalName, find, parseXmlDom, text, XmlTooManyElementsError, type NsMap, type XmlElement } from "@/lib/xml/dom";
 import { IncomingFormatError, toFormatError } from "./errors";
 import { MAX_INCOMING_BYTES } from "./limits";
 
@@ -18,7 +18,7 @@ export interface XmlClass {
   profile: string | null;
   isEInvoice: boolean;
   xrechnung: boolean;
-  reason?: "PROFILE_MINIMUM" | "PROFILE_BASICWL" | "ZUGFERD_1";
+  reason?: "PROFILE_MISSING" | "PROFILE_MINIMUM" | "PROFILE_BASICWL" | "ZUGFERD_1";
 }
 
 export const NS_UBL_INVOICE = "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2";
@@ -68,6 +68,12 @@ export function detectContainer(bytes: Uint8Array): Container {
       "ZIP_NOT_SUPPORTED",
     );
   }
+  if ((bytes[0] === 0xff && bytes[1] === 0xfe) || (bytes[0] === 0xfe && bytes[1] === 0xff)) {
+    throw new IncomingFormatError(
+      "Die Datei ist nicht UTF-8-kodiert. Bitte die Rechnung im UTF-8-Format senden.",
+      "UNSUPPORTED_ENCODING",
+    );
+  }
   const head = bytes.subarray(0, SNIFF_BYTES);
   const mime = sniffMime(Buffer.from(head.buffer, head.byteOffset, head.byteLength));
   if (mime === "application/pdf") return { type: "PDF" };
@@ -109,7 +115,10 @@ export function loadXml(xml: string): XmlElement {
   const safe = checkSafe(xml);
   try {
     return parseXmlDom(safe);
-  } catch {
+  } catch (e) {
+    if (e instanceof XmlTooManyElementsError) {
+      throw new IncomingFormatError("Die XML-Datei enthaelt zu viele Elemente.", "TOO_MANY_ELEMENTS");
+    }
     throw new IncomingFormatError("Die Datei ist kein gueltiges XML.", "MALFORMED");
   }
 }
@@ -145,5 +154,6 @@ export function classifyRoot(root: XmlElement): XmlClass {
   const xrechnung = p.includes("xeinkauf.de:kosit:xrechnung");
   if (/[:#]minimum$/.test(p)) return { syntax, root: rootName, profile, isEInvoice: false, xrechnung, reason: "PROFILE_MINIMUM" };
   if (/[:#]basicwl$/.test(p)) return { syntax, root: rootName, profile, isEInvoice: false, xrechnung, reason: "PROFILE_BASICWL" };
-  return { syntax, root: rootName, profile, isEInvoice: profile !== null, xrechnung };
+  if (profile === null) return { syntax, root: rootName, profile, isEInvoice: false, xrechnung, reason: "PROFILE_MISSING" };
+  return { syntax, root: rootName, profile, isEInvoice: true, xrechnung };
 }

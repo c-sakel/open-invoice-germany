@@ -12,6 +12,7 @@ export type IncomingFormatCode =
   | "UNSUPPORTED_ENCODING"
   | "FORBIDDEN_MARKUP"
   | "TOO_DEEP"
+  | "TOO_MANY_ELEMENTS"
   | "MALFORMED"
   | "NOT_AN_INVOICE";
 

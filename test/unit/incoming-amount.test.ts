@@ -47,3 +47,9 @@ describe("normalizeDecimalString", () => {
     for (const bad of ["1e3", "1,5", "", " ", "x", "1.2.3"]) expect(normalizeDecimalString(bad)).toBeNull();
   });
 });
+
+describe("parseXmlAmountCents Laenge", () => {
+  it("sehr lange Zeichenfolgen sind ungueltig, nicht Ueberlauf", () => {
+    expect(parseXmlAmountCents("9".repeat(5000))).toEqual({ cents: null, overflow: false });
+  });
+});
