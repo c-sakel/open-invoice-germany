@@ -50,7 +50,7 @@ export default async function EingangDetailPage({ params }: { params: Promise<{ 
     editable && detail.supplierContactId === null
       ? dbInternal.customer.findMany({
           where: { orgId: org.id, isArchived: false },
-          select: { id: true, name: true, customerNumber: true, email: true },
+          select: { id: true, name: true, customerNumber: true },
           orderBy: { name: "asc" },
           take: 1000,
         })

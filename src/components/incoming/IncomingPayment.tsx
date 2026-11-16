@@ -71,7 +71,10 @@ function Row({ label, value, copy }: { label: string; value: string | null; copy
 
 /** Zahlungsangaben für eine Überweisung von Hand. Es wird nichts ausgeführt oder gebucht. */
 export function IncomingPayment({ payment, images, skonto, ibanWarning }: Props) {
+  const [qrConfirmed, setQrConfirmed] = useState(false);
   if (!payment) return null;
+  // Bei geänderter IBAN erscheint der GiroCode erst nach ausdrücklicher Bestätigung.
+  const qrGated = ibanWarning?.code === "IBAN_CHANGED" && !qrConfirmed;
   const hasTerms = skonto.schedule.length > 0 || skonto.terms.length > 0 || skonto.freeText !== null;
   const blockText = payment.blockedBy ? (GIROCODE_BLOCK_TEXT[payment.blockedBy] ?? "Kein GiroCode möglich.") : null;
   return (
@@ -114,7 +117,15 @@ export function IncomingPayment({ payment, images, skonto, ibanWarning }: Props)
 
       {blockText ? <p className={payment.blockedBy === "DIRECT_DEBIT" ? "font-medium text-ink" : "text-ink-soft"}>{blockText}</p> : null}
 
-      {payment.girocodes.length > 0 ? (
+      {payment.girocodes.length > 0 && qrGated ? (
+        <div className="space-y-2">
+          <p className="text-ink-soft">Der GiroCode wird erst gezeigt, wenn die neue Bankverbindung geprüft ist.</p>
+          <button type="button" className="rounded-md border border-rule px-3 py-1.5 font-medium text-ink hover:bg-surface" onClick={() => setQrConfirmed(true)}>
+            Bankverbindung beim Lieferanten bestätigt – GiroCode anzeigen
+          </button>
+        </div>
+      ) : null}
+      {payment.girocodes.length > 0 && !qrGated ? (
         <ul className="flex flex-wrap gap-4">
           {payment.girocodes.map((g, i) => (
             <li key={`${g.label}|${g.until}`} className="space-y-1">

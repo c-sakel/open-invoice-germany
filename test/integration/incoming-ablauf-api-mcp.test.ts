@@ -316,6 +316,12 @@ describe("REST und Session: Uebergabe", () => {
     expect(ok.headers.get("cache-control")).toBe("no-store");
     await ok.arrayBuffer();
     expect((await sessionExportGet(new Request("http://x/api/incoming-invoices/export?from=x&to=y"))).status).toBe(400);
+    // Vorabpruefung ohne ZIP
+    const dry = await sessionExportGet(new Request(`http://x/api/incoming-invoices/export?${RANGE}&dryRun=1`));
+    expect(dry.status).toBe(200);
+    expect(dry.headers.get("content-type")).toContain("application/json");
+    expect(await dry.json()).toMatchObject({ count: expect.any(Number), bytes: expect.any(Number) });
+    expect((await sessionExportGet(new Request("http://x/api/incoming-invoices/export?from=x&to=y&dryRun=1"))).status).toBe(400);
   });
 });
 

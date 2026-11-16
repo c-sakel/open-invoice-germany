@@ -85,7 +85,7 @@ export async function updateIncomingInvoice(orgId: string, id: string, raw: unkn
   return withChangeLogRetry(() =>
     dbInternal.$transaction(async (tx) => {
       const res = await tx.incomingInvoice.updateMany({ where: { id, orgId, status: row.status, supplierContactId: row.supplierContactId }, data });
-      if (res.count !== 1) throw new IncomingWorkflowError("Der Status wurde zwischenzeitlich geaendert.", "STATUS_CONFLICT");
+      if (res.count !== 1) throw new IncomingWorkflowError("Die Rechnung wurde zwischenzeitlich geaendert.", "STATUS_CONFLICT");
       await appendChangeLog(tx, { orgId, entity: "INCOMING_INVOICE", entityId: id, action: "UPDATE", actor, at: now, diff });
       return tx.incomingInvoice.findFirstOrThrow({ where: { id, orgId }, select: INCOMING_HEADER_SELECT });
     }),

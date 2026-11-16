@@ -297,6 +297,9 @@ describe("Zahlungsangaben", () => {
     expect(html).toMatch(/role="alert"[^>]*>Die IBAN weicht/);
     expect(html).toContain("DE02••••2051");
     expect(html).toContain('href="/eingang/p1"');
+    // GiroCode erst nach Bestätigung
+    expect(html).not.toContain("<img");
+    expect(html).toContain("GiroCode anzeigen");
   });
 
   it("Lastschrift: Hinweis nicht überweisen; Skonto-Tabelle", () => {

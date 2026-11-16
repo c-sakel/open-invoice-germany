@@ -60,7 +60,7 @@ const WORKFLOW_TEXT: Record<IncomingWorkflowCode, string> = {
   REASON_REQUIRED: "Bitte einen Grund angeben (3 bis 500 Zeichen).",
   PAID_DATE_INVALID: "Das Zahldatum ist ungültig oder liegt in der Zukunft.",
   NOTE_TOO_LONG: "Der Vermerk ist zu lang (höchstens 500 Zeichen).",
-  STATUS_CONFLICT: "Der Status wurde zwischenzeitlich geändert. Bitte die Seite neu laden.",
+  STATUS_CONFLICT: "Die Rechnung wurde zwischenzeitlich geändert. Bitte die Seite neu laden.",
   STATUS_LOCKED: "Das ist in diesem Status gesperrt. Zuerst zurücksetzen.",
   MANUAL_NOT_ALLOWED: "Die Datei enthält bereits Kopfdaten; sie können nicht von Hand erfasst werden.",
   CONTACT_NOT_FOUND: "Kontakt nicht gefunden.",

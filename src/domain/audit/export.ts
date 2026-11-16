@@ -19,7 +19,7 @@ import { ZipWriter } from "@/lib/zip/writer";
 import { getArchivedInvoiceFile } from "@/domain/invoice/archive-read";
 import { getIncomingFile } from "@/domain/incoming/files";
 import { AUDIT_EXPORT_MAX_INCOMING, AUDIT_EXPORT_MAX_INCOMING_BYTES, AUDIT_EXPORT_PER_MINUTE } from "@/domain/incoming/limits";
-import { effectiveHeader, hasSeparateXml, incomingStem, INCOMING_EXPORT_SELECT, originalExtension } from "@/domain/incoming/export-rows";
+import { effectiveHeader, hasSeparateXml, incomingStem, INCOMING_EXPORT_SELECT, originalExtension, separateXmlFileName } from "@/domain/incoming/export-rows";
 import { berlinDayEnd, berlinMidnight } from "@/lib/berlin-time";
 import { verifyOrgChain } from "@/domain/audit/verify-chain";
 import { buyerSnapshotSchema } from "@/schemas";
@@ -183,7 +183,7 @@ const README = [
   "eingang/ enthaelt die unveraendert abgelegten Originale empfangener Rechnungen (Eingangsdatum im",
   "Zeitraum, Berliner Kalendertage); eingangsrechnungen.csv nennt Datei, SHA-256 und Kopfdaten. Bei",
   "Hybrid-Rechnungen liegt die ausgelesene XML daneben (gleicher Name wie die Originaldatei, Endung",
-  ".xml). Die Werte in eingangsrechnungen.csv sind unveraendert uebernommen (ohne Formelschutz).",
+  ".xml; heisst die Originaldatei selbst .xml, endet der Name auf .einvoice.xml). Die Werte in eingangsrechnungen.csv sind unveraendert uebernommen (ohne Formelschutz).",
   "Interne Notizen sind nie enthalten.",
   "",
   "Die amtliche GDPdU-DTD (Version 01.09.2004) ist mitgeliefert (gdpdu-01-09-2004.dtd).",
@@ -372,7 +372,7 @@ export async function buildAuditExport(
       const ext = originalExtension(r);
       const rel = `eingang/${stem}.${ext}`;
       await zip.addFile(rel, (await getIncomingFile(orgId, r.id, "original")).bytes);
-      if (hasSeparateXml(r)) await zip.addFile(`eingang/${stem}.xml`, (await getIncomingFile(orgId, r.id, "xml")).bytes);
+      if (hasSeparateXml(r)) await zip.addFile(`eingang/${separateXmlFileName(stem, ext)}`, (await getIncomingFile(orgId, r.id, "xml")).bytes);
       await add("eingangsrechnungen.csv", [
         r.id, formatDateTimeDe(r.receivedAt), r.channel, rel, r.originalFileName, r.originalMime, r.originalSize, r.originalSha256, r.xmlSha256,
         r.kind, r.syntax, r.profile, r.isEInvoice ? "ja" : "nein", r.typeCode, head.number, head.issueDate ? formatDateDe(head.issueDate) : null, d(head.dueAt), head.currency,

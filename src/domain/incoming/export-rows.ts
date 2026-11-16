@@ -109,3 +109,6 @@ export function incomingStem(r: IncomingExportRow, head: EffectiveHeader, used: 
 
 /** Hybrid-Rechnungen werden zusaetzlich mit der ausgelesenen XML abgelegt. */
 export const hasSeparateXml = (r: IncomingExportRow): boolean => r.kind === "HYBRID" && r.xmlPath !== null && r.originalMime !== "application/xml";
+
+/** Name der ausgelesenen XML neben dem Original; heisst das Original selbst `*.xml`, wird sie `<stem>.einvoice.xml`. */
+export const separateXmlFileName = (stem: string, originalExt: string): string => (originalExt === "xml" ? `${stem}.einvoice.xml` : `${stem}.xml`);

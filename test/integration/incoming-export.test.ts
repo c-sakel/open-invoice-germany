@@ -285,6 +285,28 @@ describe("Dateinamen und Hybrid-XML", () => {
     await expect(buildAuditExportFile(orgC, range)).rejects.toBeInstanceOf(ArchiveTamperedError);
   });
 
+  it("Hybrid-PDF mit Originalnamen .xml: ausgelesene XML als .einvoice.xml, keine doppelten Namen", async () => {
+    const orgE = await mkOrg("E");
+    const day = new Date("2242-05-05T10:00:00.000Z");
+    const id = await rcv(orgE, await pdfWithAttachments([{ name: "factur-x.xml", bytes: fx("gen-base-cii.xml") }]), "rechnung.xml", day);
+    const row = await dbInternal.incomingInvoice.findUniqueOrThrow({ where: { id }, select: { kind: true, originalMime: true, xmlPath: true } });
+    expect(row.kind).toBe("HYBRID");
+    expect(row.xmlPath).not.toBeNull();
+    const z = await handover(orgE, q);
+    const belege = z.names.filter((n) => n.startsWith("belege/"));
+    expect(belege).toHaveLength(2);
+    expect(new Set(belege.map((n) => n.toLowerCase())).size).toBe(2);
+    expect(belege.some((n) => n.endsWith(".einvoice.xml"))).toBe(true);
+    const file = (await buildAuditExportFile(orgE, range)).path;
+    try {
+      const names = unzip(file).names.filter((n) => n.startsWith("eingang/"));
+      expect(names).toHaveLength(2);
+      expect(names.some((n) => n.endsWith(".einvoice.xml"))).toBe(true);
+    } finally {
+      await removeAuditExportFile(file);
+    }
+  });
+
   it("Laufsumme im Aufbau: Grenze greift auch, wenn der Plan sie noch einhielt", async () => {
     const orgD = await mkOrg("D");
     const id = await rcv(orgD, await pdfWithAttachments([{ name: "factur-x.xml", bytes: fx("gen-base-cii.xml") }]), "hybrid-d.pdf", DAY_C);

@@ -19,7 +19,7 @@ import { col, csvTable, type CsvColumn } from "@/domain/export/csv-writer";
 import { incomingHandoverQuerySchema } from "@/schemas/incoming";
 import type { Prisma } from "@/generated/prisma/client";
 import { getIncomingFile } from "./files";
-import { effectiveHeader, hasSeparateXml, incomingStem, INCOMING_EXPORT_SELECT, originalExtension, type EffectiveHeader, type IncomingExportRow } from "./export-rows";
+import { effectiveHeader, hasSeparateXml, incomingStem, INCOMING_EXPORT_SELECT, originalExtension, separateXmlFileName, type EffectiveHeader, type IncomingExportRow } from "./export-rows";
 import { INCOMING_EXPORT_PER_MINUTE, MAX_HANDOVER_BYTES, MAX_HANDOVER_FILES } from "./limits";
 
 const PAGE = 200;
@@ -104,7 +104,8 @@ const README = [
   "Die Originaldateien liegen unveraendert im Ordner belege/. Massgeblich ist die Originaldatei;",
   "die Tabelle eingangsrechnungen.csv nennt Eingangsdatum, Lieferant und die gelesenen Kopfdaten.",
   "Sie enthaelt keine Buchungsdaten. Bei Hybrid-Rechnungen liegt die ausgelesene XML daneben",
-  "(gleicher Name wie die Originaldatei, Endung .xml).",
+  "(gleicher Name wie die Originaldatei, Endung .xml; heisst die Originaldatei selbst .xml, endet der",
+  "Name der ausgelesenen XML auf .einvoice.xml).",
   "Die Tabelle nicht blind in einer Tabellenkalkulation mit Formelauswertung oeffnen.",
   "",
 ].join("\r\n");
@@ -162,7 +163,7 @@ export async function buildIncomingHandoverFile(
             const xml = await getIncomingFile(orgId, r.id, "xml");
             seenBytes += xml.bytes.length;
             if (seenBytes > byteCeiling) throw new IncomingHandoverTooLargeError(seenFiles, seenBytes);
-            await zip.addFile(`belege/${stem}.xml`, xml.bytes);
+            await zip.addFile(`belege/${separateXmlFileName(stem, ext)}`, xml.bytes);
           }
           const c = r.supplierContactId ? contacts.get(r.supplierContactId) : undefined;
           items.push({ row: r, head, stem, ext, contact: c ? { customerNumber: c.customerNumber, name: c.name } : null });
