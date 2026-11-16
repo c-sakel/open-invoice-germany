@@ -26,3 +26,18 @@ export const MAIL_COMMAND_TIMEOUT_MS = 60_000;
 export const MAIL_RUN_TIMEOUT_MS = 5 * 60_000;
 export const MAIL_WORKER_TIMEOUT_MS = 15_000;
 export const MAIL_WORKER_HEAP_MB = 256;
+
+/** Zwischenablage (INBOX): Kontingent je Firma. */
+export const MAX_INBOX_ATTACHMENTS = 500;
+export const MAX_INBOX_BYTES = 2 * 1024 * MB;
+/** Verwerfen umkehrbar, Betreff im Protokoll, verwaiste Dateien, Erinnerung. */
+export const DISCARD_RESTORE_DAYS = 30;
+export const SUBJECT_RETENTION_DAYS = 180;
+export const ORPHAN_MIN_AGE_HOURS = 24;
+export const INBOX_REMIND_DAYS = 7;
+/** Verbindungstest und manueller Abruf. */
+export const MAILBOX_TEST_COOLDOWN_MS = 30_000;
+/** Versuche je UID im Prozess, wenn die Zerlegung ablaeuft. */
+export const MAX_PARSE_ATTEMPTS = 3;
+/** Absender-Domains, Rueckblick fetchSince (Tage). */
+export const MAX_FETCH_SINCE_DAYS = 365;

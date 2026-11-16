@@ -48,6 +48,9 @@ RUN set -eu; cd .next/standalone; \
              src/workers/mail-worker.mjs \
              node_modules/postal-mime/package.json \
              node_modules/postal-mime/dist/esm/postal-mime.js \
+             node_modules/imapflow/package.json \
+             node_modules/imapflow/dist/esm/imap-flow.js \
+             node_modules/pino/package.json \
              assets/einvoice-validation/pins.env \
              assets/einvoice-validation/LICENSES/LICENSE-en16931-validation-EUPL-1.2.txt \
              node_modules/swagger-ui-dist/swagger-ui-bundle.js \

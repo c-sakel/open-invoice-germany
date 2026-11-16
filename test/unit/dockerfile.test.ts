@@ -32,6 +32,10 @@ describe("Dockerfile", () => {
     "assets/fonts/SourceSerif4-Regular.ttf",
     "src/app/favicon.ico",
     "src/workers/incoming-worker.mjs",
+    "src/workers/mail-worker.mjs",
+    "node_modules/postal-mime/dist/esm/postal-mime.js",
+    "node_modules/imapflow/dist/esm/imap-flow.js",
+    "node_modules/pino/package.json",
     "assets/einvoice-validation/pins.env",
     "assets/einvoice-validation/LICENSES/LICENSE-en16931-validation-EUPL-1.2.txt",
     "node_modules/swagger-ui-dist/swagger-ui-bundle.js",
@@ -101,6 +105,8 @@ describe("Dockerfile", () => {
     const cfg = read("next.config.ts");
     expect(cfg).toContain("outputFileTracingIncludes");
     expect(cfg).toContain("./src/workers/**/*");
+    expect(cfg).toContain("./node_modules/postal-mime/**/*");
+    expect(cfg).toContain("imapflow");
     expect(cfg).toContain("./assets/einvoice-validation/**/*");
   });
 

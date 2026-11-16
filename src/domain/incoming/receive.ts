@@ -176,6 +176,45 @@ async function classify(bytes: Uint8Array, timeoutKey: string): Promise<Classifi
   return { ...base, kind: "OTHER", parsed: null, xmlBytes: null, hints: ["EMBEDDED_XML_INVALID"] };
 }
 
+export interface IncomingFilePreview {
+  kind: IncomingKind;
+  isEInvoice: boolean;
+  syntax: string | null;
+  profile: string | null;
+  number: string | null;
+  supplierName: string | null;
+  grossCents: number | null;
+  currency: string | null;
+  hints: string[];
+}
+
+const PREVIEW_TEXT_MAX = 200;
+const clip = (v: string | null | undefined): string | null => (v ? v.slice(0, PREVIEW_TEXT_MAX) : null);
+
+/**
+ * Liest Kopfdaten aus einer Datei, ohne etwas zu schreiben und ohne das Annahme-Kontingent zu verbrauchen.
+ * Fuer die Sichtung vor der Uebernahme; Fehler und ein ausgelasteter PDF-Worker werfen wie bei der Annahme.
+ */
+export async function previewIncomingFile(bytes: Uint8Array): Promise<IncomingFilePreview> {
+  if (bytes.byteLength === 0) throw new IncomingFormatError("Die Datei ist leer.", "EMPTY");
+  if (bytes.byteLength > MAX_INCOMING_BYTES) throw new IncomingFormatError("Die Datei ist zu gross (maximal 15 MB).", "TOO_LARGE");
+  const buf = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const cls = await classify(bytes, `preview:${sha256Hex(buf)}`);
+  const p = cls.parsed;
+  const tooMany = cls.tooMany !== undefined;
+  return {
+    kind: cls.kind,
+    isEInvoice: p?.isEInvoice ?? tooMany,
+    syntax: p?.syntax ?? cls.tooMany?.syntax ?? null,
+    profile: clip(p?.profile ?? null),
+    number: clip(p?.number ?? null),
+    supplierName: clip(p?.seller.name ?? null),
+    grossCents: p?.totals.grossCents ?? null,
+    currency: clip(p?.currency ?? null),
+    hints: [...new Set([...(p?.hints.map((h) => h.code) ?? []), ...cls.hints])].slice(0, 20),
+  };
+}
+
 export async function receiveIncomingInvoice(orgId: string, bytes: Uint8Array, opts: ReceiveOptions): Promise<ReceiveResult> {
   if (bytes.byteLength === 0) throw new IncomingFormatError("Die Datei ist leer.", "EMPTY");
   if (bytes.byteLength > MAX_INCOMING_BYTES) throw new IncomingFormatError("Die Datei ist zu gross (maximal 15 MB).", "TOO_LARGE");
