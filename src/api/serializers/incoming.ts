@@ -115,6 +115,9 @@ export function serializeIncomingDetail(d: IncomingDetail) {
       paidMarkedAt: day(d.workflow.paidMarkedAt),
     },
     allowedActions: d.allowedActions,
+    mailSource: d.mailSource
+      ? { internalDate: iso(d.mailSource.internalDate), fetchedAt: iso(d.mailSource.fetchedAt), senderDomain: d.mailSource.senderDomain }
+      : null,
     supplierContact: d.supplierContact,
     suggestions: d.suggestions,
     skonto: { terms: d.skonto.terms, schedule: d.skonto.schedule, freeText: d.skonto.freeText },
@@ -159,7 +162,7 @@ export const incomingHeaderSchema = z.object({
   objectName: z.literal("IncomingInvoice"),
   id: z.string(),
   receivedAt: z.string().nullable(),
-  channel: z.string().describe("UPLOAD | API | MCP | MAILBOX"),
+  channel: z.enum(["UPLOAD", "API", "MCP", "MAILBOX"]).describe("Eingangskanal"),
   originalFileName: z.string(),
   originalMime: z.string(),
   originalSize: z.number().int(),
@@ -242,6 +245,10 @@ export const incomingDetailSchema = incomingHeaderSchema.extend({
     paidMarkedAt: z.string().nullable(),
   }),
   allowedActions: z.array(z.enum(INCOMING_ACTIONS)).describe("Im aktuellen Status moegliche Aktionen"),
+  mailSource: z
+    .object({ internalDate: z.string().nullable(), fetchedAt: z.string().nullable(), senderDomain: z.string().nullable() })
+    .nullable()
+    .describe("Herkunft bei Kanal MAILBOX (Empfang, Abruf, Absenderdomain; ohne Betreff und Adresse)"),
   supplierContact: z.object({ id: z.string(), name: z.string(), customerNumber: z.string().nullable() }).nullable(),
   suggestions: z.array(
     z.object({ id: z.string(), name: z.string(), customerNumber: z.string().nullable(), vatId: z.string().nullable(), match: z.enum(["VAT_ID", "NAME"]) }),

@@ -74,16 +74,21 @@ export async function getInboundAttachment(orgId: string, id: string): Promise<I
   return toInboundAttachmentRow(row);
 }
 
-export async function listInboundAttachments(orgId: string, raw: unknown): Promise<{ items: InboundAttachmentRow[]; nextCursor: string | null }> {
+export async function listInboundAttachments(orgId: string, raw: unknown): Promise<{ items: InboundAttachmentRow[]; total: number; limit: number; offset: number; nextCursor: string | null }> {
   const q = inboundAttachmentListQuerySchema.parse(raw);
-  const window = resolveSyncWindow(raw, { ...q, offset: 0 });
-  const rows = await dbInternal.inboundMailAttachment.findMany({
-    where: { orgId, ...(q.status ? { status: q.status } : {}), ...(window ? syncWhere(window) : {}) },
-    orderBy: window ? [...SYNC_ORDER_BY] : [{ createdAt: "desc" }, { id: "asc" }],
-    take: q.limit,
-    select: ROW_SELECT,
-  });
-  return { items: rows.map(toInboundAttachmentRow), nextCursor: window ? nextSyncCursor(rows, q.limit) : null };
+  const window = resolveSyncWindow(raw, q);
+  const where = { orgId, ...(q.status ? { status: q.status } : {}), ...(window ? syncWhere(window) : {}) };
+  const [total, rows] = await Promise.all([
+    dbInternal.inboundMailAttachment.count({ where: { orgId, ...(q.status ? { status: q.status } : {}) } }),
+    dbInternal.inboundMailAttachment.findMany({
+      where,
+      orderBy: window ? [...SYNC_ORDER_BY] : [{ createdAt: "desc" }, { id: "asc" }],
+      take: q.limit,
+      ...(window ? {} : { skip: q.offset }),
+      select: ROW_SELECT,
+    }),
+  ]);
+  return { items: rows.map(toInboundAttachmentRow), total, limit: q.limit, offset: window ? 0 : q.offset, nextCursor: window ? nextSyncCursor(rows, q.limit) : null };
 }
 
 /** Datei einer offenen oder verworfenen Anlage aus der Zwischenablage (Hash geprueft). */

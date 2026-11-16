@@ -325,6 +325,19 @@ Rechnungen von Lieferanten annehmen, lesen und prüfen (UBL/CII-XML, PDF mit ein
 
 Das Ergebnis bewertet nur Format und Regeln der Norm, nicht die inhaltliche Richtigkeit; maßgeblich bleibt die Originaldatei.
 
+### Rechnungs-Postfach
+
+Anlagen (XML/PDF) aus dem eigens eingerichteten Rechnungs-Postfach sichten. Die Einrichtung (Zugangsdaten, Verbindungstest, Abruf) gibt es nur in der Oberfläche; Mails werden nie gelöscht oder verschoben. Übernehmen nutzt dieselbe Annahme wie der Upload (Kanal `MAILBOX`).
+
+| Tool | Zweck | Beispiel |
+|---|---|---|
+| `get_inbound_mailbox_status` | Status des Postfachs: ein/aus, Server, maskierter Benutzer, Ordner, Abrufbeginn, erlaubte Absender-Domains, letzter Test und Lauf (feste Codes), Kontingent der Sichtung; nie Zugangsdaten | „Läuft der Postfach-Abruf?" |
+| `list_inbound_mail` | Anlagen auflisten (neueste zuerst; Filter `status`: `INBOX`, `ACCEPTED`, `DISCARDED`, `DUPLICATE`, `SKIPPED`; `updatedSince` und `cursor` für den Abgleich) | „Was wartet im Postfach auf Sichtung?" |
+| `get_inbound_mail` | Eine Anlage mit Herkunft (Absender-Domain, Betreff, Empfang, Abruf), Vorschau und Entscheidungsstand | „Zeig mir diese Anlage." |
+| `accept_inbound_mail` | Anlage als Eingangsrechnung übernehmen (write-once-Ablage, nie gelöscht, nichts gebucht); höchstens 60 je Minute und Firma | „Übernimm diese Anlage." |
+| `discard_inbound_mail` | Anlage verwerfen (optional `reason`; protokolliert, 30 Tage umkehrbar) | „Verwirf die Werbung." |
+| `restore_inbound_mail` | Verworfene Anlage zurück in die Sichtung holen | „Hol die Anlage zurück." |
+
 ### Einstellungen
 
 | Tool | Zweck | Beispiel |

@@ -76,6 +76,7 @@ export const inboundAttachmentListQuerySchema = z.object({
   status: z.enum(INBOUND_ATTACHMENT_STATUSES).optional(),
   ...syncFilterShape,
   limit: z.coerce.number().int().min(1).max(100).default(50),
+  offset: z.coerce.number().int().min(0).max(100000).default(0),
 });
 export type InboundAttachmentListQuery = z.infer<typeof inboundAttachmentListQuerySchema>;
 
