@@ -10,6 +10,9 @@ const nextConfig: NextConfig = {
   images: { unoptimized: true },
   // pdfkit lädt .afm-Schriftdaten zur Laufzeit -> nicht ins Server-Bundle ziehen.
   serverExternalPackages: ["pdfkit"],
+  // Dateien, die zur Laufzeit relativ zu process.cwd() gelesen werden (Worker-Skript fuer fremde PDF-Anlagen,
+  // Hinweise/Lizenztexte der Pruefartefakte): das Tracing erkennt sie nicht, auch nicht deren relative Importe.
+  outputFileTracingIncludes: { "/*": ["./src/workers/**/*", "./assets/einvoice-validation/**/*"] },
   // Eindeutige Workspace-Wurzel (verhindert Fehl-Inferenz bei mehreren Lockfiles).
   turbopack: { root: import.meta.dirname },
 };
