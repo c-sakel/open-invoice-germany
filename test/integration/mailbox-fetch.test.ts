@@ -11,7 +11,7 @@ import { dbInternal } from "@/lib/db";
 import { resetRateLimits } from "@/lib/rate-limit";
 import { SecretsUnavailableError } from "@/lib/crypto/secrets";
 import { loadMailboxSettings, saveMailboxSettings, setMailboxEnabled, testMailboxConnection } from "@/domain/mailbox/settings";
-import { fetchMailboxForOrg } from "@/domain/mailbox/fetch";
+import { fetchMailboxForOrg, getDeferred, parkDeferred } from "@/domain/mailbox/fetch";
 import { runScheduledJobs } from "@/domain/scheduler/runner";
 import { runMailboxJob } from "@/domain/mailbox/job";
 import { purgeMailboxStaging } from "@/domain/mailbox/purge";
@@ -381,6 +381,18 @@ describe("Abruf", () => {
     const c2 = client([...limited, next]);
     await fetchMailboxForOrg(orgId, new Date(NOW.getTime() + 60_000), c2);
     expect(c2.fetched).toEqual(["62"]);
+  });
+
+  it("Ueberlauf der Zurueckstell-Liste eines Kontos laesst die Eintraege anderer Konten unberuehrt", () => {
+    const e = (until: number) => ({ until, domain: "lieferant.example.org" });
+    parkDeferred("konto-b", "b1", e(10_000), 0, 3);
+    parkDeferred("konto-b", "b2", e(10_000), 0, 3);
+    for (let i = 0; i < 10; i++) parkDeferred("konto-a", `a${i}`, e(i < 2 ? 5 : 10_000), 100, 3);
+    // In Konto A: abgelaufene zuerst entfernt, danach die aeltesten; hoechstens 3 Eintraege.
+    expect(["a0", "a1", "a2", "a3", "a4", "a5", "a6"].map((k) => getDeferred("konto-a", k) !== undefined)).toEqual([false, false, false, false, false, false, false]);
+    expect(["a7", "a8", "a9"].every((k) => getDeferred("konto-a", k) !== undefined)).toBe(true);
+    expect(getDeferred("konto-b", "b1")).toBeDefined();
+    expect(getDeferred("konto-b", "b2")).toBeDefined();
   });
 
   it("gleiche Anlage in zwei Mails und bereits hochgeladene Datei sind Dubletten", async () => {

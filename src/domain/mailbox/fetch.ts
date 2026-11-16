@@ -68,15 +68,37 @@ function countAttempt(key: string): number {
   return n;
 }
 
-/** Zurueckgestellte Mails (Tageslimit je Absender): Position -> Ende des Fensters; prozessweit, begrenzt. */
+/** Zurueckgestellte Mails (Tageslimit je Absender): je Konto eine eigene Teil-Map, Position -> Ende des Fensters. */
 const DEFERRED_KEY = Symbol.for("oig.mailboxFetch.deferred");
-const MAX_DEFERRED = 5000;
+export const MAX_DEFERRED_PER_ACCOUNT = 2000;
 /** Hoechstens so viele Mails je Lauf werden nur ueber ihre Kopfdaten (ohne Download) zurueckgestellt. */
 const MAX_DEFER_SCANS_PER_RUN = 500;
-function deferredMap(): Map<string, { until: number; domain: string }> {
-  const g = globalThis as { [DEFERRED_KEY]?: Map<string, { until: number; domain: string }> };
+type DeferredEntry = { until: number; domain: string };
+function deferredStore(): Map<string, Map<string, DeferredEntry>> {
+  const g = globalThis as { [DEFERRED_KEY]?: Map<string, Map<string, DeferredEntry>> };
   g[DEFERRED_KEY] ??= new Map();
   return g[DEFERRED_KEY];
+}
+export function getDeferred(account: string, key: string): DeferredEntry | undefined {
+  return deferredStore().get(account)?.get(key);
+}
+/** Merkt eine Mail vor. Bei Ueberlauf verliert nur dieses Konto Eintraege: zuerst abgelaufene, dann die aeltesten. */
+export function parkDeferred(account: string, key: string, entry: DeferredEntry, nowMs: number, max: number = MAX_DEFERRED_PER_ACCOUNT): void {
+  const store = deferredStore();
+  let m = store.get(account);
+  if (!m) {
+    m = new Map();
+    store.set(account, m);
+  }
+  m.delete(key); // erneutes Vormerken zaehlt als juengster Eintrag
+  if (m.size >= max) {
+    for (const [k, v] of m) if (v.until <= nowMs) m.delete(k);
+    for (const k of m.keys()) {
+      if (m.size < max) break;
+      m.delete(k);
+    }
+  }
+  m.set(key, entry);
 }
 
 export function senderAllowed(senderDomain: string | null, allowed: string[]): boolean {
@@ -216,9 +238,7 @@ export async function fetchMailboxForOrg(
     if (times.length < MAX_STAGED_PER_DOMAIN_PER_DAY) return false;
     // Das Limit unterschreitet der Zaehler, sobald die aelteste noetige Zeile aus dem 24-Stunden-Fenster faellt.
     const freeing = times[times.length - MAX_STAGED_PER_DOMAIN_PER_DAY];
-    const m = deferredMap();
-    if (m.size >= MAX_DEFERRED) m.clear();
-    m.set(deferKey(uid), { until: (freeing?.fetchedAt.getTime() ?? now.getTime()) + DAY_MS, domain });
+    parkDeferred(`${orgId}:${accountKey}`, deferKey(uid), { until: (freeing?.fetchedAt.getTime() ?? now.getTime()) + DAY_MS, domain }, now.getTime());
     limitedDomains.add(domain);
     return true;
   };
@@ -244,7 +264,7 @@ export async function fetchMailboxForOrg(
     for (const uid of fresh) {
       if (handled >= MAX_MAILS_PER_RUN || downloads >= MAX_MAILS_PER_RUN * 3 || deferScans >= MAX_DEFER_SCANS_PER_RUN) break;
       // Bereits zurueckgestellt und das Fenster laeuft noch: weder Abruf noch Anrechnung auf die Grenzen.
-      const parked = deferredMap().get(deferKey(uid));
+      const parked = getDeferred(`${orgId}:${accountKey}`, deferKey(uid));
       if (parked && parked.until > now.getTime()) {
         limitedDomains.add(parked.domain);
         continue;
@@ -271,7 +291,7 @@ export async function fetchMailboxForOrg(
         r = await commit(uid, { orgId, accountKey, uidValidity, uid, internalDate: null, fetchedAt: now, size: 0, result: "FETCH_FAILED", messageIdHash: null, senderDomain: null, subject: null }, []);
       }
       if (r === null) {
-        if (deferredMap().has(deferKey(uid))) deferScans += 1;
+        if (getDeferred(`${orgId}:${accountKey}`, deferKey(uid)) !== undefined) deferScans += 1;
         continue;
       }
       handled += 1;
