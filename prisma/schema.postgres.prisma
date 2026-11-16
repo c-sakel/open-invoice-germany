@@ -90,6 +90,7 @@ model Organization {
   datevSettings           DatevSettings?
   datevMappings           DatevAccountMapping[]
   datevExports            DatevExport[]
+  incomingInvoices        IncomingInvoice[]
   datevExportItems        DatevExportItem[]
   sepaCreditorId          String? // Phase 18e: SEPA-Glaeubiger-ID (BT-90), normalisiert
 }
@@ -2100,4 +2101,76 @@ model DatevExportItem {
   @@index([orgId, itemKey])
   @@index([orgId, month])
   @@index([exportId])
+}
+
+/// Empfangene Rechnung (Original unveraenderlich im Archiv; Positionen nur im archivierten XML).
+model IncomingInvoice {
+  id                String                      @id @default(cuid())
+  orgId             String
+  org               Organization                @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  receivedAt        DateTime // Annahmezeitpunkt, unveraenderlich
+  channel           String // UPLOAD | API | MCP | MAILBOX
+  originalFileName  String // bereinigt, max. 200
+  originalMime      String
+  originalSize      Int
+  originalSha256    String
+  originalPath      String // relativ zu ARCHIVE_DIR
+  xmlPath           String?
+  xmlSha256         String?
+  kind              String // EINVOICE | HYBRID | OTHER
+  syntax            String? // UBL | CII | FERD1
+  profile           String? // BT-24, max. 200
+  isEInvoice        Boolean                     @default(false)
+  typeCode          String?
+  number            String?
+  issueDate         DateTime?
+  dueDate           DateTime?
+  deliveryDate      DateTime?
+  currency          String?
+  netCents          Int?
+  taxCents          Int?
+  grossCents        Int?
+  payableCents      Int?
+  supplierName      String?
+  supplierVatId     String?
+  supplierTaxNumber String?
+  supplierJson      String? // Verkaeufer-Snapshot BG-4/BG-5/BG-6
+  buyerName         String?
+  buyerVatId        String?
+  paymentJson       String? // BG-16/17, BT-20, BT-83
+  hintsJson         String                      @default("[]") // Annahme-Hinweise (Codes)
+  validationStatus  String                      @default("PENDING") // PENDING|VALID|WARNINGS|INVALID|NOT_CHECKED|NOT_APPLICABLE
+  duplicateOfId     String?
+  duplicateOf       IncomingInvoice?            @relation("IncomingDuplicate", fields: [duplicateOfId], references: [id], onDelete: Restrict)
+  duplicates        IncomingInvoice[]           @relation("IncomingDuplicate")
+  status            String                      @default("NEW")
+  createdBy         String
+  createdAt         DateTime                    @default(now())
+  updatedAt         DateTime                    @updatedAt
+  validations       IncomingInvoiceValidation[]
+
+  @@unique([orgId, originalSha256])
+  @@index([orgId, status, receivedAt])
+  @@index([orgId, supplierVatId, number])
+  @@index([orgId, updatedAt])
+  @@index([validationStatus])
+}
+
+/// Pruefergebnis (append-only); erneute Pruefung legt eine neue Zeile an.
+model IncomingInvoiceValidation {
+  id                String          @id @default(cuid())
+  incomingInvoiceId String
+  incomingInvoice   IncomingInvoice @relation(fields: [incomingInvoiceId], references: [id], onDelete: Restrict)
+  at                DateTime        @default(now())
+  engine            String // Kennung der Pruefmaschine
+  artefactVersion   String
+  result            String // VALID|WARNINGS|INVALID|NOT_CHECKED|NOT_APPLICABLE
+  reason            String? // z. B. TIMEOUT, ENGINE_OFF, TOO_MANY_LINES, PROFILE_NOT_COVERED
+  formatErrors      Int             @default(0)
+  ruleErrors        Int             @default(0)
+  warnings          Int             @default(0)
+  findingsJson      String          @default("[]") // max. 500, Text gekuerzt
+  durationMs        Int             @default(0)
+
+  @@index([incomingInvoiceId, at])
 }

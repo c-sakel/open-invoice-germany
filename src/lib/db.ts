@@ -575,6 +575,30 @@ function assertBankTransactionUpdateAllowed(data: unknown): void {
 }
 
 /**
+ * Eingangsrechnung: Kopffelder, Hashes, Pfade und Annahmezeitpunkt sind nach dem Anlegen gesperrt;
+ * aenderbar sind nur Bearbeitungsstatus und Pruefstatus. Loeschen ist nie erlaubt (Aufbewahrung).
+ */
+export class IncomingInvoiceImmutableError extends Error {
+  constructor(detail: string) {
+    super(`Eingangsrechnung ist ein Nachweis und nicht aenderbar: ${detail}`);
+    this.name = "IncomingInvoiceImmutableError";
+  }
+}
+
+export class IncomingInvoiceValidationImmutableError extends Error {
+  constructor() {
+    super("Pruefergebnis ist unveraenderlich.");
+    this.name = "IncomingInvoiceValidationImmutableError";
+  }
+}
+
+const INCOMING_INVOICE_MUTABLE_KEYS: ReadonlySet<string> = new Set(["status", "validationStatus", "updatedAt"]);
+
+function assertIncomingInvoiceUpdateAllowed(data: unknown): void {
+  assertOnlyKeys(data, INCOMING_INVOICE_MUTABLE_KEYS, (d) => new IncomingInvoiceImmutableError(d));
+}
+
+/**
  * Phase 17a: Das VIES-Pruefprotokoll (`VatIdCheck`) ist append-only; nur `create` ist erlaubt.
  */
 export class VatIdCheckImmutableError extends Error {
@@ -1082,6 +1106,49 @@ export const prisma = base.$extends({
       },
       async deleteMany() {
         throw new BankTransactionImmutableError("deleteMany");
+      },
+    },
+    incomingInvoice: {
+      async update({ args, query }) {
+        assertIncomingInvoiceUpdateAllowed(args.data);
+        return query(args);
+      },
+      async updateMany({ args, query }) {
+        assertIncomingInvoiceUpdateAllowed(args.data);
+        return query(args);
+      },
+      async updateManyAndReturn({ args, query }) {
+        assertIncomingInvoiceUpdateAllowed(args.data);
+        return query(args);
+      },
+      async upsert() {
+        throw new IncomingInvoiceImmutableError("upsert");
+      },
+      async delete() {
+        throw new IncomingInvoiceImmutableError("delete");
+      },
+      async deleteMany() {
+        throw new IncomingInvoiceImmutableError("deleteMany");
+      },
+    },
+    incomingInvoiceValidation: {
+      async update() {
+        throw new IncomingInvoiceValidationImmutableError();
+      },
+      async updateMany() {
+        throw new IncomingInvoiceValidationImmutableError();
+      },
+      async updateManyAndReturn() {
+        throw new IncomingInvoiceValidationImmutableError();
+      },
+      async upsert() {
+        throw new IncomingInvoiceValidationImmutableError();
+      },
+      async delete() {
+        throw new IncomingInvoiceValidationImmutableError();
+      },
+      async deleteMany() {
+        throw new IncomingInvoiceValidationImmutableError();
       },
     },
     postalJobEvent: {
