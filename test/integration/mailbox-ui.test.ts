@@ -15,6 +15,7 @@ import {
   acceptAttachmentCore,
   acceptBatchCore,
   discardAttachmentCore,
+  fetchMailboxNowCore,
   restoreAttachmentCore,
   saveMailboxSettingsCore,
   setMailboxEnabledCore,
@@ -149,5 +150,43 @@ describe("Sichtung", () => {
       expect(batch.data.entries.map((e) => e.ok)).toEqual([true, true, false]);
       expect(batch.data.entries[2]?.error).toBe("Anlage nicht gefunden.");
     }
+  });
+});
+
+describe("Jetzt abrufen", () => {
+  const mk = (n: number) => Array.from({ length: n }, (_, i) => ({ uid: String(i + 1), raw: buildMail({ messageId: `<now-${i}-${Math.random()}@lieferant.example.org>`, attachments: [{ name: `n-${i}.xml`, type: "application/xml", data: ubl(Math.floor(Math.random() * 1e9)) }] }) }));
+  async function active(name: string): Promise<string> {
+    const orgId = await mkOrg(name);
+    await saveMailboxSettings(orgId, { ...INPUT, fetchSince: "2247-03-20" }, "tester", NOW);
+    await dbInternal.inboundMailboxSettings.update({ where: { orgId }, data: { enabled: true, lastTestOk: true, lastTestAt: NOW }, select: { id: true } });
+    return orgId;
+  }
+
+  it("ruft nur die eigene Firma ab und startet keinen anderen Job", async () => {
+    const mine = await active("Jetzt A");
+    const other = await active("Jetzt B");
+    const cMine = new FakeMailboxClient({ mails: mk(2) });
+    const cOther = new FakeMailboxClient({ mails: mk(1) });
+    const before = await dbInternal.schedulerRun.count({ where: { job: { not: "mailbox" } } });
+    const r = await fetchMailboxNowCore(mine, cMine);
+    expect(r).toEqual({ ok: true, data: { staged: 2, messages: 2 } });
+    expect(cMine.opens).toBeGreaterThan(0);
+    expect(cOther.opens).toBe(0);
+    expect(await dbInternal.inboundMailMessage.count({ where: { orgId: other } })).toBe(0);
+    expect(await dbInternal.schedulerRun.count({ where: { job: { not: "mailbox" } } })).toBe(before);
+    expect(await dbInternal.schedulerLock.count({ where: { job: "mailbox" } })).toBe(0);
+  });
+
+  it("gleiche Sperre wie der Job: laeuft schon ein Abruf, wird nichts gestartet; Grenze 2 je Minute", async () => {
+    const orgId = await active("Jetzt Sperre");
+    await dbInternal.schedulerLock.create({ data: { job: "mailbox", runId: "fremd-lauf", lockedAt: new Date() } });
+    const c = new FakeMailboxClient({ mails: mk(1) });
+    const locked = await fetchMailboxNowCore(orgId, c);
+    expect(locked.ok).toBe(false);
+    expect(c.opens).toBe(0);
+    await dbInternal.schedulerLock.deleteMany({ where: { job: "mailbox" } });
+    expect((await fetchMailboxNowCore(orgId, c)).ok).toBe(true);
+    const third = await fetchMailboxNowCore(orgId, c);
+    expect(third.ok).toBe(false);
   });
 });

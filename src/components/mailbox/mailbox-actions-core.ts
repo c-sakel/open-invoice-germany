@@ -9,7 +9,7 @@ import { describeError } from "@/lib/safe-error";
 import type { MailboxClient } from "@/lib/mailbox/client";
 import { NotFoundError } from "@/domain/errors";
 import { IncomingBusyError, IncomingFormatError } from "@/domain/incoming/errors";
-import { runScheduledJobs } from "@/domain/scheduler/runner";
+import { runMailboxForOrg } from "@/domain/mailbox/job";
 import { loadMailboxSettings, saveMailboxSettings, setMailboxEnabled, testMailboxConnection, type MailboxSettingsView } from "@/domain/mailbox/settings";
 import { MailboxSettingsError, InboundMailError } from "@/domain/mailbox/errors";
 import { acceptInboundAttachment, acceptInboundAttachments, discardInboundAttachment, restoreInboundAttachment, type AcceptBatchEntry } from "@/domain/mailbox/decide";
@@ -114,16 +114,14 @@ export async function setMailboxEnabledCore(orgId: string, actor: string, enable
   }
 }
 
-/** Manueller Abruf über den Scheduler-Job (mit Sperre); höchstens einmal je Minute und Firma. */
-export async function fetchMailboxNowCore(orgId: string): Promise<UiResult<{ staged: number; messages: number }>> {
+/** Manueller Abruf nur des eigenen Postfachs (mit Sperre gegen den regulären Job); höchstens zweimal je Minute und Firma. */
+export async function fetchMailboxNowCore(orgId: string, client?: MailboxClient): Promise<UiResult<{ staged: number; messages: number }>> {
   try {
-    rateLimit(`mailbox-fetch-now:${orgId}`, { limit: 1, windowMs: 60_000 });
-    const [res] = await runScheduledJobs({ jobs: ["mailbox"], trigger: "MANUAL" });
-    if (!res) return { ok: false, error: GENERIC_MAILBOX_ERROR };
-    if (res.summary.skipped === "locked") return { ok: false, error: "Ein Abruf läuft bereits. Bitte später erneut versuchen." };
-    if (!res.ok) return { ok: false, error: GENERIC_MAILBOX_ERROR };
-    const n = (k: string): number => (typeof res.summary[k] === "number" ? (res.summary[k] as number) : 0);
-    return { ok: true, data: { staged: n("staged"), messages: n("messages") } };
+    rateLimit(`mailbox-fetch-now:${orgId}`, { limit: 2, windowMs: 60_000 });
+    const res = await runMailboxForOrg(orgId, new Date(), client);
+    if (res.locked) return { ok: false, error: "Ein Abruf läuft bereits. Bitte später erneut versuchen." };
+    if (res.error !== null) return { ok: false, error: GENERIC_MAILBOX_ERROR };
+    return { ok: true, data: { staged: res.staged, messages: res.messages } };
   } catch (e) {
     return failure(e, "Abruf");
   }

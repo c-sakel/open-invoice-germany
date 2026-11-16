@@ -4,6 +4,7 @@
  */
 import { dbInternal } from "@/lib/db";
 import type { MailboxClient } from "@/lib/mailbox/client";
+import { withJobLock } from "@/domain/scheduler/lock";
 import { fetchMailboxForOrg } from "./fetch";
 import { purgeMailboxStaging } from "./purge";
 
@@ -40,4 +41,21 @@ export async function runMailboxJob(now: Date, client?: MailboxClient): Promise<
     }
   }
   return summary;
+}
+
+/**
+ * Manueller Abruf nur der eigenen Firma (kein anderer Job, keine anderen Firmen), unter derselben Sperre wie der
+ * regulaere Postfach-Job. Liefert `locked`, wenn gerade ein Abruf laeuft.
+ */
+export async function runMailboxForOrg(
+  orgId: string,
+  now: Date = new Date(),
+  client?: MailboxClient,
+): Promise<{ locked: true } | { locked: false; messages: number; staged: number; error: string | null }> {
+  const r = await withJobLock("mailbox", "MANUAL", now, async () => {
+    const res = await fetchMailboxForOrg(orgId, now, client);
+    return { orgs: 1, messages: res.messages, staged: res.staged, errors: res.error === null ? 0 : 1 };
+  });
+  if (r.locked) return { locked: true };
+  return { locked: false, messages: r.value.messages, staged: r.value.staged, error: r.value.errors > 0 ? "ERROR" : null };
 }

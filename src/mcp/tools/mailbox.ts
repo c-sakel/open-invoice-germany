@@ -8,7 +8,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { NotFoundError } from "@/domain/errors";
-import { RateLimitError, rateLimit } from "@/lib/rate-limit";
+import { RateLimitError } from "@/lib/rate-limit";
 import { IncomingBusyError, IncomingDuplicateError, IncomingFormatError } from "@/domain/incoming/errors";
 import { acceptInboundAttachment, discardInboundAttachment, restoreInboundAttachment } from "@/domain/mailbox/decide";
 import { InboundMailError } from "@/domain/mailbox/errors";
@@ -19,7 +19,6 @@ import { serializeInboundMail, serializeMailboxStatus } from "@/api/serializers/
 import { INBOUND_ATTACHMENT_STATUSES, inboundDiscardInputSchema } from "@/schemas/mailbox";
 import type { McpToolsContext, Result } from "./context";
 
-const MCP_ACCEPT_PER_MINUTE = 60;
 
 function mailboxFailure(ctx: McpToolsContext, e: unknown): Result {
   if (e instanceof z.ZodError) return ctx.fail(`Ungültige Eingabe: ${e.issues.map((i) => i.message).join("; ")}`);
@@ -113,7 +112,7 @@ export function registerMailboxTools(server: McpServer, ctx: McpToolsContext): v
     async ({ inboundMailId }): Promise<Result> => {
       try {
         const org = await ctx.requireOrg();
-        rateLimit(`incoming-receive-mcp:${org.id}`, { limit: MCP_ACCEPT_PER_MINUTE, windowMs: 60_000 });
+        // Die Grenze je Firma (gleich fuer REST und MCP) setzt die Annahme selbst.
         const r = await acceptInboundAttachment(org.id, inboundMailId, "mcp");
         return json({ incomingInvoiceId: r.incomingInvoiceId, incomingInvoice: serializeReceiveResult(r.result) });
       } catch (e) {
