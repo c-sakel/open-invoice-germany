@@ -719,6 +719,21 @@ Kontoauszüge (CAMT.053/.054, XML, UTF-8) importieren und Umsätze Rechnungen zu
 
 Lesen braucht `read`; alles, was importiert oder bucht, `write` — wie `POST /api/v1/Invoice/{id}/payment` und der CSV-Import. Die Oberfläche lädt über `POST /api/bank-statements` (Session, `multipart/form-data`, nur same-origin).
 
+## Eingangsrechnungen
+
+Rechnungen von Lieferanten annehmen, lesen und prüfen. Die Originaldatei (UBL/CII-XML, PDF mit eingebetteter XML, sonstige PDF/Bilder) wird unverändert und unveränderlich abgelegt, nie gelöscht und nicht gebucht. IBANs erscheinen maskiert, Beträge in Cent.
+
+| Endpunkt | Scope | Zweck |
+|---|---|---|
+| `POST /api/v1/IncomingInvoice` | `write` | Annahme: `{ "contentBase64", "fileName" }`, Datei dekodiert höchstens 15 MB, Body höchstens 21 MB (`413`). `201` mit `id`, `kind` (`EINVOICE`, `HYBRID`, `OTHER`), Syntax, Profil, `validationStatus` (zunächst `PENDING`) und Hinweisen. `409` `ALREADY_RECEIVED` (`details.incomingInvoiceId`), `422` Dateifehler mit `error.reason` (z. B. `FORBIDDEN_MARKUP`, `ZIP_NOT_SUPPORTED`, `NOT_UTF8`, `MALFORMED`), `503` ausgelastet (`Retry-After`). Höchstens 30 je Minute und Firma. Das Anfrageprotokoll schwärzt `contentBase64`. |
+| `GET /api/v1/IncomingInvoice` | `read` | Liste (neueste zuerst): `status`, `validationStatus`, `kind`, `receivedFrom`, `receivedTo`, `supplier`, `updatedSince`, `cursor`, `limit`, `offset` |
+| `GET /api/v1/IncomingInvoice/{id}` | `read` | Kopf, Lesefassung (Parteien, Positionen, Steuern, Summen, Zahlung, Hinweise) und letztes Prüfergebnis mit Befunden |
+| `POST /api/v1/IncomingInvoice/{id}/validate` | `write` | Prüfung gegen EN 16931 und XRechnung erneut ausführen (höchstens 10 je Minute und Firma, `429`); legt eine neue, unveränderliche Ergebniszeile an |
+| `GET /api/v1/IncomingInvoice/{id}/file?kind=original\|xml` | `read` | Originaldatei bzw. Rechnungs-XML, nur als Download (`Content-Disposition: attachment`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: sandbox`, `Cache-Control: no-store`) nach Hash-Prüfung; `500` bei veränderter Archivdatei, `404` ohne XML |
+| `GET /api/v1/IncomingInvoice/{id}/attachment/{n}` | `read` | Eingebettete PDF-Anlage `n` (0-basiert) als Download |
+
+`validationStatus`: `PENDING` (wird geprüft), `VALID`, `WARNINGS`, `INVALID`, `NOT_CHECKED` (Prüfung nicht möglich, Grund im Ergebnis, z. B. `TIMEOUT`, `PROFILE_NOT_COVERED`, `ENGINE_UNAVAILABLE`) und `NOT_APPLICABLE` (keine vollständige E-Rechnung, z. B. PDF ohne XML oder Profil MINIMUM). Das Ergebnis bewertet nur Format und Regeln der Norm, nicht die inhaltliche Richtigkeit. Die Oberfläche lädt über `POST /api/incoming-invoices` (Session, `multipart/form-data`, eine Datei je Anfrage, nur same-origin).
+
 ## Regeln nach Zahlungseingang
 
 Regeln, die nach einer Zahlung Aktionen auslösen (Zahlungsbestätigung per Mail, Tag, Benachrichtigung, Webhook, Abo fortsetzen). Lesen braucht `read`; Anlegen, Ändern, Archivieren, Trockenlauf und Wiederholen `admin`, weil eine Regel Mails, Webhooks und Abo-Fortsetzungen auslösen kann.

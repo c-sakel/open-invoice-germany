@@ -249,6 +249,45 @@ Spalten Produkte:
 
 Eine Kundennummer, die schon vergeben ist, oder ein Kunde mit gleicher E-Mail und gleichem Namen wird als Fehler gemeldet. Mehr Grenzen: [LIMITATIONEN.md](LIMITATIONEN.md).
 
+## 2c. Eingangsrechnungen (`Eingang`)
+
+Hier legst du Rechnungen deiner Lieferanten ab, liest sie und prüfst sie gegen EN 16931 und XRechnung. Die Anwendung bucht nichts und kontiert nichts; sie ersetzt weder den Posteingang noch die Prüfung durch deinen Steuerberater.
+
+### Rechnung ablegen
+
+- **Per Oberfläche:** Dateien auf die Fläche im Menü „Eingang“ ziehen oder per Auswahl hinzufügen (bis 20 Dateien je Vorgang, je Datei höchstens 15 MB). Ergebnis je Datei: angenommen, „bereits vorhanden“ (dieselbe Datei wurde schon abgelegt) oder abgelehnt mit Grund (z. B. ZIP-Datei, XML mit DTD, keine UTF-8-Kodierung, keine Rechnung).
+- **Per REST oder MCP:** siehe [API.md](API.md#eingangsrechnungen) und [MCP.md](MCP.md#eingangsrechnungen). Dateien bis 15 MB (MCP: 2 MB).
+- **Erkannt werden:** XML nach UBL oder CII (XRechnung, EN 16931), PDF mit eingebetteter XML (ZUGFeRD, Factur-X) und sonstige PDF oder Bilder. Ein PDF ohne eingebettete Rechnungsdaten ist eine „sonstige Rechnung“, keine E-Rechnung.
+- Die Datei wird unverändert und unveränderlich abgelegt (SHA-256) und **nie gelöscht**. Auch eine fehlerhafte oder irrtümlich abgelegte Datei bleibt aufbewahrt.
+
+### Liste und Prüfstatus
+
+Die Liste zeigt neueste zuerst Lieferant, Rechnungsnummer, Datum, Betrag, Art (z. B. „PDF mit CII · EN 16931“) und den Prüfstatus; die Reiter filtern nach Status:
+
+| Status | Bedeutung |
+|---|---|
+| wird geprüft | Die Prüfung läuft oder wartet; der Status wechselt nach wenigen Sekunden (Seite neu laden). |
+| gültig | Schema, EN 16931 und XRechnung ohne Befund. |
+| gültig mit Hinweisen | Nur Warnungen. |
+| fehlerhaft | Mindestens ein Fehler gegen Schema oder Regeln; die Befunde stehen in der Detailansicht. Die Datei bleibt abgelegt. |
+| nicht geprüft | Die Prüfung war nicht möglich (Zeit, Speicher, Profil ohne Prüfregeln, Prüfer nicht verfügbar, mehr als 5.000 Positionen). Der Grund steht im Ergebnis; mit „Erneut prüfen“ lässt sich die Prüfung wiederholen. |
+| keine vollständige E-Rechnung | Sonstige Rechnung (PDF/Bild ohne XML) oder ein Profil unterhalb von EN 16931 (MINIMUM, BASIC WL, ZUGFeRD 1.0); wird nur gekennzeichnet. |
+
+„Gültig“ heißt: formal in Ordnung. Ob Leistung, Preise, Steuersatz, Lieferant und Bankverbindung stimmen, prüft die Anwendung nicht.
+
+### Detailansicht und Druckansicht
+
+- **Lesefassung:** Lieferant und Empfänger, Rechnungsdaten, Positionen, Steuern, Summen (mit rechnerischer Gegenprobe), Zahlungsangaben und Hinweise zur Datei. Eine Rechnung vom Typ 389 trägt den Hinweis, dass sie vom Kunden über deine Leistung ausgestellt wurde; MINIMUM-Profile sind gekennzeichnet. Texte aus der Datei erscheinen nur als Text. Maßgeblich bleibt die Originaldatei.
+- **Prüfergebnis:** Befunde mit Regel, Stelle und Text, Prüfer und Version, Zeitpunkt. Jede Prüfung wird als eigene Zeile festgehalten; „Erneut prüfen“ (höchstens 10 je Minute) ergänzt eine weitere.
+- **Dateien:** Originaldatei, Rechnungs-XML und eingebettete Anlagen als Download. Vor der Ausgabe wird die Datei gegen ihre Prüfsumme geprüft.
+- **Druckansicht:** eine druckbare Fassung der Lesefassung samt Prüfergebnis (Browser-Druck).
+
+### Weitere Hinweise
+
+- **Mögliche Dublette:** Dieselbe Rechnungsnummer desselben Lieferanten in einer anderen Datei wird angenommen und gekennzeichnet.
+- **Prüfer abschalten oder fehlt:** Mit `INCOMING_VALIDATION=off` entfällt die Prüfung (Status „nicht geprüft“); Betriebshinweise in [BETRIEB-VORLAGE.md](BETRIEB-VORLAGE.md).
+- Grenzen: [LIMITATIONEN.md](LIMITATIONEN.md#eingangsrechnungen), rechtlicher Hintergrund: [COMPLIANCE.md](../COMPLIANCE.md) Abschnitt 4.
+
 ## 3. Wichtige Begriffe
 
 | Begriff | Bedeutung |
@@ -264,7 +303,7 @@ Eine Kundennummer, die schon vergeben ist, oder ein Kunde mit gleicher E-Mail un
 
 ## 4. E-Rechnung — was du wissen musst
 
-- Seit **2025** musst du im B2B E-Rechnungen **empfangen** können; **versenden** wird ab 2027/2028 Pflicht (Details + Quellen: [COMPLIANCE.md](../COMPLIANCE.md)).
+- Seit **2025** musst du im B2B E-Rechnungen **empfangen** können (Ablage und Prüfung: „Eingang“, Abschnitt 2c); **versenden** wird ab 2027/2028 Pflicht (Details + Quellen: [COMPLIANCE.md](../COMPLIANCE.md)).
 - Der **XRechnung-XML-Teil ist führend** — das PDF ist nur die menschenlesbare Beilage.
 - Die App validiert jede XRechnung gegen die EN-16931-Kernregeln, bevor sie ausgeliefert wird. Die vollständige amtliche Prüfung (KoSIT-Validator) läuft im CI.
 - **ZUGFeRD/Factur-X** (PDF/A-3b mit eingebettetem XML) erzeugt die App selbst; jedes Rechnungs-PDF außer Entwürfen enthält die XML.

@@ -346,6 +346,26 @@ Die Prüfungen zu Umsatzgrenzen, Kleinbetrag, Ausstellfrist und Verzugshinweis s
 - **Ausstellfrist:** Berechnet wird nur die Frist des 15. Tages des Folgemonats (§ 14a Abs. 1 S. 2, Abs. 3 S. 1 UStG) für ig. Lieferung und ig. Leistung; die allgemeine Sechs-Monats-Frist (§ 14 Abs. 2 UStG) wird nicht geprüft.
 - **Verzugshinweis:** Der Hinweis nach § 286 Abs. 3 BGB ist standardmäßig aus, wird nur auf neu festgeschriebenen Rechnungen an Kunden vom Typ Verbraucher gedruckt (je Rechnung überschreibbar) und erscheint nie auf bereits festgeschriebenen Altbelegen, Gutschriften oder Stornos. Die Mahnlogik bleibt unverändert.
 
+## Eingangsrechnungen
+
+Der Bereich „Eingang“ legt Rechnungen von Lieferanten ab, liest sie und prüft sie gegen EN 16931 und XRechnung (Oberfläche, REST, MCP).
+
+- **Kein Buchen, kein Kontieren:** Die Anwendung verbucht Eingangsrechnungen nicht, erzeugt keine Zahlungsvorschläge und keine Überweisungsdatei und ist keine Finanzbuchhaltung.
+- **Nichts wird gelöscht:** Die Originaldatei liegt unveränderlich im Belegarchiv (SHA-256), auch bei fehlerhaften oder irrtümlich angenommenen Dateien. Es gibt keine Löschfunktion; die Aufbewahrungsfrist (COMPLIANCE.md Abschnitt 7) beachtet der Betreiber selbst.
+- **Annahme nur durch Ablegen:** Dateien kommen per Oberfläche (bis 20 Dateien je Vorgang), REST oder MCP herein. Eine Abholung aus dem E-Mail-Postfach gibt es nicht. Dieselbe Datei (gleiche Prüfsumme) wird nur einmal angenommen. Eine ZIP-Datei wird abgelehnt.
+- **Dateigrenzen:** Datei höchstens 15 MB (MCP: 2 MB), XML nur als UTF-8 und ohne DTD. Bei PDF werden höchstens 20 eingebettete Anlagen und 30 MB entpackte Daten gelesen; PDF-Anlagen, die diese Grenzen sprengen, bleiben ungelesen. Das Auslesen eines PDF kann bei großer Last mit „ausgelastet“ (503) abgelehnt werden und ist dann später zu wiederholen.
+- **PDF ohne XML und Bilder:** Ein PDF ohne eingebettete Rechnungsdaten sowie Bilder gelten als „sonstige Rechnung“ (keine E-Rechnung). Es gibt keine Texterkennung; die Kopfdaten bleiben leer. Ein verschlüsseltes oder beschädigtes PDF wird ebenfalls als sonstige Rechnung abgelegt und mit einem Hinweis gekennzeichnet.
+- **Eine Rechnungs-XML je PDF:** Geprüft wird die Anlage mit dem Namen `factur-x.xml`, `zugferd-invoice.xml` oder `xrechnung.xml` (bei mehreren die zuletzt eingebettete), sonst die erste Anlage mit erkennbarer Rechnungs-XML. Weitere Anlagen sind abrufbar, werden aber nicht geprüft; Anlagen über 15 MB werden übersprungen.
+- **Inhalt von Bildteil und XML wird nicht verglichen:** Bei einer Hybrid-Rechnung ist die XML maßgeblich (BMF-Schreiben vom 15.10.2025); ob das PDF-Bild dasselbe zeigt, prüft die Anwendung nicht.
+- **Prüfung ist keine inhaltliche Bewertung:** Sie prüft Format (Schema) und Regeln der Norm (EN 16931, XRechnung), nicht, ob Leistung, Preise, Steuersätze, Lieferant oder Bankverbindung stimmen. „Gültig“ heißt nicht „richtig“.
+- **Profile außerhalb der Prüfung:** Geprüft werden XRechnung (UBL, CII) und EN 16931 in UBL und CII. ZUGFeRD EXTENDED, Peppol BIS und andere Profile ohne passendes Szenario des Validators erhalten „nicht geprüft“ (Grund `PROFILE_NOT_COVERED`); EXTENDED wird nur gegen EN 16931 gelesen. MINIMUM, BASIC WL und ZUGFeRD 1.0 sind keine vollständigen E-Rechnungen (EN 16931) und werden nur gekennzeichnet; bei ZUGFeRD 1.0 liest die Anwendung nur den Kopf.
+- **Mehr als 5.000 Positionen** werden weder ausgelesen noch geprüft („nicht geprüft“, Grund `TOO_MANY_LINES`).
+- **Prüfung ist begrenzt:** Je Rechnung höchstens 60 Sekunden und 384 MB Java-Speicher (insgesamt rund 400 MB je Lauf); Prüfungen laufen nacheinander. Bei Zeit- oder Speicherüberschreitung steht „nicht geprüft“ (`TIMEOUT`, `OUT_OF_MEMORY`); eine erneute Prüfung ist möglich (höchstens 10 je Minute und Firma).
+- **Prüfer nachträglich bereitgestellt:** Fehlt der Validator beim Annehmen (kein Image mit Prüfer, `INCOMING_VALIDATION=off`), bleiben die Belege auf „nicht geprüft“. Nach Bereitstellung des Prüfers bleiben diese Belege bis zur manuellen Neuprüfung („Erneut prüfen“, REST `POST …/validate`, MCP `validate_incoming_invoice`) so stehen; nur Belege im Status „wird geprüft“ holt der automatische Nachlauf nach.
+- **Prüfergebnisse sind Protokoll:** Jede Prüfung legt eine eigene unveränderliche Zeile an; es gibt höchstens 500 Befunde je Prüfung, die Texte sind gekürzt.
+- **Typ 389 (Selbstabrechnung):** Eine Rechnung vom Typ „Gutschrift im Selbstabrechnungsverfahren“ wird als solche gekennzeichnet; die Anwendung erkennt nicht, ob eine Vereinbarung nach § 14 Abs. 2 S. 5 UStG besteht.
+- **Dubletten:** Identische Dateien (gleiche Prüfsumme) werden nicht ein zweites Mal angenommen. Dieselbe Rechnungsnummer desselben Lieferanten in einer anderen Datei (z. B. XML und PDF) wird angenommen und mit „mögliche Dublette“ gekennzeichnet; die Entscheidung bleibt beim Anwender.
+
 ## Bewusst nicht umgesetzt
 Diese Punkte sind keine Lücken, sondern bewusste Projektentscheidungen (Abgrenzung: keine Buchhaltungssoftware):
 
@@ -357,7 +377,7 @@ Diese Punkte sind keine Lücken, sondern bewusste Projektentscheidungen (Abgrenz
 - **ZM, OSS-Meldung und USt-Voranmeldung:** Die Software erzeugt keine Meldedaten; der OSS-Schwellenrechner ist nur Orientierung.
 
 ## Noch nicht umgesetzt
-- **E-Rechnungen empfangen:** Eingangsrechnungen werden nicht entgegengenommen oder ausgelesen. Den Empfang (Pflicht im Inland seit 1.1.2025) deckt das eigene E-Mail-Postfach bzw. die Buchhaltung ab.
+- **Eingangsrechnungen weiterverarbeiten:** Angenommene Eingangsrechnungen werden abgelegt, gelesen und geprüft. Ein Arbeitsablauf (prüfen, freigeben, als bezahlt markieren, ablehnen mit Grund), das Erfassen eigener Zahlungsangaben und die automatische Abholung aus einem Postfach fehlen noch; das Postfach (Abruf per IMAP) ist nicht angebunden.
 - **Gutschrift im Selbstabrechnungsverfahren (§ 14 Abs. 2 S. 5 UStG):** keine Selbstabrechnung durch den Leistungsempfänger; Typcode 389 wird nicht erzeugt.
 
 Einzelheiten je Pflicht: Umsetzungsmatrix in [COMPLIANCE.md](../COMPLIANCE.md) Abschnitt 15.

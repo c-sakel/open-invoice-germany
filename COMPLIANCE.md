@@ -293,6 +293,24 @@ Für EU-weite Inanspruchnahme der Befreiung in anderen Mitgliedstaaten (besonder
 - **Brutto-Eingabe:** Die Rückrechnung aus einem Bruttopreis geschieht beim Anlegen; die Rechnung selbst trägt nur Nettopreise, Steuerbasis und Steuer je Satz (Details § 16, Punkt 15).
 - **Quellen:** EN 16931-1:2017 (BT-131, BT-134, BT-135, BT-146, BG-26, BR-DEC-23); CEN/TS 16931-3-2 (UBL-Bindung) und CEN/TS 16931-3-3 (CII-Bindung).
 
+### Empfang von E-Rechnungen (Umsetzung)
+
+**Pflicht:** Seit 1.1.2025 muss jeder inländische Unternehmer E-Rechnungen **empfangen** können (§ 14 Abs. 1 UStG, § 27 Abs. 38 UStG). Ein E-Mail-Postfach genügt (BMF-Schreiben v. 15.10.2024, BStBl I S. 1320, geändert durch BMF-Schreiben v. 15.10.2025). Die Software ist **kein** Pflichtbestandteil dieses Empfangs, bietet aber eine Ablage mit Lesefassung und Prüfung an („Eingang“, `/eingang`, REST `/api/v1/IncomingInvoice`, MCP `receive_incoming_invoice`).
+
+**Was die Software tut:**
+
+- **Annehmen und unverändert aufbewahren:** XML (UBL, CII), PDF mit eingebetteter XML (ZUGFeRD, Factur-X, XRechnung) oder sonstige Dateien (PDF, Bild). Die Originaldatei wird mit SHA-256 write-once im Belegarchiv abgelegt, nie verändert und nie gelöscht (Abschnitt 6 und 7). Bei einer Hybrid-Rechnung wird die eingebettete XML zusätzlich als eigene Datei abgelegt; sie ist maßgeblich (BMF-Schreiben v. 15.10.2025).
+- **Einordnen:** EN-16931-konforme Syntax (UBL, CII) und Profil (BT-24) gelten als E-Rechnung; MINIMUM, BASIC WL und ZUGFeRD 1.0 sind **keine** vollständigen E-Rechnungen im Sinne der EN 16931 und werden als solche gekennzeichnet (Profile unterhalb der EN 16931 genügen nach dem BMF-Schreiben v. 15.10.2024 nicht als E-Rechnung); PDF/Bild ohne XML ist eine „sonstige Rechnung“. Typ 389 (Gutschrift im Selbstabrechnungsverfahren) wird als „vom Kunden über Ihre Leistung ausgestellt“ gekennzeichnet.
+- **Prüfen:** Mit dem Validator der Koordinierungsstelle für IT-Standards (KoSIT, Version 1.6.3) und der Konfiguration XRechnung 3.0.2 (Schema, EN 16931, XRechnung); Ergebnis je Prüfung unveränderlich. Fehlerarten: **Format** (Schema), **Regel** (EN 16931/XRechnung) und **Warnung**; Status `VALID`, `WARNINGS`, `INVALID`, `NOT_CHECKED` (Prüfung nicht möglich, z. B. Zeit, Speicher, Profil ohne Szenario, Prüfer nicht verfügbar) und `NOT_APPLICABLE` (keine vollständige E-Rechnung). Eine nicht bestandene Prüfung verhindert die Annahme **nicht**: die Datei bleibt als Eingang aufbewahrt.
+- **Lesefassung:** Parteien, Positionen, Steuern, Summen (mit rechnerischer Gegenprobe), Zahlungsangaben und Hinweise werden als Text dargestellt; maßgeblich bleibt immer die Originaldatei.
+
+**Was die Software nicht tut:** Sie bewertet nicht, ob eine Rechnung sachlich richtig ist oder zum Vorsteuerabzug (§ 15 UStG) berechtigt, sie bucht und kontiert nicht, und sie holt keine Rechnungen aus einem Postfach ab. Ob eine Rechnung mit Bild und XML inhaltlich übereinstimmt, vergleicht sie nicht. Prüfung durch den Steuerberater bleibt erforderlich.
+
+**Sicherheit:** Fremde Dateien werden nie im Hauptprozess ungeschützt gelesen: XML ohne DTD und externe Entitäten mit Größen-, Tiefen- und Elementgrenzen, PDF in einem isolierten Worker mit Grenzen für Entpackung und Laufzeit, der Validator als eigener Prozess ohne Umgebungsvariablen der Anwendung, mit Zeit- und Speichergrenze; externe Verweise im Dokument werden nicht aufgelöst.
+
+**Quellen:** [§ 14 UStG](https://www.gesetze-im-internet.de/ustg_1980/__14.html) · [§ 27 UStG](https://www.gesetze-im-internet.de/ustg_1980/__27.html) · [BMF-FAQ E-Rechnung](https://www.bundesfinanzministerium.de/Content/DE/FAQ/e-rechnung.html) · [BMF-Schreiben 15.10.2025 obligatorische E-Rechnung](https://www.bundesfinanzministerium.de/Content/DE/Downloads/BMF_Schreiben/Steuerarten/Umsatzsteuer/Umsatzsteuer-Anwendungserlass/2025-10-15-einfuehrung-obligatorische-e-rechnung.html) · [KoSIT-Validator](https://github.com/itplr-kosit/validator) · [Validator-Konfiguration XRechnung](https://github.com/itplr-kosit/validator-configuration-xrechnung)
+**Stand:** 2026-11
+
 ### Ausnahmen von der E-Rechnungspflicht
 
 Kleinbeträge ≤ 250 € brutto (§ 33 UStDV) · Fahrausweise (§ 34) · Kleinunternehmer-Ausstellung (§ 34a/§ 19) · B2C · bestimmte steuerfreie Umsätze (§ 4 Nr. 8–29). Pflichtangaben müssen im strukturierten XML **maschinenlesbar** enthalten sein.
@@ -499,6 +517,7 @@ Beim Festschreiben einer Rechnung mit Zahlungsmethode `59` friert die Software G
 - Zulässig auf Bild-/Datenträgern, wenn GoBD-konform (verfügbar, lesbar, maschinell auswertbar, unveränderbar) — § 147 Abs. 2 AO / § 257 Abs. 3 HGB.
 - **Ausnahme HGB:** Eröffnungsbilanzen und (Konzern-)Abschlüsse im **Original** aufbewahren.
 - **E-Rechnung:** mindestens der **strukturierte XML-Teil** unversehrt in ursprünglicher Form (BMF-FAQ).
+- **Eingangsrechnungen in dieser Software:** Die angenommene Originaldatei (bei Hybrid-Rechnungen das PDF samt eingebetteter XML und die herausgelöste XML) liegt write-once im Belegarchiv, wird beim Zugriff gegen ihre SHA-256-Summe geprüft und nie gelöscht oder überschrieben; eine Abweichung löst den Pflicht-Alarm `ARCHIVE_TAMPERED` aus. Die Aufbewahrungsfrist (8 Jahre, siehe Fristen-Matrix) überwacht die Software nicht; Löschen ist nicht vorgesehen. Die Prüfergebnisse sind zusätzliche, unveränderliche Protokollzeilen und ersetzen die Originaldatei nicht.
 
 ### Hinweis auf die Aufbewahrungspflicht des Empfängers (§ 14 Abs. 4 Nr. 9)
 
@@ -1040,7 +1059,7 @@ Siehe `docs/LIMITATIONEN.md` — insbesondere: kein Mischen von Teil- und Abschl
 | Zusammenfassende Meldung (§ 18a) | ZM-Datensatz erzeugen; Frist 25. d. Folgemonats; Quartals-/Monats-Logik (50.000-€-Schwelle); Berichtigung ≤ 1 Monat | **Bewusst nicht umgesetzt** (die Software erzeugt keine ZM-Daten) |
 | E-Rechnung erzeugen (EN 16931) | XRechnung/ZUGFeRD ab Profil **BASIC**; **Profil-Sperre** gegen MINIMUM/BASIC-WL; Pflichtangaben **maschinenlesbar** im XML | **Umgesetzt** (XRechnung UBL und ZUGFeRD/Factur-X CII im Profil EN 16931) |
 | E-Rechnung validieren | **KoSIT-Validator** (HTTP-Daemon) + **veraPDF** (PDF/A-3) nachschalten; reine JS-Validierung **nicht** ausreichend | **Umgesetzt** (`npm run validate:erechnung` mit offiziellen Schematron-Regeln, KoSIT-Validator und veraPDF als CI-Gate) |
-| E-Rechnung empfangen | Empfangskanal (E-Mail-Postfach + XML-Parser); Pflicht seit 1.1.2025 | **Nicht umgesetzt** (kein Empfangskanal, kein Parser für eingehende E-Rechnungen; Empfang über das eigene Postfach) |
+| E-Rechnung empfangen | Empfangskanal (E-Mail-Postfach + XML-Parser); Pflicht seit 1.1.2025 | **Teilweise** (Stand 2026-11): Annahme per Oberfläche, REST und MCP, unveränderliche Ablage, Lesefassung und Prüfung gegen EN 16931/XRechnung mit dem KoSIT-Validator; keine Postfach-Abholung, kein Arbeitsablauf (Freigabe, Zahlungsangaben), keine Buchung |
 | Hybrid-E-Rechnung | strukturierter XML-Teil **führend**; bei Abweichung XML maßgebend; Bildteil nur bei steuerlich relevanter Abweichung archivieren | **Umgesetzt** (ZUGFeRD-PDF/A-3b mit eingebettetem, führendem CII-XML; PDF, CII und UBL werden im Belegarchiv abgelegt) |
 | Leitweg-ID (B2G) | BT-10-Feld; **Mod-97-10-Prüfziffer-Validierung**; vom Auftraggeber übernommen (nicht generiert); im B2B leer | **Umgesetzt**: BT-10 und BT-49 mit Schema `0204`, Prüfziffer |
 | Skonto in E-Rechnung | Freitext BT-20 „X % Skonto bei Zahlung bis …" + strukturierte `#SKONTO#TAGE=n#PROZENT=x.xx#`-Zeile je Ziel (bis zu zwei Ziele); **kein** betragsmäßiger Ausweis nötig; spätere Skonto-Zahlung = § 17, **keine** Korrekturrechnung | **Umgesetzt** (BT-20-Freitext plus `#SKONTO#`-Zeile je Ziel, bis zu zwei Ziele) |
