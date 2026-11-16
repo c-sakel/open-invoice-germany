@@ -52,7 +52,7 @@ export function IncomingList({ rows, tab, counts, page, pageCount }: Props) {
               </div>
               <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-muted">
                 <span>Eingang {formatReceivedAt(r.receivedAt)}</span>
-                <span>{formatLabel(r)}</span>
+                <span className="min-w-0 max-w-full [overflow-wrap:anywhere]">{formatLabel(r)}</span>
                 <span>Prüfung: {validationLabel(r.validationStatus)}</span>
                 {r.duplicateOfId ? (
                   <Link href={`/eingang/${r.duplicateOfId}`} className="text-seal underline">
