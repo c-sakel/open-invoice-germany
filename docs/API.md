@@ -740,6 +740,21 @@ Der Detailabruf trägt zusätzlich den Bearbeitungsstatus (`status`: `NEW`, `CHE
 
 `validationStatus`: `PENDING` (wird geprüft), `VALID`, `WARNINGS`, `INVALID`, `NOT_CHECKED` (Prüfung nicht möglich, Grund im Ergebnis, z. B. `TIMEOUT`, `PROFILE_NOT_COVERED`, `ENGINE_UNAVAILABLE`) und `NOT_APPLICABLE` (keine vollständige E-Rechnung, z. B. PDF ohne XML oder Profil MINIMUM). Das Ergebnis bewertet nur Format und Regeln der Norm, nicht die inhaltliche Richtigkeit. Die Oberfläche lädt über `POST /api/incoming-invoices` (Session, `multipart/form-data`, eine Datei je Anfrage, nur same-origin).
 
+## Rechnungs-Postfach
+
+Anlagen aus dem eigens eingerichteten Rechnungs-Postfach (IMAP) sichten. Zugangsdaten, Verbindungstest, Einschalten und Abruf gibt es nur in der Oberfläche; nie werden Passwort oder Rohtexte des Servers ausgegeben, Mails nie gelöscht oder verschoben. Eine Anlage durchläuft `INBOX` (zu sichten) → `ACCEPTED` (übernommen) oder `DISCARDED` (verworfen); `DUPLICATE` (Datei schon vorhanden) und `SKIPPED` (Typ, Größe oder Anzahl nicht unterstützt) werden nur gelistet.
+
+| Endpunkt | Scope | Zweck |
+|---|---|---|
+| `GET /api/v1/Settings/inboundMailbox` | `read` | Status: ein/aus, Server, Port, Benutzer maskiert, Ordner, Abrufbeginn, Absender-Domains, letzter Test und Lauf (feste Codes), Kontingent der Sichtung |
+| `GET /api/v1/InboundMail` | `read` | Anlagen (neueste zuerst): `status`, `updatedSince`, `cursor`, `limit`, `offset` |
+| `GET /api/v1/InboundMail/{id}` | `read` | Eine Anlage mit Herkunft (Absender-Domain laut Mail, nicht geprüft; Betreff, Empfang, Abruf), Vorschau und Entscheidungsstand |
+| `POST /api/v1/InboundMail/{id}/accept` | `write` | Als Eingangsrechnung übernehmen (dieselbe Annahme wie der Upload, Kanal `MAILBOX`, write-once-Ablage). `201` mit `incomingInvoiceId`; `404`, `409` (nicht mehr zu sichten, `ALREADY_RECEIVED`), `413`/`422` Dateifehler wie bei der Annahme, `503` ausgelastet. Höchstens 60 je Minute und Firma |
+| `POST /api/v1/InboundMail/{id}/discard` | `write` | Verwerfen, optional `{ "reason" }` (höchstens 500 Zeichen); protokolliert, 30 Tage umkehrbar |
+| `POST /api/v1/InboundMail/{id}/restore` | `write` | Verworfene Anlage zurück in die Sichtung holen (`409` nach Ablauf der 30 Tage) |
+
+Die Anlage selbst wird erst mit `accept` Teil der Eingangsrechnungen (Archiv, Hash, Änderungsprotokoll); danach gelten [Eingangsrechnungen](#eingangsrechnungen). Eine übernommene Eingangsrechnung trägt `channel` `MAILBOX` und die Herkunft der Mail.
+
 ## Regeln nach Zahlungseingang
 
 Regeln, die nach einer Zahlung Aktionen auslösen (Zahlungsbestätigung per Mail, Tag, Benachrichtigung, Webhook, Abo fortsetzen). Lesen braucht `read`; Anlegen, Ändern, Archivieren, Trockenlauf und Wiederholen `admin`, weil eine Regel Mails, Webhooks und Abo-Fortsetzungen auslösen kann.
