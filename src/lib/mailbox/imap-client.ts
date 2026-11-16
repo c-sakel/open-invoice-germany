@@ -83,12 +83,16 @@ function oauthOnlyCapabilities(client: ImapFlow): boolean {
   return oauth && (!password || has("LOGINDISABLED"));
 }
 
-/** Suchausdruck ohne die Mails der Domains; die Domain wird mit "@" angegeben, damit nur Adressen dieser Domain treffen. */
-function searchQuery(since: Date | null, excludeDomains: string[]): Record<string, unknown> {
-  const domains = excludeDomains.filter((d) => /^[a-z0-9.-]{1,253}$/.test(d)).slice(0, MAX_SEARCH_EXCLUDED_DOMAINS);
+/**
+ * Suchausdruck mit Absenderfilter. IMAP-FROM ist eine Teilstring-Suche (auch im Anzeigenamen, auch bei Domains
+ * wie example.com.de); das Ergebnis ist daher nur eine grobe Vorauswahl und wird nie als Entscheidung benutzt.
+ */
+function searchQuery(since: Date | null, domains: string[], mode: "without" | "only"): Record<string, unknown> {
   const query: Record<string, unknown> = since ? { seen: false, since } : { seen: false };
-  if (domains.length === 1) query.not = { from: `@${domains[0]}` };
-  else if (domains.length > 1) query.not = { or: domains.map((d) => ({ from: `@${d}` })) };
+  const filter = domains.length === 1 ? { from: `@${domains[0]}` } : { or: domains.map((d) => ({ from: `@${d}` })) };
+  if (domains.length === 0) return query;
+  if (mode === "without") query.not = filter;
+  else Object.assign(query, filter);
   return query;
 }
 
@@ -157,10 +161,24 @@ export function createImapClient(opts: { connector?: TestConnector } = {}): Mail
         uidValidity,
         searchUnseen: (since, excludeDomains) =>
           run(async () => {
-            const found = await client.search(searchQuery(since, excludeDomains ?? []), { uid: true });
-            if (!Array.isArray(found)) return [];
-            return found
-              .slice()
+            const excluded = (excludeDomains ?? []).filter((d) => /^[a-z0-9.-]{1,253}$/.test(d)).slice(0, MAX_SEARCH_EXCLUDED_DOMAINS);
+            const toUids = (found: unknown): number[] => (Array.isArray(found) ? found.filter((n): n is number => typeof n === "number") : []);
+            // Ohne Ausschluss: einfache Suche. Mit Ausschluss: Treffer der groben Vorauswahl werden nur dann weggelassen,
+            // wenn die Envelope-Absenderdomain EXAKT eine ausgeschlossene ist; alle anderen kommen wieder dazu.
+            const rest = toUids(await client.search(searchQuery(since, excluded, "without"), { uid: true }));
+            const uids = new Set(rest);
+            if (excluded.length > 0) {
+              const candidates = toUids(await client.search(searchQuery(since, excluded, "only"), { uid: true }))
+                .sort((a, b) => a - b)
+                .slice(0, MAX_SEARCH_UIDS);
+              if (candidates.length > 0) {
+                for await (const m of client.fetch(candidates.join(","), { uid: true, envelope: true }, { uid: true })) {
+                  const d = envelopeDomain(m.envelope?.from?.[0]?.address);
+                  if (d === null || !excluded.includes(d)) uids.add(m.uid);
+                }
+              }
+            }
+            return [...uids]
               .sort((a, b) => a - b)
               .slice(0, MAX_SEARCH_UIDS)
               .map(String);

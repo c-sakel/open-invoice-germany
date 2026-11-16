@@ -121,23 +121,25 @@ describe("Zurueckstellung", () => {
     expect(spam.every((m) => !m.seen)).toBe(true);
   }, 30_000);
 
-  it("der Adapter schliesst zurueckgestellte Domains in der Suche aus", async () => {
+  it("der Adapter schliesst nur die exakte Domain aus, nicht aehnliche Domains oder Anzeigenamen", async () => {
     if (!opensslAvailable()) return;
     const material = createTestTlsMaterial(HOST);
     const mails = [
-      { raw: buildMail({ from: "A <a@lieferant.example.org>" }) },
-      { raw: buildMail({ from: "B <b@anders.example.org>" }) },
-      { raw: buildMail({ from: "C <c@dritter.example.org>" }) },
+      { raw: buildMail({ from: "A <a@example.com>" }) },
+      { raw: buildMail({ from: "B <b@example.com.de>" }) },
+      { raw: buildMail({ from: '"x@example.com" <b@other.de>' }) },
+      { raw: buildMail({ from: "D <d@mail.example.com>" }) },
+      { raw: buildMail({ from: "C <c@anders.example.org>" }) },
     ];
     const server = await startImapTestServer({ mode: "implicit", tlsMaterial: material, mails });
     try {
       const adapter = createImapClient({ connector: { ca: material.cert, target: (host) => ({ host, address: "127.0.0.1", family: 4, port: server.port }) } });
       const session = await adapter.open({ host: HOST, port: 993, security: "TLS", username: "rechnungen@example.org", password: "pw-test-123", folder: "INBOX" });
-      expect(await session.searchUnseen(null, ["lieferant.example.org"])).toEqual(["2", "3"]);
-      expect(await session.searchUnseen(null, ["lieferant.example.org", "anders.example.org"])).toEqual(["3"]);
-      expect(await session.searchUnseen(null)).toEqual(["1", "2", "3"]);
+      expect(await session.searchUnseen(null, ["example.com"])).toEqual(["2", "3", "4", "5"]);
+      expect(await session.searchUnseen(null, ["example.com", "anders.example.org"])).toEqual(["2", "3", "4"]);
+      expect(await session.searchUnseen(null)).toEqual(["1", "2", "3", "4", "5"]);
       await session.close();
-      expect(server.commands.some((c) => /NOT/.test(c) && /lieferant\.example\.org/.test(c))).toBe(true);
+      expect(server.commands.some((c) => /NOT/.test(c) && /example\.com/.test(c))).toBe(true);
     } finally {
       await server.close();
     }

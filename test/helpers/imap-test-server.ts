@@ -182,13 +182,15 @@ export async function startImapTestServer(opts: ImapTestServerOptions): Promise<
             const unseen = /UNSEEN/i.test(args);
             const since = /SINCE (\S+)/i.exec(args)?.[1];
             const sinceMs = since ? parseImapDate(since) : null;
-            // NOT FROM "@domain" bzw. NOT OR FROM ... FROM ...: alle genannten Domains werden ausgeschlossen.
-            const excluded = /\bNOT\b/i.test(args) ? [...args.matchAll(/\bFROM "?@?([^"\s)]+)"?/gi)].map((x) => (x[1] ?? "").toLowerCase()) : [];
-            const domainOfMail = (k: number): string =>
-              /^From:[^\r\n]*@([A-Za-z0-9.-]+)/im.exec(Buffer.from(mails[k]?.raw.subarray(0, 4096) ?? []).toString("latin1"))?.[1]?.toLowerCase() ?? "";
+            // FROM "@domain": Teilstring-Suche im gesamten From-Kopf (wie bei IMAP), optional mit NOT / NOT OR.
+            const tokens = [...args.matchAll(/\bFROM "?([^"\s)]+)"?/gi)].map((x) => (x[1] ?? "").toLowerCase());
+            const negate = /\bNOT\b/i.test(args);
+            const fromLine = (k: number): string =>
+              (/^From:([^\r\n]*)/im.exec(Buffer.from(mails[k]?.raw.subarray(0, 4096) ?? []).toString("latin1"))?.[1] ?? "").toLowerCase();
+            const matches = (k: number): boolean => tokens.some((t) => fromLine(k).includes(t));
             const uids = mails
               .map((_, k) => k + 1)
-              .filter((u) => !excluded.includes(domainOfMail(u - 1)))
+              .filter((u) => tokens.length === 0 || (negate ? !matches(u - 1) : matches(u - 1)))
               .filter((u) => !unseen || !seen.has(u))
               .filter((u) => sinceMs === null || Date.parse(mails[u - 1]?.internalDate ?? "2026-11-10T10:00:00Z") >= sinceMs);
             w(`* SEARCH ${uids.join(" ")}\r\n${tag} OK done\r\n`);
@@ -201,6 +203,12 @@ export async function startImapTestServer(opts: ImapTestServerOptions): Promise<
               const parts = [`UID ${u}`];
               if (/RFC822\.SIZE/.test(items)) parts.push(`RFC822.SIZE ${opts.lieAboutSize ? 100 : raw.length}`);
               if (/FLAGS/.test(items)) parts.push(`FLAGS (${seen.has(u) ? "\\Seen" : ""})`);
+              if (/ENVELOPE/.test(items)) {
+                const from = /^From:([^\r\n]*)/im.exec(raw.subarray(0, 4096).toString("latin1"))?.[1] ?? "";
+                const addr = /<([^<>@\s]+)@([^<>\s]+)>/.exec(from) ?? /([^\s<>"@]+)@([^\s<>"]+)/.exec(from);
+                const f = addr ? `(("" NIL "${addr[1]}" "${addr[2]}"))` : "NIL";
+                parts.push(`ENVELOPE (NIL NIL ${f} NIL NIL NIL NIL NIL NIL NIL)`);
+              }
               if (/INTERNALDATE/.test(items)) {
                 const d = new Date(mail.internalDate ?? "2026-11-10T10:00:00Z");
                 parts.push(`INTERNALDATE "${String(d.getUTCDate()).padStart(2, "0")}-${MONTHS[d.getUTCMonth()]}-${d.getUTCFullYear()} 10:00:00 +0000"`);
