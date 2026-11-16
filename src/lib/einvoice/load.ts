@@ -18,6 +18,8 @@ import { buildDirectDebitSnapshot } from "@/domain/invoice/direct-debit";
 import { documentPayLinkUrl } from "@/domain/online-payment/document-link";
 import { DIRECT_DEBIT_CODE } from "./payment-means";
 import { buildEInvoiceData, type MapInput } from "./mapper";
+import { resolveConsumerDefaultNotice } from "@/domain/invoice/checks";
+import { loadDocumentSettings } from "@/domain/document/settings";
 
 const INCLUDE = {
   lines: { orderBy: { position: "asc" as const } },
@@ -162,8 +164,20 @@ export async function loadEInvoiceData(invoiceId: string, orgId?: string) {
   const liveDirectDebit =
     invoice.status === "DRAFT" && invoice.paymentMethodSnapshotJson == null ? await previewDirectDebit(invoice) : null;
   const payLinkUrl = await documentPayLinkUrl(invoice.orgId, invoice, openAmountCents(invoice));
+  // § 286 Abs. 3 BGB: festgeschrieben nur der eingefrorene Wert; Entwurf Vorgabe oder Kundentyp + Einstellung.
+  const consumerDefaultNotice = resolveConsumerDefaultNotice({
+    status: invoice.status,
+    type: invoice.type,
+    stored: invoice.consumerDefaultNotice,
+    customerType: invoice.customer.type,
+    settingEnabled:
+      invoice.status === "DRAFT" && invoice.consumerDefaultNotice === null
+        ? (await loadDocumentSettings(invoice.orgId)).consumerDefaultNotice
+        : false,
+  });
   const data = buildEInvoiceData({
     ...invoice,
+    consumerDefaultNotice,
     ...draftFx,
     payLinkUrl,
     ...(liveDirectDebit ?? {}),

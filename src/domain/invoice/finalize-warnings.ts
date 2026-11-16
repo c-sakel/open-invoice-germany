@@ -14,13 +14,17 @@ import { loadDocumentSettings } from "@/domain/document/settings";
 import { checkVatId, VatCheckRateLimitError } from "@/domain/customer/vat-check";
 import { resolveSpecialMeans, DIRECT_DEBIT_CODE } from "@/lib/einvoice/payment-means";
 import { buildDirectDebitSnapshot } from "./direct-debit";
+import { issueDeadline, isIssueDeadlineMissed } from "./checks";
+import { kuThreshold } from "@/domain/reporting/ku";
+import { KU_NOTICE } from "@/schemas/small-business";
+import { berlinCalendarDay, berlinYear } from "@/lib/berlin-time";
 
 const VIES_SCHEMES = new Set(["IG_LIEFERUNG", "IG_LEISTUNG"]);
 const RECENT_VALID_MS = 24 * 60 * 60 * 1000;
 const VIES_TIMEOUT_MS = 8_000;
 
 /** Bekannte Hinweiscodes. Nur diese Codes duerfen in der URL der Rechnungsseite stehen (kein Klartext). */
-export const FINALIZE_WARNING_CODES = ["adresse", "vies-ungueltig", "vies-fehler", "vies-limit", "karte-unvollstaendig", "lastschrift-unvollstaendig", "lastschrift-faelligkeit"] as const;
+export const FINALIZE_WARNING_CODES = ["adresse", "vies-ungueltig", "vies-fehler", "vies-limit", "karte-unvollstaendig", "lastschrift-unvollstaendig", "lastschrift-faelligkeit", "ausstellfrist", "ku-grenze"] as const;
 export type FinalizeWarningCode = (typeof FINALIZE_WARNING_CODES)[number];
 
 export interface FinalizeWarning {
@@ -47,6 +51,10 @@ export function finalizeWarningMessage(code: FinalizeWarningCode, vatId = "", de
       return "SEPA-Lastschrift: Fälligkeitsdatum fehlt (Vorabankündigung) – die E-Rechnung weist die Zahlungsart als „nicht festgelegt“ (Code 1) aus.";
     case "lastschrift-unvollstaendig":
       return "SEPA-Lastschrift: Gläubiger-ID der Firma oder Mandat (Referenz, IBAN) des Kunden fehlen – die E-Rechnung weist die Zahlungsart als „nicht festgelegt“ (Code 1) aus.";
+    case "ausstellfrist":
+      return "Ausstellfrist überschritten: bei innergemeinschaftlichen Lieferungen und Leistungen ist die Rechnung bis zum 15. Tag des Folgemonats auszustellen (§ 14a Abs. 1, 3 UStG).";
+    case "ku-grenze":
+      return `Kleinunternehmerregelung: Laut Programm ist eine Umsatzgrenze des § 19 Abs. 1 UStG überschritten. ${KU_NOTICE}`;
   }
 }
 
@@ -214,15 +222,58 @@ export async function collectFinalizeWarnings(
   try {
     const invoice = await dbInternal.invoice.findFirst({
       where: { id: invoiceId, orgId },
-      select: { id: true, status: true, taxScheme: true, ...MEANS_WARNING_SELECT },
+      select: {
+        id: true, status: true, taxScheme: true, currency: true, issueDate: true, deliveryDate: true, deliveryEnd: true, netTotalCents: true,
+        ...MEANS_WARNING_SELECT,
+      },
     });
     if (!invoice || invoice.status !== "DRAFT") return [];
     const customer = invoice.customer;
 
     await collectCustomerWarnings(orgId, customer, invoice.taxScheme, invoiceId, () => paymentMeansWarnings(invoice), opts, warnings);
+    warnings.push(...(await documentCheckWarnings(orgId, invoice, opts.now ?? new Date())));
   } catch {
     // Warnungen sind Zusatzinformation und duerfen das Festschreiben nie verhindern;
     // bis dahin gesammelte Hinweise bleiben erhalten (wie vor 18d).
   }
   return warnings;
+}
+
+interface CheckWarningInvoice {
+  taxScheme: string;
+  currency: string;
+  issueDate: Date | null;
+  deliveryDate: Date | null;
+  deliveryEnd: Date | null;
+  netTotalCents: number;
+}
+
+/** Ausstellfrist (§ 14a UStG) und Umsatzgrenze (§ 19 UStG); Fehler der Auswertung werden verschluckt. */
+export async function documentCheckWarnings(orgId: string, invoice: CheckWarningInvoice, now: Date): Promise<FinalizeWarning[]> {
+  const out: FinalizeWarning[] = [];
+  // Beim Festschreiben kann das Belegdatum auf heute nachgezogen werden (refreshIssueDateOnFinalize).
+  let issueDate = invoice.issueDate ?? now;
+  try {
+    const settings = await loadDocumentSettings(orgId);
+    if (settings.refreshIssueDateOnFinalize && invoice.issueDate && berlinCalendarDay(invoice.issueDate).getTime() < berlinCalendarDay(now).getTime()) {
+      issueDate = now;
+    }
+    if (isIssueDeadlineMissed(issueDeadline(invoice), issueDate)) {
+      out.push({ code: "ausstellfrist", message: finalizeWarningMessage("ausstellfrist") });
+    }
+  } catch {
+    // Hinweise blockieren nie.
+  }
+  try {
+    if (invoice.taxScheme === "KLEINUNTERNEHMER") {
+      const ku = await kuThreshold(orgId, berlinYear(issueDate));
+      const ownNet = invoice.currency === "EUR" ? invoice.netTotalCents : 0;
+      if (ku.level === "EXCEEDED" || ku.current.totalInvoicedCents + ownNet > ku.currentLimitCents) {
+        out.push({ code: "ku-grenze", message: finalizeWarningMessage("ku-grenze") });
+      }
+    }
+  } catch {
+    // Hinweise blockieren nie.
+  }
+  return out;
 }

@@ -148,6 +148,7 @@ export const en: DocStrings = {
   notes: {
     proformaHint: "Proforma invoice — not an invoice within the meaning of § 14 UStG (German VAT Act). Does not entitle to input tax deduction.",
     consumerRetentionHint: "You are required to retain this invoice for two years (§ 14b (1) sentence 5 UStG).",
+    consumerDefaultNotice: "Notice pursuant to § 286 (3) German Civil Code (BGB): you will be in default at the latest if payment is not made within 30 days after the due date and receipt of this invoice.",
     allowanceReason: "Discount",
     chargeReason: "Surcharge",
     deductionsPrefix: "Deductions: ",

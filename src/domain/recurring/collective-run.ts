@@ -12,7 +12,7 @@ import { createDraftInvoiceWithinTx } from "@/domain/invoice/create";
 import { finalizeWithinTx } from "@/domain/invoice/finalize";
 import { linkDocuments } from "@/domain/relations";
 import { logActivity } from "@/domain/activity/log";
-import { onInvoiceFinalizedOss } from "@/domain/notifications/hooks";
+import { onInvoiceFinalizedKu, onInvoiceFinalizedOss } from "@/domain/notifications/hooks";
 import { resolveDocLanguage } from "@/lib/i18n/doc";
 import type { MailProvider } from "@/lib/mail/provider";
 import type { CreateInvoiceInput } from "@/schemas";
@@ -369,7 +369,10 @@ export async function emitCollective(
       data: { period: run.periodKey, reasons: s.reasons, invoiceId: outcome.invoiceId },
     });
   }
-  if (outcome.finalized) await onInvoiceFinalizedOss(done.orgId, outcome.invoiceId, now);
+  if (outcome.finalized) {
+    await onInvoiceFinalizedOss(done.orgId, outcome.invoiceId, now);
+    await onInvoiceFinalizedKu(done.orgId, now);
+  }
   if (done.autoSend && outcome.finalized) {
     const sent = await sendRecurringInvoiceEmail(done.orgId, outcome.invoiceId, opts.provider, done.emailTemplateId);
     outcome.emailStatus = sent.status;

@@ -46,6 +46,7 @@ export default async function NewInvoicePage({ searchParams }: { searchParams: P
         postalCode: true,
         city: true,
         countryCode: true,
+        vatId: true,
       },
       orderBy: { name: "asc" },
     }),

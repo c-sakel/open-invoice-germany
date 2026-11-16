@@ -17,6 +17,8 @@ import { BelegStreckeMini } from "@/components/BelegStreckeMini";
 import { ResponsiveBarChart } from "@/components/dashboard/ResponsiveBarChart";
 import type { OssThreshold } from "@/domain/reporting/oss";
 import { OssCard } from "@/components/dashboard/OssCard";
+import type { KuThreshold } from "@/domain/reporting/ku";
+import { SmallBusinessCard } from "@/components/dashboard/SmallBusinessCard";
 import type { DashboardNotice } from "@/components/dashboard/notices";
 import {
   cashInChartData,
@@ -58,6 +60,7 @@ export function DashboardWidgets({
   currency,
   notices,
   oss,
+  smallBusiness,
 }: {
   summary: DashboardSummary;
   revenue24: MonthlyRevenuePoint[];
@@ -68,6 +71,8 @@ export function DashboardWidgets({
   notices: DashboardNotice[];
   /** Phase 16e: OSS-Schwelle; die Karte erscheint nur bei EU-Privatkunden-Umsätzen oder Warnstufe. */
   oss?: OssThreshold | null;
+  /** Umsatzgrenzen § 19 UStG; die Karte erscheint nur, wenn die Kleinunternehmerregelung angewendet wird. */
+  smallBusiness?: KuThreshold | null;
 }) {
   const openTotal = openTotalCents(summary);
   if (summary.recentDocuments.length === 0 && openTotal === 0) {
@@ -149,6 +154,8 @@ export function DashboardWidgets({
       </Card>
 
       {oss && (oss.current.documentCount + oss.previous.documentCount + oss.current.skippedWithoutEur + oss.previous.skippedWithoutEur > 0 || oss.level !== "OK") && <OssCard oss={oss} />}
+
+      {smallBusiness?.applies && <SmallBusinessCard ku={smallBusiness} />}
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>

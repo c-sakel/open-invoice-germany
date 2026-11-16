@@ -1,7 +1,7 @@
 /**
  * Bankabgleich: Zuordnung per Gegenbuchung zuruecknehmen und Ruecklastschriften buchen. Testjahr 2203.
  */
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { dbInternal } from "@/lib/db";
 import { BankAllocationError, BankConflictError } from "@/domain/bank/errors";
 import { confirmBankMatch, ignoreBankTransaction, reopenBankTransaction, undoBankMatch } from "@/domain/bank/confirm";
@@ -10,7 +10,13 @@ import { reversePayment } from "@/domain/invoice/payment-reversal";
 import { NotFoundError } from "@/domain/errors";
 import { monthlyCashIn } from "@/domain/reporting/cash-in";
 import { verifyOrgChain } from "@/domain/audit/verify-chain";
+import { onPaymentChangedKu } from "@/domain/notifications/hooks";
 import { mkBankOrg, mkBankTx, mkInvoice, type BankTestOrg } from "../helpers/bank-fixtures";
+
+vi.mock("@/domain/notifications/hooks", async (orig) => {
+  const m = await orig<typeof import("@/domain/notifications/hooks")>();
+  return { ...m, onPaymentChangedKu: vi.fn(m.onPaymentChangedKu) };
+});
 
 const ISSUE = new Date("2203-03-01T10:00:00.000Z");
 const BOOK = new Date("2203-03-05T00:00:00.000Z");
@@ -245,5 +251,23 @@ describe("Bankabgleich: Buchungsdatum der Gegenbuchungen", () => {
     expect(rev.paidAt.toISOString()).toBe(BOOK.toISOString());
     const points = await monthlyCashIn(o.orgId, { now: LATE.now });
     expect(points.find((p) => p.month === "2203-03")?.paidCents ?? 0).toBe(0);
+  });
+});
+
+describe("Bankabgleich: Umsatzgrenzen nach Buchung", () => {
+  it("Bestaetigen, Zuordnung zuruecknehmen und Ruecklastschrift werten die Umsatzgrenzen nach dem Commit neu aus", async () => {
+    const spy = vi.mocked(onPaymentChangedKu);
+    spy.mockClear();
+    const p = await paid();
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenLastCalledWith(org.orgId, NOW);
+    await undoBankMatch(org.orgId, p.txId, { matchId: p.matchId, reason: "Fehlzuordnung" }, opts);
+    expect(spy).toHaveBeenCalledTimes(2);
+    const q = await paid();
+    expect(spy).toHaveBeenCalledTimes(3);
+    const retTx = await mkBankTx(org, { amountCents: GROSS, bookingDate: BOOK, direction: "DBIT", status: "RETURN", endToEndId: "E2E-KU-1", returnReason: "AC04" });
+    await confirmBankReturn(org.orgId, retTx, { paymentId: q.paymentId }, opts);
+    expect(spy).toHaveBeenCalledTimes(4);
+    expect(spy).toHaveBeenLastCalledWith(org.orgId, NOW);
   });
 });

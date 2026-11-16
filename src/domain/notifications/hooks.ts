@@ -16,6 +16,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { buyerSnapshotSchema } from "@/schemas";
 import { isOssBuyer } from "@/domain/reporting/oss-calc";
 import { checkOssNotifications } from "@/domain/reporting/oss-notify";
+import { checkKuNotifications } from "@/domain/reporting/ku-notify";
 import { createNotification } from "@/domain/notifications/create";
 import { isMandatoryNotificationType, loadNotificationSettings, type NotificationType } from "@/domain/notifications/settings";
 
@@ -170,6 +171,19 @@ export async function onInvoiceFinalizedOss(orgId: string, invoiceId: string, no
     return;
   }
   await safeNotify(orgId, "OSS_THRESHOLD", () => checkOssNotifications(orgId, now));
+}
+
+/**
+ * Eine Rechnung wurde festgeschrieben: Umsatzgrenzen der Kleinunternehmerregelung neu auswerten.
+ * Fehler werden geloggt, nie geworfen; aufzurufen erst nach dem Commit.
+ */
+export async function onInvoiceFinalizedKu(orgId: string, now: Date = new Date()): Promise<void> {
+  await safeNotify(orgId, "KU_THRESHOLD", () => checkKuNotifications(orgId, now));
+}
+
+/** Eine Zahlung oder Gegenbuchung wurde festgeschrieben: Umsatzgrenzen neu auswerten (nach dem Commit). */
+export async function onPaymentChangedKu(orgId: string, now: Date = new Date()): Promise<void> {
+  await safeNotify(orgId, "KU_THRESHOLD", () => checkKuNotifications(orgId, now));
 }
 
 /** Ein Regel-Lauf nach Zahlungseingang ist endgueltig fehlgeschlagen. */

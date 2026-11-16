@@ -1,7 +1,7 @@
 /**
  * Bankabgleich: Zuordnung bestaetigen, aufteilen, ignorieren, Sammelbestaetigung. Testjahr 2202.
  */
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { dbInternal } from "@/lib/db";
 import { BankAllocationError, BankConflictError } from "@/domain/bank/errors";
 import { confirmBankMatch, confirmUnambiguous, ignoreBankTransaction, reopenBankTransaction } from "@/domain/bank/confirm";
@@ -15,7 +15,13 @@ import type { CreateInvoiceInput } from "@/schemas";
 import { NotFoundError } from "@/domain/errors";
 import { createWebhookEndpoint } from "@/domain/webhook/endpoints";
 import { verifyOrgChain } from "@/domain/audit/verify-chain";
+import { onPaymentChangedKu } from "@/domain/notifications/hooks";
 import { mkBankOrg, mkBankTx, mkInvoice, type BankTestOrg } from "../helpers/bank-fixtures";
+
+vi.mock("@/domain/notifications/hooks", async (orig) => {
+  const m = await orig<typeof import("@/domain/notifications/hooks")>();
+  return { ...m, onPaymentChangedKu: vi.fn(m.onPaymentChangedKu) };
+});
 
 const ISSUE = new Date("2202-03-01T10:00:00.000Z");
 const BOOK = new Date("2202-03-05T00:00:00.000Z");
@@ -219,6 +225,19 @@ describe("Bankabgleich: Sammelbestaetigung", () => {
     for (const s of sure.slice(0, 3)) expect((await dbInternal.bankTransaction.findUniqueOrThrow({ where: { id: s.txId } })).status).toBe("MATCHED");
     expect((await dbInternal.bankTransaction.findUniqueOrThrow({ where: { id: sure[3]!.txId } })).status).toBe("OPEN");
     expect((await verifyOrgChain(o.orgId, "UI")).valid).toBe(true);
+  });
+
+  it("Sammelbestaetigung prueft die Umsatzgrenzen genau einmal, nicht je Umsatz", async () => {
+    const o = await mkBankOrg("Bank Sammel KU GmbH", ISSUE);
+    for (let i = 0; i < 3; i++) {
+      const inv = await mkInvoice(o, ISSUE, { netCents: 30000 + i * 100 });
+      await mkBankTx(o, { amountCents: inv.grossCents, bookingDate: BOOK, remittance: `Zahlung ${inv.number}` });
+    }
+    const spy = vi.mocked(onPaymentChangedKu);
+    spy.mockClear();
+    const r = await confirmUnambiguous(o.orgId, {}, opts);
+    expect(r.confirmed).toBe(3);
+    expect(spy).toHaveBeenCalledTimes(1);
   });
 
   it("zwischenzeitlich bezahlte Rechnung unter explizitem Id: skipped mit Grund, Rest gebucht; RETURN wird nie aufgenommen", async () => {

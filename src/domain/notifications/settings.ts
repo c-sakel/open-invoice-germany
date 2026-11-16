@@ -28,6 +28,7 @@ export const NOTIFICATION_TYPES = {
   ONLINE_OVERPAYMENT: "Online-Zahlung hoeher als offener Betrag",
   ONLINE_PAYMENT_ISSUE: "Online-Zahlung pruefen",
   DATEV_LATE_ITEMS: "DATEV: Nachtraege in bereits exportierten Monaten",
+  KU_THRESHOLD: "Kleinunternehmer-Umsatzgrenzen (§ 19 UStG)",
 } as const;
 
 export type NotificationType = keyof typeof NOTIFICATION_TYPES;

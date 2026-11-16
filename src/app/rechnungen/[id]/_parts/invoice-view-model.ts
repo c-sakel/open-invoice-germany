@@ -14,6 +14,9 @@ import { payableBaseCents, openAmountCents } from "@/domain/invoice/amounts";
 import { effectiveInvoiceStatus } from "@/domain/invoice/status";
 import { availableActions, type ActionKey } from "@/domain/document/actions";
 import type { EmailDocType } from "@/schemas/email";
+import { grossEurCentsOf, isIssueDeadlineMissed, isSmallAmountInvoice, issueDeadline } from "@/domain/invoice/checks";
+import { buyerOf } from "@/api/serializers/invoice";
+import { berlinDateKey } from "@/lib/berlin-time";
 
 /** Deckungsgleich mit dem `include` in `page.tsx` — beide Stellen bei einer Aenderung pflegen. */
 export type InvoiceDetail = Prisma.InvoiceGetPayload<{
@@ -84,6 +87,18 @@ export interface InvoiceViewModel {
   canPay: boolean;
   emailDocType: EmailDocType;
   deductionsByInvoice: Map<string, DeductionSummary>;
+  /** Kleinbetragsrechnung (§ 33 UStDV) — nur Kennzeichnung. */
+  smallAmount: boolean;
+  /** Ausstellfrist (§ 14a Abs. 1, 3 UStG) als Berliner Kalendertag `yyyy-mm-dd`; `null` ausserhalb ig. Lieferung/Leistung. */
+  issueDeadlineKey: string | null;
+  issueDeadlineMissed: boolean;
+  /** Verzugshinweis (§ 286 Abs. 3 BGB): festgeschrieben = eingefrorener Wert, Entwurf = Vorgabe (`null` = automatisch). */
+  consumerNotice: boolean | null;
+}
+
+/** Wirksamer Verzugshinweis-Wert fuer die Anzeige: Entwurf = Vorgabe oder null (automatisch), sonst gedruckt ja/nein. */
+export function consumerNoticeOf(invoice: Pick<InvoiceDetail, "status" | "consumerDefaultNotice">): boolean | null {
+  return invoice.status === "DRAFT" ? invoice.consumerDefaultNotice : invoice.consumerDefaultNotice === true;
 }
 
 export function buildInvoiceViewModel(invoice: InvoiceDetail): InvoiceViewModel {
@@ -151,6 +166,13 @@ export function buildInvoiceViewModel(invoice: InvoiceDetail): InvoiceViewModel 
     }
   }
 
+  const deadline = issueDeadline(invoice);
+  const todayKey = berlinDateKey(new Date());
+  const issueDeadlineKey = deadline ? berlinDateKey(deadline) : null;
+  // Entwurf: wird frueestens heute festgeschrieben (Belegdatum kann nachgezogen werden).
+  const issueDeadlineMissed =
+    deadline !== null && (isIssueDeadlineMissed(deadline, invoice.issueDate) || (isDraft && issueDeadlineKey !== null && todayKey > issueDeadlineKey));
+
   return {
     isDraft,
     isCancelled,
@@ -171,6 +193,15 @@ export function buildInvoiceViewModel(invoice: InvoiceDetail): InvoiceViewModel 
     canPay,
     emailDocType,
     deductionsByInvoice,
+    smallAmount: isSmallAmountInvoice({
+      type: invoice.type,
+      taxScheme: invoice.taxScheme,
+      grossEurCents: grossEurCentsOf(invoice),
+      buyer: buyerOf(invoice),
+    }),
+    issueDeadlineKey,
+    issueDeadlineMissed,
+    consumerNotice: consumerNoticeOf(invoice),
   };
 }
 

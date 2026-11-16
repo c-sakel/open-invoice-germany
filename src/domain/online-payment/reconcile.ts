@@ -15,6 +15,7 @@ import { ONLINE_PROVIDERS, type OnlineProvider, type PaymentTransport, type Prov
 import { describeError } from "@/lib/safe-error";
 import { recordPaymentWithinTx, type PaymentCreatedBy } from "@/domain/invoice/payment";
 import { reversePaymentWithinTx } from "@/domain/invoice/payment-reversal";
+import { onPaymentChangedKu } from "@/domain/notifications/hooks";
 import { kickPaymentRules } from "@/domain/payment-rule/kick";
 import { notifyOnlinePaymentWithinTx, onOnlinePaymentNotice } from "@/domain/notifications/hooks";
 import { payableBaseCents } from "@/domain/invoice/amounts";
@@ -339,7 +340,10 @@ async function reconcileOnce(
       });
       return { result: "IGNORED", paymentId: null, duplicate: false };
     }
-    if (out.changed) kickPaymentRules(orgId);
+    if (out.changed) {
+      kickPaymentRules(orgId);
+      await onPaymentChangedKu(orgId, now);
+    }
     if (out.invoiceStatus === "PAID" || out.invoiceStatus === "CANCELLED") cancelOpenAttemptsAfterCommit(orgId, invoiceId);
     return { result: out.plan.result, paymentId: out.paymentId, duplicate: false };
   } catch (e) {

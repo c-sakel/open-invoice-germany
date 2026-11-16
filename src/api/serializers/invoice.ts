@@ -7,7 +7,9 @@ import { payableBaseCents, openAmountCents } from "@/domain/invoice/amounts";
 import { serializePayment, paymentSchema } from "./payment";
 import { formatRate } from "@/domain/fx/decimal";
 import { maskIban } from "@/lib/iban";
-import { directDebitSnapshotSchema } from "@/schemas";
+import { directDebitSnapshotSchema, buyerSnapshotSchema } from "@/schemas";
+import { grossEurCentsOf, isSmallAmountInvoice, issueDeadline } from "@/domain/invoice/checks";
+import { berlinDateKey } from "@/lib/berlin-time";
 
 /** Lastschrift-Snapshot (BG-19) fuer die Ausgabe: nur Referenz, Glaeubiger-ID und maskierte IBAN. */
 export function serializeDirectDebit(json: string | null): { mandateReference: string; creditorId: string; debtorIbanMasked: string } | null {
@@ -26,6 +28,19 @@ export function serializeDirectDebit(json: string | null): { mandateReference: s
 
 /** Kurs als Dezimalstring mit Punkt (z. B. "1.1214"), null ohne Kurs. */
 const rateString = (micros: number | null | undefined): string | null => (micros == null ? null : formatRate(micros, "en-GB"));
+
+/** Kaeufer fuer die Kleinbetragspruefung: Snapshot des Belegs, sonst der eingebettete Kunde, sonst unbekannt. */
+export function buyerOf(inv: InvoiceWithOptionalRelations): { countryCode: string | null; vatId: string | null } | null {
+  if (inv.buyerSnapshotJson) {
+    try {
+      const parsed = buyerSnapshotSchema.safeParse(JSON.parse(inv.buyerSnapshotJson));
+      if (parsed.success) return { countryCode: parsed.data.countryCode, vatId: parsed.data.vatId };
+    } catch {
+      // kaputter Snapshot: wie ohne Snapshot behandeln
+    }
+  }
+  return inv.customer ? { countryCode: inv.customer.countryCode, vatId: inv.customer.vatId } : null;
+}
 
 export type InvoiceWithOptionalRelations = Invoice & { lines?: InvoiceLine[]; customer?: Customer; payments?: Payment[] };
 
@@ -94,6 +109,18 @@ export function serializeInvoice(inv: InvoiceWithOptionalRelations, embed: Set<s
     dunningState: inv.dunningState,
     dunningPausedUntil: iso(inv.dunningPausedUntil),
     dunningStateNote: inv.dunningStateNote,
+    smallAmount: isSmallAmountInvoice({
+      type: inv.type,
+      taxScheme: inv.taxScheme,
+      grossEurCents: grossEurCentsOf(inv),
+      buyer: buyerOf(inv),
+    }),
+    issueDeadline: (() => {
+      const d = issueDeadline(inv);
+      return d ? berlinDateKey(d) : null;
+    })(),
+    // Festgeschrieben: eingefrorener Wert (Altbeleg NULL = false); Entwurf: Vorgabe, null = automatisch.
+    consumerDefaultNotice: inv.status === "DRAFT" ? (inv.consumerDefaultNotice ?? null) : inv.consumerDefaultNotice === true,
     createdAt: iso(inv.createdAt),
     updatedAt: iso(inv.updatedAt),
     ...(embed.has("customer") && inv.customer ? { customerName: inv.customer.name } : {}),
@@ -157,6 +184,9 @@ export const invoiceSchema = z.object({
     .describe("Eingefrorener Wechselkurs (Einheiten der Belegwaehrung je 1 EUR, Dezimalpunkt), ab Festschreibung; null bei EUR."),
   fxRateDate: z.string().nullable().describe("Datum des Kurses (Monatserster bei BMF_MONTHLY)."),
   fxRateSource: z.string().nullable().describe("BMF_MONTHLY | ECB_DAILY | MANUAL; null bei EUR."),
+  smallAmount: z.boolean().describe("Kleinbetragsrechnung (§ 33 UStDV, bis 250,00 EUR brutto); nur Kennzeichnung, die Pflichtangaben bleiben unveraendert."),
+  issueDeadline: z.string().nullable().describe("Letzter Tag der Rechnungsausstellung bei ig. Lieferung/Leistung (§ 14a UStG), YYYY-MM-DD; sonst null."),
+  consumerDefaultNotice: z.boolean().nullable().describe("Verzugshinweis fuer Verbraucher (§ 286 Abs. 3 BGB). Festgeschrieben: eingefrorener Wert; Entwurf: Vorgabe, null = automatisch."),
   fxOverrideRate: z.string().nullable().describe("Manuell gesetzter Kurs am Entwurf (Quelle MANUAL beim Festschreiben)."),
   taxTotalEurCents: z.number().int().nullable().describe("Umsatzsteuer in EUR-Cent (§ 16 Abs. 6 UStG, Summe je Steuersatz), ab Festschreibung."),
   netTotalEurCents: z.number().int().nullable().describe("Nettobetrag in EUR-Cent, ab Festschreibung."),

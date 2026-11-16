@@ -26,6 +26,7 @@ import { NotFoundError } from "@/domain/errors";
 import { enqueuePaymentRuleRuns } from "@/domain/payment-rule/enqueue";
 import { kickPaymentRules } from "@/domain/payment-rule/kick";
 import { disablePayLinkWithinTx } from "@/domain/online-payment/pay-link";
+import { onPaymentChangedKu } from "@/domain/notifications/hooks";
 import { cancelOpenAttemptsAfterCommit } from "@/domain/online-payment/cancel-open";
 import type { RecordPaymentInput } from "@/schemas";
 
@@ -80,6 +81,7 @@ export async function recordPayment(
   const result = await dbInternal.$transaction((tx) => recordPaymentWithinTx(tx, invoiceId, input, opts));
   // Nach dem Commit: faellige Regel-Laeufe anstossen (Fehler beruehren die Zahlung nie).
   kickPaymentRules(result.payment.orgId);
+  await onPaymentChangedKu(result.payment.orgId, opts.now);
   // Vollstaendig bezahlt (auch aus anderer Quelle): offene Online-Vorgaenge beim Anbieter beenden.
   if (result.payment.status === "PAID") cancelOpenAttemptsAfterCommit(result.payment.orgId, invoiceId);
   return result;

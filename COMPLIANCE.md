@@ -2,7 +2,7 @@
 
 **Single Source of Truth** für alle rechtlichen Anforderungen, gegen die diese kostenlose Open-Source-Rechnungssoftware gebaut, getestet und validiert wird.
 
-**Stand: 2026-06-09** · Geltungsbereich: Deutschland (UStG/UStDV/AO/HGB/BGB/DSGVO + EU-Normen EN 16931, MwStSystRL)
+**Stand: 2026-11-16** (Pflichtprüfungen §§ 14a, 19, 33 UStG/§ 286 BGB ergänzt; übrige Abschnitte mit eigenem Stand-Datum) · Geltungsbereich: Deutschland (UStG/UStDV/AO/HGB/BGB/DSGVO + EU-Normen EN 16931, MwStSystRL)
 
 ---
 
@@ -76,6 +76,7 @@ Datumsangaben zu Altbelegen beziehen sich auf den Programmstand; maßgeblich ist
 | Reiseleistungen | „Sonderregelung für Reisebüros" | § 25 UStG |
 | Differenzbesteuerung | „Gebrauchtgegenstände/Sonderregelung" o.ä. | § 14a Abs. 6 / § 25a |
 | ig. Lieferung / Dreiecksgeschäft | USt-IdNr. von Leistendem **und** Empfänger | § 14a Abs. 1/3/7 |
+| Ausstellfrist ig. Lieferung / ig. sonstige Leistung | Rechnung bis zum **15. Tag des Monats, der auf den Monat der Ausführung folgt** | § 14a Abs. 3 S. 1 UStG (ig. Lieferung); § 14a Abs. 1 S. 2 UStG (sonstige Leistung nach § 3a Abs. 2 mit Steuerschuld des Empfängers) |
 | Steuerbefreiung allgemein | **Konkreter** Grund der Befreiung (z.B. „steuerfreie innergemeinschaftliche Lieferung"); Paragraf-Zitat nicht zwingend | § 14 Abs. 4 Nr. 8 |
 
 ### Fristen
@@ -124,6 +125,8 @@ Die Software kennt acht wählbare Steuerschemata; sieben davon verlangen nach §
 
 **§ 33 NICHT anwendbar** (dann volle § 14/§ 14a-Angaben!): Fernverkauf (§ 3c), innergemeinschaftliche Lieferung (§ 6a), Reverse Charge (§ 13b). (§ 33 S. 3 UStDV)
 
+**Umsetzung:** Das Programm kennzeichnet eine Rechnung (Typ Rechnung, in EUR bzw. mit festgehaltenem EUR-Wert; im Entwurf nur EUR) mit einem Gesamtbetrag über 0 € bis einschließlich 250,00 € brutto als Kleinbetragsrechnung — im Editor, in der Belegansicht und im Feld `smallAmount` von REST und MCP. Nicht gekennzeichnet werden ig. Lieferung, Reverse Charge, ig. Leistung und Lieferungen an EU-Privatkunden im Ausland (Fernverkauf). Es bleibt bei der Kennzeichnung: Jedes Rechnungs-PDF trägt ein vollständiges EN-16931-XML (Käufername und -land sind dort Pflicht, BR-07/BR-11), daher werden weiter die vollen Angaben verlangt; § 33 S. 4 UStDV erlaubt die Übermittlung als sonstige Rechnung, verpflichtet aber nicht zu reduzierten Angaben.
+
 ### § 34 UStDV — Fahrausweis als Rechnung
 
 - Pflicht: Name/Anschrift des Beförderers · Ausstellungsdatum · Entgelt+Steuerbetrag in einer Summe · Steuersatz **nur, wenn die Beförderung NICHT dem ermäßigten Satz (§ 12 Abs. 2 Nr. 10) unterliegt** (bei ermäßigtem 7 %-Satz entfällt die Steuersatz-Angabe; ohne Angabe gilt der ermäßigte Satz) · bei grenzüberschreitender Luftbeförderung: entsprechender Hinweis. (§ 34 Abs. 1 UStDV)
@@ -152,8 +155,22 @@ Die Software kennt acht wählbare Steuerschemata; sieben davon verlangen nach §
 | Rechtsfolge | „wird nicht erhoben" | **echte Steuerbefreiung** |
 
 - Gesamtumsatz wird **nach vereinnahmten Entgelten** (§ 10 Abs. 1 UStG) berechnet.
+- **Berechnungsgrundlage (§ 19 Abs. 2 UStG):** Summe der steuerbaren Umsätze nach § 1 Abs. 1 Nr. 1 UStG, ohne bestimmte steuerfreie Umsätze (§ 4 Nr. 8 bis 9 Buchst. b und Nr. 11 bis 28) und ohne Hilfsumsätze und Umsätze aus Anlagevermögen; das Programm kann diese Ausnahmen nicht erkennen (Umsetzung siehe unten).
 - **Unterjähriger Sofort-Wegfall:** Wird die **100.000-€-Grenze** im laufenden Jahr überschritten, endet die Befreiung **sofort** — **bereits der Umsatz, mit dem die Grenze überschritten wird**, ist regulär zu versteuern (nicht erst ab Folgejahr/-monat).
   - ⚠️ **Korrigierte Rechtsgrundlage:** Diese Sofort-Rechtsfolge ergibt sich aus dem Tatbestandsmerkmal „nicht überschreitet" in **§ 19 Abs. 1 Satz 1 UStG** i.V.m. **BMF-Schreiben v. 18.03.2025** (Abschn. 19.1) — **NICHT** aus § 19 Abs. 1 Satz 2 UStG (der regelt die Nicht-Anwendung anderer Vorschriften).
+
+### Umsetzung der Umsatzgrenzen
+
+Das Programm wertet je Berliner Kalenderjahr zwei Netto-Summen in EUR aus: den **vereinnahmten** Umsatz (Zahlungen nach Zahlungsdatum, Gegenbuchungen negativ, ohne Skonto-Zeilen und ohne Verrechnungen mit Gutschriften; Nettoanteil einer Zahlung = Zahlung × Netto/Brutto des Belegs) und den **berechneten** Umsatz (festgeschriebene Belege nach Belegdatum, Gutschriften negativ). Maßgeblich für „überschritten" ist der vereinnahmte Umsatz; der berechnete Umsatz löst nur die Vorwarnung aus. Gutschriften mindern den vereinnahmten Umsatz nur, wenn die Erstattung als Gegenbuchung der Zahlung erfasst wird; sonst bleibt der Wert höher, die Warnung kommt eher früher. Nicht gezählt werden im Inland nicht steuerbare Umsätze (Schemata `IG_LEISTUNG`, `NICHT_STEUERBAR`); alle übrigen Belege zählen mit. Umsatz außerhalb des Programms trägt der Betreiber je Jahr von Hand ein (Belegeinstellungen), ebenso das Jahr der Aufnahme der Tätigkeit (dann gilt im laufenden Jahr die Grenze von 25.000 €).
+
+| Stufe | Bedeutung |
+|--|--|
+| `OK` | unterhalb der Warnschwelle (Standard 80 % der Grenze) |
+| `WARN` | Warnschwelle erreicht (laufende Grenze oder 25.000 € für das Folgejahr), auch wenn nur der berechnete Umsatz darüber liegt |
+| `NEXT_YEAR_LOST` | laufendes Jahr über 25.000 €: die Befreiung entfällt im Folgejahr |
+| `EXCEEDED` | Vorjahr über 25.000 € oder laufendes Jahr über 100.000 € (im Aufnahmejahr über 25.000 €) |
+
+Die Stufe erscheint als Dashboard-Karte, als Benachrichtigung (einmal je Jahr und Stufe), als Hinweis beim Festschreiben einer Kleinunternehmer-Rechnung und über REST/MCP. Das Steuerschema wird nie automatisch umgestellt. Hilfsumsätze und Anlagevermögen sind nicht erkennbar (siehe LIMITATIONEN). Die Fundstelle für die Grenze im Jahr der Aufnahme der Tätigkeit (BMF-Schreiben vom 18.03.2025, Abschn. 19.1) ist vor rechtsverbindlicher Nutzung am Originaltext zu prüfen. **[ungesichert]**
 
 ### Rechnungsangaben Kleinunternehmer (§ 34a UStDV — neu ab 1.1.2025)
 
@@ -519,7 +536,7 @@ Bei grundstücksbezogenen Werklieferungen/-leistungen an **Privatpersonen** (Nic
 - Steuerfrei **nur**, wenn der Abnehmer eine **gültige, von einem anderen Mitgliedstaat erteilte USt-IdNr.** verwendet (§ 6a Abs. 1 Nr. 4 — **materielle** Voraussetzung seit Quick Fixes 1.1.2020).
 - Befreiung entfällt **rückwirkend**, wenn die **Zusammenfassende Meldung (ZM)** nicht/unrichtig/unvollständig abgegeben wurde (§ 4 Nr. 1b — materielle Voraussetzung seit 2020).
 - Buch- und Belegnachweis (§ 6a Abs. 3 i.V.m. §§ 17a–17c UStDV; EU-Gelangensvermutung Art. 45a MwSt-DVO 282/2011).
-- Rechnung: USt-IdNr. **beider** Parteien + Hinweis auf Steuerbefreiung; Ausstellung bis **15. Tag des Folgemonats** (§ 14a Abs. 3).
+- Rechnung: USt-IdNr. **beider** Parteien + Hinweis auf Steuerbefreiung; Ausstellung bis **15. Tag des Folgemonats** (§ 14a Abs. 3). **Umsetzung:** Bei den Schemata `IG_LIEFERUNG` und `IG_LEISTUNG` berechnet das Programm den letzten Ausstellungstag aus dem Ende des Leistungszeitraums (sonst dem Leistungsdatum; Berliner Kalendertag), zeigt ihn an Entwürfen an, rötet ihn nach Fristablauf und meldet den Ablauf beim Festschreiben als Hinweis; blockiert wird nicht. Bei einem mit „Rechnungsdatum beim Festschreiben auffrischen“ nachgezogenen Belegdatum zählt das neue Datum.
 
 ### (3) ig. sonstige Leistung (§ 3a Abs. 2)
 
@@ -793,6 +810,10 @@ Skonti · Nachlässe wegen Mängelrügen **ohne** Auswirkung auf die abgerechnet
 | **Verbraucher (B2C)** | 30-Tage-Automatik **nur** bei **ausdrücklichem Hinweis** in der Rechnung (Abs. 3 S. 1 Hs. 2) — **zentraler B2C/B2B-Unterschied** |
 | Vertretenmüssen | kein Verzug ohne Vertretenmüssen (Abs. 4) |
 
+### Verzugshinweis auf Rechnungen an Verbraucher (§ 286 Abs. 3 S. 1 BGB)
+
+Gegenüber einem Verbraucher tritt die Verzugsfolge nach 30 Tagen nur ein, wenn in der Rechnung **besonders darauf hingewiesen** wurde. **Umsetzung:** Eine Einstellung (Standard aus) und ein Wert je Rechnung (automatisch, an oder aus) steuern einen festen Satz; automatisch gilt er für Kunden vom Typ Verbraucher. Beim Festschreiben wird der aufgelöste Wert eingefroren (auch beim Auto-Festschreiben); bereits festgeschriebene Altbelege drucken den Satz nie, Gutschriften und Stornos nie. Der Satz steht im PDF bei den Zahlungsbedingungen und als weitere Zeile in BT-20 von XRechnung und ZUGFeRD (nach den Skonto-Zeilen, ohne `#`-Präfix). Die Mahnlogik bleibt unverändert.
+
 ### Verzugszinsen (§ 288 BGB, Basiszins § 247 BGB)
 
 | Konstellation | Satz über Basiszins | Konkret ab 01.01.2026 |
@@ -1009,12 +1030,12 @@ Siehe `docs/LIMITATIONEN.md` — insbesondere: kein Mischen von Teil- und Abschl
 | Rechnungsdatum / Leistungsdatum | Pflichtfelder; Default Leistungsdatum = Kalendermonat erlaubt | **Umgesetzt** (Leistungsdatum folgt im Editor dem Rechnungsdatum, Zeitraum möglich) |
 | Sammelrechnung für Abos (§ 14 Abs. 4 Satz 1 Nr. 6 UStG, § 31 Abs. 4 UStDV) | Leistungszeitraum je Position (BG-26), Gesamtzeitraum im Kopf (BG-14); eine Rechnung, ein ChangeLog-Eintrag; die Herkunft je Position ist kein Beleginhalt | **Umgesetzt** (Kalendermonat als Leistungszeitraum genügt) |
 | Steuersatz/-betrag aufgeschlüsselt | nach Steuersätzen gruppieren; Brutto = Netto + Σ Steuer; Rundungs-Validierung | **Umgesetzt** (Gruppierung je Steuersatz/Kategorie, Rechenregeln BR-CO-10/13/14/15/16 geprüft) |
-| Kleinbetragsrechnung ≤ 250 € brutto | **Schwellen-Check** (brutto!); reduziertes Template; § 33-Ausschlüsse (§ 3c/§ 6a/§ 13b) **sperren** | **Teilweise:** Validierungsoption `isSmallAmount` (entfallende Empfänger-/Leistungszeit-Pflichten) vorhanden, aber ohne automatischen Brutto-Schwellen-Check, ohne Oberfläche und ohne reduziertes Template |
-| Kleinunternehmer-Modus (§ 19/§ 34a) | **HARTE SPERRE:** kein USt-Betrag/Steuersatz erzeugbar; Pflicht-Hinweis-Text automatisch einfügen; Netto=Brutto-Schwellen 25.000/100.000 € | **Teilweise:** Schema `KLEINUNTERNEHMER` sperrt USt-Sätze > 0 und verlangt den Pflichthinweis (im Editor vorbelegt); die Umsatzgrenzen 25.000/100.000 € werden nicht überwacht |
-| Schwellen-Monitoring § 19 (100.000 €) | laufende Umsatzsumme tracken; **Warnung/Sofort-Umschaltung** bei Überschreiten (auch unterjährig) | **Nicht umgesetzt** (nur der OSS-Schwellenrechner der § 3c-10.000-€-Grenze existiert) |
+| Kleinbetragsrechnung ≤ 250 € brutto | **Schwellen-Check** (brutto!); reduziertes Template; § 33-Ausschlüsse (§ 3c/§ 6a/§ 13b) **sperren** | **Teilweise:** Erkennung nach Brutto-Schwelle mit Ausschluss von Fernverkauf, ig. Lieferung/Leistung und Reverse Charge; Kennzeichnung in Editor, Belegansicht, REST/MCP (Stand 2026-11); bewusst ohne reduziertes Template, die vollen Angaben bleiben |
+| Kleinunternehmer-Modus (§ 19/§ 34a) | **HARTE SPERRE:** kein USt-Betrag/Steuersatz erzeugbar; Pflicht-Hinweis-Text automatisch einfügen; Netto=Brutto-Schwellen 25.000/100.000 € | **Umgesetzt:** Schema `KLEINUNTERNEHMER` sperrt USt-Sätze > 0 und verlangt den Pflichthinweis (im Editor vorbelegt); Umsatzgrenzen werden ausgewertet (siehe nächste Zeile) |
+| Schwellen-Monitoring § 19 (100.000 €) | laufende Umsatzsumme tracken; **Warnung/Sofort-Umschaltung** bei Überschreiten (auch unterjährig) | **Teilweise** (Stand 2026-11): vereinnahmter und berechneter Netto-Umsatz, Warnschwelle, Handeintrag für Fremdumsatz, Karte, Benachrichtigung und Hinweis beim Festschreiben; keine automatische Umschaltung des Steuerschemas, Hilfsumsätze und Anlagevermögen nicht erkennbar |
 | Reverse Charge (§ 13b) | bei Markierung: USt-Ausweis **sperren**, Pflichthinweis „Steuerschuldnerschaft des Leistungsempfängers" + USt-IdNr. beider erzwingen | **Umgesetzt** (Sperre USt-Satz > 0, Pflichthinweis, USt-IdNr./Kennung des Empfängers geprüft) |
 | Differenzbesteuerung (§ 25a) | **HARTE SPERRE** gegen USt-Ausweis; Pflichthinweis „Gebrauchtgegenstände/Sonderregelung"; Brutto-VK als Entgelt; getrennte Margen-Aufzeichnung | **Teilweise:** Sperre gegen USt-Ausweis und Pflichthinweis (drei zulässige Wortlaute) umgesetzt; getrennte Margen-Aufzeichnung nicht |
-| § 14a-Hinweise (ig. Lieferung/Leistung) | fallabhängig USt-IdNr. beider + Befreiungs-/RC-Hinweis; **15-Tage-Ausstellfrist** anzeigen | **Teilweise:** USt-IdNr. beider Parteien, Leistungsdatum und Hinweistext werden erzwungen; die 15-Tage-Ausstellfrist wird nicht angezeigt |
+| § 14a-Hinweise (ig. Lieferung/Leistung) | fallabhängig USt-IdNr. beider + Befreiungs-/RC-Hinweis; **Ausstellfrist (15. Tag des Folgemonats)** anzeigen | **Umgesetzt:** USt-IdNr. beider Parteien, Leistungsdatum und Hinweistext werden erzwungen; die Ausstellfrist (§ 14a Abs. 1 S. 2, Abs. 3 S. 1 UStG) wird im Editor und in der Belegansicht angezeigt und beim Festschreiben nach Fristablauf gemeldet (kein Blocker; Stand 2026-11) |
 | USt-IdNr.-Prüfung (VIES/§ 18e) | **qualifizierte** Bestätigungsanfrage; Prüfprotokoll speichern; Re-Check-Intervall | **Teilweise:** VIES-Prüfung mit append-only-Protokoll; kein automatisches Re-Check-Intervall; qualifizierte BZSt-Bestätigung bewusst nicht umgesetzt (§ 16 Nr. 10a) |
 | Zusammenfassende Meldung (§ 18a) | ZM-Datensatz erzeugen; Frist 25. d. Folgemonats; Quartals-/Monats-Logik (50.000-€-Schwelle); Berichtigung ≤ 1 Monat | **Bewusst nicht umgesetzt** (die Software erzeugt keine ZM-Daten) |
 | E-Rechnung erzeugen (EN 16931) | XRechnung/ZUGFeRD ab Profil **BASIC**; **Profil-Sperre** gegen MINIMUM/BASIC-WL; Pflichtangaben **maschinenlesbar** im XML | **Umgesetzt** (XRechnung UBL und ZUGFeRD/Factur-X CII im Profil EN 16931) |
@@ -1036,7 +1057,7 @@ Siehe `docs/LIMITATIONEN.md` — insbesondere: kein Mischen von Teil- und Abschl
 | Zahlungsbestätigung per Mail (§ 14 UStG, § 368 BGB, § 257 HGB, § 147 AO) | keine Rechnung und keine Quittung; Wiedergabe im E-Mail-Protokoll, Zahlung unverändert, Protokoll + ChangeLog EMAIL | **Umgesetzt** (Regeln nach Zahlungseingang, § 23) |
 | Online-Zahlung (§ 146 Abs. 4, § 147 AO, GoBD Rz. 58 ff., Art. 5/6 DSGVO) | Buchung nur über Zahlungserfassung und Gegenbuchung, Status immer vom Anbieter nachgeladen, Ereignisprotokoll append-only, Link als Snapshot im Archiv, Datenminimierung gegenüber dem Anbieter | **Umgesetzt** (Mollie und Stripe; kein Skonto, Überzahlung nur gemeldet; Datenschutz: an Stripe gehen nur Betrag, Währung, Rechnungsnummer, die interne Vorgangskennung (nicht personenbezogen) und die Rückkehradresse (enthält das Bezahl-Token), Zahlerdaten erhebt Stripe beim Kunden selbst (Art. 5 Abs. 1 lit. c, Art. 6 Abs. 1 lit. b DSGVO); die Rolle von Mollie und Stripe (Auftragsverarbeitung oder eigene Verantwortlichkeit nach deren Bedingungen) zu klären ist **Betreiberpflicht vor dem Livebetrieb**) |
 | Übermittlung per Kundenportal | Download über ein Internetportal ist ein zulässiger Übermittlungsweg (UStAE 14.1 Abs. 4 S. 6, BMF 15.10.2025); Einigung mit dem Kunden zivilrechtlich; Abrufprotokoll datensparsam | **Umgesetzt** (Portal standardmäßig aus; Dateien aus dem Belegarchiv; Abrufprotokoll ohne IP, 24 Monate; Widerruf/Ablauf; siehe § 13) |
-| Mahnwesen Verzug/Zinsen | **Verbraucher-Flag** pro Schuldner steuert: 5/9 Pp, 40-€-Pauschale (nur B2B), Pflicht-30-Tage-Hinweis (B2C); Basiszins halbjahresgenau (1,27 % H1 2026) | **Teilweise:** Kundentyp Verbraucher steuert 5/9 Pp und 40-€-Pauschale (nur B2B, einmal je Rechnung), Basiszins halbjahresgenau; der B2C-30-Tage-Hinweis ist nicht umgesetzt |
+| Mahnwesen Verzug/Zinsen | **Verbraucher-Flag** pro Schuldner steuert: 5/9 Pp, 40-€-Pauschale (nur B2B), Pflicht-30-Tage-Hinweis (B2C); Basiszins halbjahresgenau (1,27 % H1 2026) | **Umgesetzt:** Kundentyp Verbraucher steuert 5/9 Pp und 40-€-Pauschale (nur B2B, einmal je Rechnung), Basiszins halbjahresgenau; der Verzugshinweis nach § 286 Abs. 3 BGB ist optional (Standard aus) und wird beim Festschreiben eingefroren (Stand 2026-11) |
 | Mahngebühren | erste Mahnung **kostenfrei** (Zahlungserinnerung), Mahnkosten erst ab 2. Mahnung; nur konkrete Porto-/Materialkosten | **Umgesetzt** (Gebühren erst ab Mahnstufe 2, erste Stufe kostenfrei) |
 | OSS (B2C EU) | Bestimmungsland-Steuersatz; 10.000-€-EU-Schwelle; Quartals-Erklärung; Rechnungspflicht entfällt bei OSS-Teilnahme | **Teilweise:** nur der OSS-Schwellenrechner (10.000 €); OSS-Meldung bewusst nicht umgesetzt |
 

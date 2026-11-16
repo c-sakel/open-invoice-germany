@@ -33,6 +33,8 @@ export interface RecipientCustomerOption extends CustomerOption {
   postalCode?: string | null;
   city?: string | null;
   countryCode?: string | null;
+  /** USt-IdNr. des Kunden — nur fuer die Kleinbetrags-Kennzeichnung (Fernverkauf an EU-Privatkunden). */
+  vatId?: string | null;
 }
 
 export interface ContactOption {

@@ -21,7 +21,13 @@ import { processOnlinePaymentPolls, refreshLatestAttempt } from "@/domain/online
 import { createPaymentRule } from "@/domain/payment-rule/rules";
 import { providerPayoutHint, suggestMatches } from "@/domain/bank/match";
 import { createInvoiceSchema } from "@/schemas";
+import { onPaymentChangedKu } from "@/domain/notifications/hooks";
 import { createMollieFake, FAKE_LIVE_KEY, FAKE_TEST_KEY } from "../helpers/mollie-fake";
+
+vi.mock("@/domain/notifications/hooks", async (orig) => {
+  const m = await orig<typeof import("@/domain/notifications/hooks")>();
+  return { ...m, onPaymentChangedKu: vi.fn(m.onPaymentChangedKu) };
+});
 
 const YEAR = 2217;
 const NOW = new Date(`${YEAR}-03-10T10:00:00.000Z`);
@@ -181,6 +187,15 @@ describe("Webhook: Buchung", () => {
     expect((await dbInternal.paymentProviderAttempt.findUniqueOrThrow({ where: { id: a.id }, select: { status: true } })).status).toBe("PAID");
     const runs = await dbInternal.paymentRuleRun.findMany({ where: { orgId: s.orgId }, select: { source: true } });
     expect(runs).toEqual([{ source: "MOLLIE" }]);
+  });
+
+  it("eine gebuchte Online-Zahlung wertet die Umsatzgrenzen nach dem Commit neu aus", async () => {
+    const s = await setup("Hook Umsatzgrenze GmbH");
+    const a = await newAttempt(s);
+    const fake = fakeFor(new Map([[a.objectId, paymentJson(a.objectId, a.id)]]));
+    vi.mocked(onPaymentChangedKu).mockClear();
+    await hook(s, a.objectId, fake);
+    expect(vi.mocked(onPaymentChangedKu)).toHaveBeenCalledWith(s.orgId, expect.any(Date));
   });
 
   it("gleicher Webhook zweimal und Webhook + Abgleich parallel: eine Zahlung, ein Ereignis", async () => {

@@ -120,6 +120,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         skonto2Days: z.number().int().min(1).max(365).optional(),
         paymentMethod: z.string().optional().describe("Name oder Code einer Zahlungsmethode (Default: Kunden-Standard)"),
         consumerRetentionHint: z.boolean().optional().describe("§ 14b Abs. 1 S. 5: Hinweis auf zweijaehrige Aufbewahrungspflicht (Bauleistung an Privatperson)"),
+        consumerDefaultNotice: z.boolean().nullable().optional().describe("§ 286 Abs. 3 BGB: Verzugshinweis fuer Verbraucher auf dem Beleg; ohne Angabe/null automatisch (Kundentyp Verbraucher und Einstellung)"),
         language: DocLanguageSchema.optional().describe("Belegsprache de|en (Snapshot am Beleg); ohne Angabe die Sprache des Kunden, sonst de. Der Pflichthinweis folgt der Sprache."),
         fxOverrideRate: z
           .string()
@@ -224,6 +225,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
           skonto2Days: args.skonto2Days,
           paymentMethodId: paymentMethod?.id,
           consumerRetentionHint: args.consumerRetentionHint,
+          consumerDefaultNotice: args.consumerDefaultNotice,
           language,
           fxOverrideRate: args.fxOverrideRate,
           cardPanTruncated: args.cardPanTruncated,
@@ -806,6 +808,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         dueDate: z.string().optional().describe("YYYY-MM-DD oder 'heute'"),
         deliveryDate: z.string().optional().describe("YYYY-MM-DD oder 'heute'"),
         consumerRetentionHint: z.boolean().optional().describe("§ 14b Abs. 1 S. 5: Hinweis auf zweijaehrige Aufbewahrungspflicht (Bauleistung an Privatperson)"),
+        consumerDefaultNotice: z.boolean().nullable().optional().describe("§ 286 Abs. 3 BGB: Verzugshinweis fuer Verbraucher auf dem Beleg; ohne Angabe/null automatisch (Kundentyp Verbraucher und Einstellung)"),
         language: DocLanguageSchema.optional().describe("Belegsprache de|en des Entwurfs"),
         fxOverrideRate: z.string().nullable().optional().describe("Kurs manuell (z. B. \"1,25\"); null entfernt den manuellen Kurs. Nur bei Fremdwaehrung."),
         lines: z.array(editorLineSchema).optional(),
@@ -827,6 +830,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         if (args.dueDate !== undefined) patch.dueDate = ctx.parseDateInput(args.dueDate);
         if (args.deliveryDate !== undefined) patch.deliveryDate = ctx.parseDateInput(args.deliveryDate);
         if (args.consumerRetentionHint !== undefined) patch.consumerRetentionHint = args.consumerRetentionHint;
+        if (args.consumerDefaultNotice !== undefined) patch.consumerDefaultNotice = args.consumerDefaultNotice;
         if (args.language !== undefined) {
           patch.language = args.language;
           // Sprachwechsel: der Pflichthinweis folgt der neuen Sprache (nur der automatisch gesetzte

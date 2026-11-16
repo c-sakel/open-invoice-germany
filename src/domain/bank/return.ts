@@ -7,6 +7,7 @@ import { lockRow } from "@/lib/db-lock";
 import { withChangeLogRetry } from "@/lib/chain-retry";
 import { logActivity } from "@/domain/activity/log";
 import { NotFoundError } from "@/domain/errors";
+import { onPaymentChangedKu } from "@/domain/notifications/hooks";
 import { reversePaymentWithinTx } from "@/domain/invoice/payment-reversal";
 import { bankReturnInputSchema } from "@/schemas/bank";
 import { BankAllocationError, BankConflictError } from "./errors";
@@ -153,5 +154,7 @@ export async function confirmBankReturn(orgId: string, txId: string, raw: unknow
   } catch (e) {
     console.error("confirmBankReturn: Aktivitaetsprotokoll fehlgeschlagen", e);
   }
+  // Die Gegenbuchung zaehlt im Jahr der Bankbuchung (reversedAt = Buchungstag); Umsatzgrenzen neu auswerten.
+  await onPaymentChangedKu(orgId, opts.now);
   return { transaction: done.view, feeCents: done.feeCents, partial: done.partial };
 }

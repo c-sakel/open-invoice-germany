@@ -80,6 +80,8 @@ export interface DraftState {
   internalNotes: string;
   /** § 14 Abs. 4 Nr. 9 / § 14b Abs. 1 S. 5 UStG — nur INVOICE (Phase 12b, Task 5). */
   consumerRetentionHint: boolean;
+  /** § 286 Abs. 3 BGB (nur INVOICE): `null` = automatisch (Kundentyp Verbraucher und Einstellung), `true` = immer, `false` = nie. */
+  consumerDefaultNotice: boolean | null;
   orderNumber: string;
   customerReference: string;
   internalReference: string;
@@ -287,6 +289,7 @@ export function emptyDraft(mode: EditorMode, defaults?: Partial<DraftState>): Dr
     notes: "",
     internalNotes: "",
     consumerRetentionHint: false,
+    consumerDefaultNotice: null,
     orderNumber: "",
     customerReference: "",
     internalReference: "",
@@ -564,6 +567,8 @@ export function toInvoicePayload(d: DraftState, isEdit: boolean): Record<string,
     notes: finalNotes,
     internalNotes: d.internalNotes || undefined,
     consumerRetentionHint: d.consumerRetentionHint,
+    // Beim Bearbeiten setzt null die Vorgabe auf "automatisch" zurueck; bei Neuanlage genuegt das Weglassen.
+    consumerDefaultNotice: isEdit ? d.consumerDefaultNotice : (d.consumerDefaultNotice ?? undefined),
     paymentTerms: d.paymentTerms || undefined,
     // Fix 2 (Task-1-Review): createDraftInvoice waehlt bei Neuanlage die INVOICE-HEAD/
     // FOOT-Textvorlage nur, wenn headerText/footerText UNDEFINED ist (`input.headerText
@@ -789,6 +794,8 @@ export interface InvoiceInitialLike {
   internalNotes: string;
   /** § 14 Abs. 4 Nr. 9 / § 14b Abs. 1 S. 5 UStG (Phase 12b, Task 5). */
   consumerRetentionHint: boolean;
+  /** § 286 Abs. 3 BGB: Vorgabe am Entwurf (`null`/fehlend = automatisch). */
+  consumerDefaultNotice?: boolean | null;
   paymentTerms: string;
   paymentMethodId: string;
   cardPanTruncated?: string;
@@ -916,6 +923,7 @@ export function draftFromInvoice(initial: InvoiceInitialLike, taxRates: readonly
     notes: initial.notes ?? "",
     internalNotes: initial.internalNotes ?? "",
     consumerRetentionHint: initial.consumerRetentionHint ?? false,
+    consumerDefaultNotice: initial.consumerDefaultNotice ?? null,
     paymentTerms: initial.paymentTerms ?? "",
     paymentMethodId: initial.paymentMethodId ?? "",
     cardPanTruncated: initial.cardPanTruncated ?? "",

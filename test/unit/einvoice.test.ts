@@ -396,3 +396,27 @@ describe("Endpoint (BT-34/BT-49) und BT-47 (Phase 17a, Task 4)", () => {
     expect(xml).not.toContain("URIUniversalCommunication");
   });
 });
+
+describe("Verzugshinweis fuer Verbraucher in BT-20 (§ 286 Abs. 3 BGB)", () => {
+  const sentence = "Hinweis nach § 286 Abs. 3 BGB: Sie kommen spätestens in Verzug, wenn Sie nicht innerhalb von 30 Tagen nach Fälligkeit und Zugang dieser Rechnung zahlen.";
+  const note = `#SKONTO#TAGE=10#PROZENT=2.00#\nZahlbar innerhalb von 14 Tagen ohne Abzug.\n${sentence}`;
+
+  it("steht als letzte Zeile von cac:PaymentTerms/cbc:Note und ram:Description, keine Zeile beginnt mit #", () => {
+    const ubl = buildXRechnungUBL({ ...data, paymentTermsNote: note, consumerDefaultNotice: true });
+    const cii = buildFacturXCII({ ...data, paymentTermsNote: note, consumerDefaultNotice: true });
+    const ublNote = /<cac:PaymentTerms>\s*<cbc:Note>([^<]*)<\/cbc:Note>/.exec(ubl)?.[1] ?? "";
+    const ciiDesc = /<ram:SpecifiedTradePaymentTerms>\s*<ram:Description>([^<]*)<\/ram:Description>/.exec(cii)?.[1] ?? "";
+    for (const text of [ublNote, ciiDesc]) {
+      const lines = text.split("\n");
+      expect(lines.at(-1)).toBe(sentence);
+      expect(lines[0]?.startsWith("#SKONTO#")).toBe(true);
+      expect(lines.filter((l) => l === sentence)).toHaveLength(1);
+    }
+    expect(sentence.startsWith("#")).toBe(false);
+  });
+
+  it("ohne Kennzeichen (undefined oder false) ist die Ausgabe identisch", () => {
+    expect(buildXRechnungUBL({ ...data, consumerDefaultNotice: false })).toBe(buildXRechnungUBL(data));
+    expect(buildFacturXCII({ ...data, consumerDefaultNotice: undefined })).toBe(buildFacturXCII(data));
+  });
+});

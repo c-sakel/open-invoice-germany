@@ -19,6 +19,7 @@ import { NotFoundError } from "@/domain/errors";
 import { skipOpenRunsForPayment } from "@/domain/payment-rule/enqueue";
 import { payableBaseCents } from "@/domain/invoice/amounts";
 import { reactivatePayLinkAfterReopenWithinTx } from "@/domain/online-payment/pay-link";
+import { onPaymentChangedKu } from "@/domain/notifications/hooks";
 import { decrementPaidAmount } from "./paid-amount";
 import { PaymentError, type PaymentCreatedBy } from "./payment";
 import { deriveStatusAfterReversal } from "./payment-reversal-status";
@@ -247,6 +248,8 @@ export async function reversePayment(
   const createdBy = opts.createdBy ?? "user";
 
   const result = await dbInternal.$transaction((tx) => reversePaymentWithinTx(tx, paymentId, input, { actor: opts.actor, orgId: opts.orgId, now, createdBy }));
+
+  await onPaymentChangedKu(result.orgId, now);
 
   try {
     await logActivity(dbInternal, {

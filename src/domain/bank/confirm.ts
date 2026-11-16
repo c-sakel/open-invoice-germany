@@ -11,6 +11,7 @@ import { logActivity } from "@/domain/activity/log";
 import { NotFoundError } from "@/domain/errors";
 import { describeError } from "@/lib/safe-error";
 import { kickPaymentRules } from "@/domain/payment-rule/kick";
+import { onPaymentChangedKu } from "@/domain/notifications/hooks";
 import { cancelOpenAttemptsAfterCommit } from "@/domain/online-payment/cancel-open";
 import { PaymentError, recordPaymentWithinTx, type PaymentCreatedBy } from "@/domain/invoice/payment";
 import { reversePaymentWithinTx } from "@/domain/invoice/payment-reversal";
@@ -63,6 +64,13 @@ export interface ConfirmResult {
 }
 
 export async function confirmBankMatch(orgId: string, txId: string, raw: unknown, opts: BankActionOptions): Promise<ConfirmResult> {
+  const result = await confirmBankMatchWithoutKu(orgId, txId, raw, opts);
+  await onPaymentChangedKu(orgId, opts.now);
+  return result;
+}
+
+/** Wie `confirmBankMatch`, aber ohne Umsatzgrenzen-Pruefung; der Aufrufer ruft sie einmal selbst auf (Sammelbestaetigung). */
+async function confirmBankMatchWithoutKu(orgId: string, txId: string, raw: unknown, opts: BankActionOptions): Promise<ConfirmResult> {
   const result = await confirmBankMatchInTx(orgId, txId, raw, opts);
   // Nach dem Commit: faellige Regel-Laeufe anstossen (Fehler beruehren die Buchung nie).
   kickPaymentRules(orgId);
@@ -210,7 +218,7 @@ export async function confirmUnambiguous(
       continue;
     }
     try {
-      await confirmBankMatch(
+      await confirmBankMatchWithoutKu(
         orgId,
         row.id,
         {
@@ -224,6 +232,7 @@ export async function confirmUnambiguous(
       skipped.push({ transactionId: row.id, reason: skipReason(e) });
     }
   }
+  if (confirmed > 0) await onPaymentChangedKu(orgId, opts.now);
   return { confirmed, skipped, truncated, remaining };
 }
 
@@ -335,5 +344,7 @@ export async function undoBankMatch(orgId: string, txId: string, raw: unknown, o
   } catch (e) {
     console.error("undoBankMatch: Aktivitaetsprotokoll fehlgeschlagen", e);
   }
+  // Nach dem Commit: Umsatzgrenzen neu auswerten (die Rueckbuchung zaehlt im Jahr der Ursprungszahlung; reversedAt = paidAt).
+  await onPaymentChangedKu(orgId, opts.now);
   return done.view;
 }

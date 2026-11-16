@@ -38,6 +38,10 @@ describe("documentSettingsInputSchema (Phase 7, Task 1 — erweiterte Felder)", 
       ossWarnPercent: 80,
       viesCheckEnabled: true,
       viesCheckOnFinalize: false,
+      kuWarnPercent: 80,
+      kuBusinessStartYear: null,
+      kuExternalRevenue: {},
+      consumerDefaultNotice: false,
     });
   });
 

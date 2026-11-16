@@ -149,6 +149,7 @@ export const de: DocStrings = {
   notes: {
     proformaHint: "Proforma-Rechnung — keine Rechnung im Sinne des § 14 UStG. Berechtigt nicht zum Vorsteuerabzug.",
     consumerRetentionHint: "Sie sind verpflichtet, diese Rechnung zwei Jahre aufzubewahren (§ 14b Abs. 1 Satz 5 UStG).",
+    consumerDefaultNotice: "Hinweis nach § 286 Abs. 3 BGB: Sie kommen spätestens in Verzug, wenn Sie nicht innerhalb von 30 Tagen nach Fälligkeit und Zugang dieser Rechnung zahlen.",
     allowanceReason: "Rabatt",
     chargeReason: "Aufschlag",
     deductionsPrefix: "Abzüge: ",

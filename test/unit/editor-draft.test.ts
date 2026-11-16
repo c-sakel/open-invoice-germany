@@ -144,6 +144,15 @@ describe("editor/draft", () => {
   // draftFromInvoice -> toInvoicePayload durchgereicht werden — auch wenn initial es
   // (Alt-Aufrufer/Test-Fixture) gar nicht mitliefert (draftFromInvoice faellt auf false
   // zurueck, siehe InvoiceInitialLike.consumerRetentionHint).
+  it("consumerDefaultNotice (§ 286 Abs. 3 BGB): Rundlauf null/true/false ueber draftFromInvoice -> toInvoicePayload", () => {
+    for (const v of [null, true, false] as const) {
+      const d = draftFromInvoice({ id: "i1", customerId: "c1", taxScheme: "REGULAR", consumerDefaultNotice: v, lines: [] } as never);
+      expect(d.consumerDefaultNotice).toBe(v);
+      expect((toInvoicePayload(d, true) as { consumerDefaultNotice: boolean | null }).consumerDefaultNotice).toBe(v);
+      expect(updateInvoiceSchema.safeParse(toInvoicePayload({ ...invoiceDraft(), consumerDefaultNotice: v }, true)).success).toBe(true);
+    }
+    expect(emptyDraft("INVOICE").consumerDefaultNotice).toBeNull();
+  });
   it("consumerRetentionHint: Rundtrip draftFromInvoice -> toInvoicePayload (true/false/undefined)", () => {
     const withTrue = draftFromInvoice({ id: "i1", customerId: "c1", taxScheme: "REGULAR", consumerRetentionHint: true, lines: [] } as never);
     expect(withTrue.consumerRetentionHint).toBe(true);

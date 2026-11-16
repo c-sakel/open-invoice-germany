@@ -619,6 +619,8 @@ export const invoiceHeaderFields = {
   /** § 14 Abs. 4 Nr. 9 / § 14b Abs. 1 S. 5 UStG — Hinweis auf die zweijaehrige
    *  Aufbewahrungspflicht des privaten Empfaengers bei Bauleistungen am Grundstueck. */
   consumerRetentionHint: z.boolean().optional(),
+  /** § 286 Abs. 3 BGB: Verzugshinweis fuer Verbraucher; null = automatisch (Kundentyp und Einstellung). */
+  consumerDefaultNotice: z.boolean().nullable().optional(),
   /** Phase 16b: Belegsprache; ohne Angabe die Sprache des Kunden (Snapshot am Beleg). */
   language: DocLanguageSchema.optional(),
   /** Phase 16b: Kurs je Beleg manuell (Einheiten Fremdwaehrung je 1 EUR, z. B. "1,25"); null loescht. */

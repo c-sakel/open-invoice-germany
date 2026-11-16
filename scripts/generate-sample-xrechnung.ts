@@ -165,6 +165,8 @@ function buildSample(opts: {
   skonto2?: { permille: number; days: number };
   /** Online-Bezahllink (Satz in BT-20). */
   payLinkUrl?: string;
+  /** Verzugshinweis fuer Verbraucher (§ 286 Abs. 3 BGB, letzte Zeile von BT-20). */
+  consumerDefaultNotice?: boolean;
   paymentMethod?: {
     code: string;
     name: string;
@@ -263,6 +265,7 @@ function buildSample(opts: {
     notes: opts.notes ?? "Vielen Dank für Ihren Auftrag.",
     subject: opts.subject ?? null,
     payLinkUrl: opts.payLinkUrl ?? null,
+    consumerDefaultNotice: opts.consumerDefaultNotice ?? false,
     netTotalCents: totals.netTotalCents,
     taxTotalCents: totals.taxTotalCents,
     grossTotalCents: totals.grossTotalCents,
@@ -811,6 +814,18 @@ const online68 = () =>
     lines: [{ description: "Beratung", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S" }],
   });
 
+// Verbraucherrechnung mit Skonto und Verzugshinweis: der Satz steht als letzte Zeile in BT-20.
+const verbraucherVerzugshinweis = () =>
+  buildSample({
+    number: "RE-2220-0003",
+    issueDate: new Date("2220-06-09"),
+    dueDate: new Date("2220-07-09"),
+    deliveryDate: new Date("2220-06-01"),
+    skonto1: { permille: 20, days: 10 },
+    consumerDefaultNotice: true,
+    lines: [{ description: "Beratung", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S" }],
+  });
+
 // Namensraum aller Beispiele. "base" bleibt die reine Bestandsregression.
 const SAMPLES: Record<string, () => EInvoiceData> = {
   base: () => base,
@@ -849,6 +864,7 @@ const SAMPLES: Record<string, () => EInvoiceData> = {
   "sammelrechnung-abo": sammelrechnungAbo,
   "online-zahlung-bt20": onlineZahlungBt20,
   "online-68": online68,
+  "verbraucher-verzugshinweis": verbraucherVerzugshinweis,
 };
 
 export const SAMPLE_NAMES = Object.keys(SAMPLES);
