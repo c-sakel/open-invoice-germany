@@ -33,4 +33,9 @@ describe("runIsolated", () => {
       expect(JSON.stringify(r)).not.toContain("GEHEIM");
     }
   });
+
+  it("meldet CRASHED, wenn der Worker ohne Antwort endet", async () => {
+    const r = await runIsolated<null, never>({ ...base, job: "exit", input: null, timeoutMs: 5000 });
+    expect(r).toEqual({ ok: false, reason: "CRASHED" });
+  });
 });

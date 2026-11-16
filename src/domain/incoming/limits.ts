@@ -19,6 +19,10 @@ export const INCOMING_RECEIVE_PER_MINUTE = 30;
 export const MAX_PDF_ATTACHMENTS = 20;
 export const MAX_PDF_ATTACHMENT_BYTES = 15 * MB;
 export const PDF_EXTRACT_TIMEOUT_MS = 10_000;
+/** PDF: Summe aller entpackten Bytes, geprueft Vorkommen von /EmbeddedFile und wartende Pruefungen. */
+export const MAX_PDF_TOTAL_BYTES = 30 * MB;
+export const MAX_PDF_CANDIDATES = 200;
+export const MAX_PDF_QUEUE = 5;
 /** Schematron-Pruefung: Laufzeit. */
 export const VALIDATE_TIMEOUT_MS = 60_000;
 

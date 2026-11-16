@@ -6,18 +6,27 @@
 import { runIsolated } from "@/lib/worker/isolated";
 import { runExclusive } from "@/lib/serial-queue";
 import { classifyXml } from "./detect";
-import { MAX_PDF_ATTACHMENT_BYTES, MAX_PDF_ATTACHMENTS, PDF_EXTRACT_TIMEOUT_MS } from "./limits";
+import {
+  MAX_INCOMING_BYTES,
+  MAX_PDF_ATTACHMENT_BYTES,
+  MAX_PDF_ATTACHMENTS,
+  MAX_PDF_CANDIDATES,
+  MAX_PDF_QUEUE,
+  MAX_PDF_TOTAL_BYTES,
+  PDF_EXTRACT_TIMEOUT_MS,
+} from "./limits";
 
 export type PdfExtract =
   | { status: "XML_FOUND"; xml: Uint8Array; fileName: string; others: number }
-  | { status: "NO_INVOICE_XML"; attachments: number }
-  | { status: "UNREADABLE"; reason: "ENCRYPTED" | "BROKEN" | "TOO_MANY" | "TOO_LARGE" | "TIMEOUT" | "OUT_OF_MEMORY" };
+  | { status: "NO_INVOICE_XML"; attachments: number; skipped?: number }
+  | { status: "UNREADABLE"; reason: "ENCRYPTED" | "BROKEN" | "TOO_MANY" | "TOO_LARGE" | "TIMEOUT" | "OUT_OF_MEMORY" | "BUSY" };
 
 interface WorkerAttachment {
   name: string | null;
   size: number;
   xml: boolean;
   bytes: Uint8Array | null;
+  issue?: string;
 }
 
 const INVOICE_FILE_NAMES = new Set(["factur-x.xml", "zugferd-invoice.xml", "xrechnung.xml"]);
@@ -26,7 +35,18 @@ const PDF_WORKER_HEAP_MB = 192;
 function isWorkerAttachment(v: unknown): v is WorkerAttachment {
   if (typeof v !== "object" || v === null) return false;
   const o = v as Record<string, unknown>;
-  return (o.name === null || typeof o.name === "string") && typeof o.size === "number" && typeof o.xml === "boolean";
+  if (!(o.name === null || typeof o.name === "string")) return false;
+  if (typeof o.size !== "number" || !Number.isFinite(o.size) || o.size < 0) return false;
+  if (typeof o.xml !== "boolean") return false;
+  return o.bytes === null || (ArrayBuffer.isView(o.bytes) && o.bytes.byteLength === o.size);
+}
+
+/** Dateiname aus dem PDF: nur Basename, druckbare Zeichen, hoechstens 255; wird nie als Pfad verwendet. */
+export function normalizeAttachmentName(raw: string | null): string | null {
+  if (raw === null) return null;
+  const base = raw.split(/[\\/]/).pop() ?? "";
+  const clean = base.replace(/[\u0000-\u001f\u007f-\u009f]/g, "").trim().slice(0, 255);
+  return clean === "" ? null : clean;
 }
 
 function readAttachments(value: unknown): WorkerAttachment[] | null {
@@ -47,30 +67,52 @@ function isClassifiable(bytes: Uint8Array): boolean {
 
 const UNREADABLE_CODES = new Set(["ENCRYPTED", "BROKEN", "TOO_MANY", "TOO_LARGE"]);
 
-export function extractPdfInvoiceXml(bytes: Uint8Array): Promise<PdfExtract> {
-  return runExclusive("incoming-pdf", async (): Promise<PdfExtract> => {
-    const res = await runIsolated<Uint8Array, unknown>({
-      job: "pdf-attachments",
-      input: bytes,
-      timeoutMs: PDF_EXTRACT_TIMEOUT_MS,
-      maxHeapMb: PDF_WORKER_HEAP_MB,
-    });
-    if (!res.ok) {
-      if (res.reason === "TIMEOUT") return { status: "UNREADABLE", reason: "TIMEOUT" };
-      if (res.reason === "OUT_OF_MEMORY") return { status: "UNREADABLE", reason: "OUT_OF_MEMORY" };
-      const code = res.code ?? "";
-      if (UNREADABLE_CODES.has(code)) {
-        return { status: "UNREADABLE", reason: code as "ENCRYPTED" | "BROKEN" | "TOO_MANY" | "TOO_LARGE" };
-      }
-      return { status: "UNREADABLE", reason: "BROKEN" };
-    }
-    const list = readAttachments(res.value);
-    if (list === null) return { status: "UNREADABLE", reason: "BROKEN" };
-    const withXml = list.filter((a): a is WorkerAttachment & { bytes: Uint8Array } => a.xml && a.bytes !== null && a.size <= MAX_PDF_ATTACHMENT_BYTES);
-    // Name gewinnt (bei mehreren die letzte = neueste Fassung), sonst erste Anlage mit erkennbarer Rechnungs-XML.
-    const named = withXml.filter((a) => a.name !== null && INVOICE_FILE_NAMES.has(a.name.toLowerCase()));
-    const pick = named.length > 0 ? named[named.length - 1] : withXml.find((a) => isClassifiable(a.bytes));
-    if (!pick) return { status: "NO_INVOICE_XML", attachments: list.length };
-    return { status: "XML_FOUND", xml: pick.bytes, fileName: pick.name ?? "rechnung.xml", others: list.length - 1 };
+let waiting = 0;
+
+export async function extractPdfInvoiceXml(bytes: Uint8Array): Promise<PdfExtract> {
+  if (bytes.byteLength > MAX_INCOMING_BYTES) return { status: "UNREADABLE", reason: "TOO_LARGE" };
+  if (waiting >= MAX_PDF_QUEUE) return { status: "UNREADABLE", reason: "BUSY" };
+  // Eigene Kopie: ein Pool-Buffer wuerde beim Klonen den ganzen Pool in den Worker kopieren.
+  const own = Uint8Array.from(bytes);
+  waiting++;
+  try {
+    return await runExclusive("incoming-pdf", () => extractOwned(own));
+  } finally {
+    waiting--;
+  }
+}
+
+async function extractOwned(own: Uint8Array): Promise<PdfExtract> {
+  const res = await runIsolated<Uint8Array, unknown>({
+    job: "pdf-attachments",
+    input: own,
+    params: {
+      maxAttachments: MAX_PDF_ATTACHMENTS,
+      maxAttachmentBytes: MAX_PDF_ATTACHMENT_BYTES,
+      maxTotalBytes: MAX_PDF_TOTAL_BYTES,
+      maxCandidates: MAX_PDF_CANDIDATES,
+    },
+    timeoutMs: PDF_EXTRACT_TIMEOUT_MS,
+    maxHeapMb: PDF_WORKER_HEAP_MB,
   });
+  if (!res.ok) {
+    if (res.reason === "TIMEOUT") return { status: "UNREADABLE", reason: "TIMEOUT" };
+    if (res.reason === "OUT_OF_MEMORY") return { status: "UNREADABLE", reason: "OUT_OF_MEMORY" };
+    const code = res.code ?? "";
+    if (UNREADABLE_CODES.has(code)) {
+      return { status: "UNREADABLE", reason: code as "ENCRYPTED" | "BROKEN" | "TOO_MANY" | "TOO_LARGE" };
+    }
+    return { status: "UNREADABLE", reason: "BROKEN" };
+  }
+  const list = readAttachments(res.value);
+  if (list === null) return { status: "UNREADABLE", reason: "BROKEN" };
+  const withXml = list
+    .filter((a): a is WorkerAttachment & { bytes: Uint8Array } => a.xml && a.bytes !== null && a.size <= MAX_PDF_ATTACHMENT_BYTES)
+    .map((a) => ({ ...a, name: normalizeAttachmentName(a.name) }));
+  const skipped = list.filter((a) => !a.xml && a.issue !== undefined && a.issue !== "NOT_XML").length;
+  // Name gewinnt (bei mehreren die letzte = neueste Fassung), sonst erste Anlage mit erkennbarer Rechnungs-XML.
+  const named = withXml.filter((a) => a.name !== null && INVOICE_FILE_NAMES.has(a.name.toLowerCase()));
+  const pick = named.length > 0 ? named[named.length - 1] : withXml.find((a) => isClassifiable(a.bytes));
+  if (!pick) return { status: "NO_INVOICE_XML", attachments: list.length, ...(skipped > 0 ? { skipped } : {}) };
+  return { status: "XML_FOUND", xml: pick.bytes, fileName: pick.name ?? "rechnung.xml", others: list.length - 1 };
 }

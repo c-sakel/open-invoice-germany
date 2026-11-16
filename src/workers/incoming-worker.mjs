@@ -10,13 +10,23 @@
  * Bibliothek, die beliebig viel dekomprimiert).
  */
 import { parentPort, workerData } from "node:worker_threads";
-import { inflateSync } from "node:zlib";
+import { constants, inflateSync } from "node:zlib";
 
-const MAX_ATTACHMENTS = 20;
-const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024;
-/** Summe der zurueckgegebenen XML-Kandidaten. */
-const MAX_RETURNED_BYTES = 30 * 1024 * 1024;
+// Grenzen kommen aus src/domain/incoming/limits.ts (workerData.params); dieses Skript hat keine Projekt-Importe.
+const PARAMS = workerData?.params ?? {};
+const MAX_ATTACHMENTS = PARAMS.maxAttachments;
+const MAX_ATTACHMENT_BYTES = PARAMS.maxAttachmentBytes;
+/** Summe aller entpackten Bytes (Gesamtgrenze gegen Summen-Bomben). */
+const MAX_TOTAL_BYTES = PARAMS.maxTotalBytes;
+/** Vorkommen von /EmbeddedFile, die ueberhaupt geprueft werden. */
+const MAX_CANDIDATES = PARAMS.maxCandidates;
 const MAX_NAMETEXT = 400;
+/** Suchbereiche sind kurz: nie Kopien ueber beliebig grosse Bereiche. */
+const LOOKBACK = 1024;
+const MAX_DICT_BYTES = 8192;
+const TAIL_BYTES = 64 * 1024;
+/** Zaehler fuer den Nachweis, dass nur Anlagen (nie Objektstroeme) entpackt werden. */
+const stats = { inflateCalls: 0, inflatedBytes: 0 };
 
 class JobError extends Error {
   constructor(code) {
@@ -33,20 +43,21 @@ function latin(buf, from, to) {
 
 /** Beginn des Objekts "N G obj", das die Position enthaelt; null wenn nicht gefunden. */
 function objectStart(buf, pos) {
-  const from = Math.max(0, pos - 4000);
-  const text = latin(buf, from, pos);
-  const re = /(\d+)\s+(\d+)\s+obj\b/g;
-  let m;
-  let last = null;
-  while ((m = re.exec(text)) !== null) last = { num: Number(m[1]), at: from + m.index, bodyAt: from + m.index + m[0].length };
-  return last;
+  const lo = Math.max(0, pos - LOOKBACK);
+  const idx = pos > 0 ? buf.lastIndexOf("obj", pos - 1) : -1;
+  if (idx < lo || idx < 0) return null;
+  if (idx > 0 && buf[idx - 1] === 0x64) return null; // "endobj": Position liegt ausserhalb eines Objekts
+  const from = Math.max(0, idx - 30);
+  const m = /(\d+)\s+(\d+)\s+$/.exec(latin(buf, from, idx));
+  if (!m) return null;
+  return { num: Number(m[1]), at: from + m.index, bodyAt: idx + 3 };
 }
 
 /** Letztes Vorkommen von "N G obj" (inkrementelle Updates: neuere Fassung gewinnt). */
 function findObject(buf, num) {
   const needle = Buffer.from(`${num} 0 obj`);
   let at = buf.lastIndexOf(needle);
-  while (at >= 0) {
+  for (let guard = 0; at >= 0 && guard < 64; guard++) {
     const before = at > 0 ? buf[at - 1] : 0x0a;
     if (!isWord(before)) return at + needle.length;
     at = buf.lastIndexOf(needle, at - 1);
@@ -103,7 +114,7 @@ function filespecNames(buf) {
   const key = Buffer.from("/EF");
   let from = 0;
   let guard = 0;
-  while (guard++ < 5000) {
+  while (guard++ < 1000) {
     const i = buf.indexOf(key, from);
     if (i < 0) break;
     from = i + key.length;
@@ -142,26 +153,56 @@ function looksLikeXml(b) {
   return b[i] === 0x3c;
 }
 
+/** Anfang eines Flate-Stroms: aus 2 KB Eingabe hoechstens ~2,1 MB Ausgabe (Flate: max. 1032:1); null bei Fehler. */
+function inflateHead(raw) {
+  try {
+    return inflateSync(raw.subarray(0, 2048), { finishFlush: constants.Z_SYNC_FLUSH, maxOutputLength: 3 * 1024 * 1024 });
+  } catch {
+    return null;
+  }
+}
+
+/** Ende des Stroms: /Length nur, wenn danach wirklich "endstream" folgt, sonst Suche. */
+function streamEnd(buf, p, len) {
+  if (len >= 0 && p + len <= buf.length) {
+    const tail = latin(buf, p + len, p + len + 16);
+    if (/^\s*endstream/.test(tail)) return p + len;
+  }
+  let e = buf.indexOf("endstream", p);
+  // Suche als Rueckfall: den Zeilenumbruch vor "endstream" nicht zur Anlage zaehlen.
+  if (e > p && buf[e - 1] === 0x0a) e--;
+  if (e > p && buf[e - 1] === 0x0d) e--;
+  return e;
+}
+
 function extract(input) {
   const buf = Buffer.from(input.buffer, input.byteOffset, input.byteLength);
-  if (buf.indexOf("%PDF-") < 0 || buf.indexOf("%PDF-") > 1024) throw new JobError("BROKEN");
-  if (buf.subarray(Math.max(0, buf.length - 2048)).indexOf("%%EOF") < 0) throw new JobError("BROKEN");
-  if (/\/Encrypt\b/.test(buf.toString("latin1"))) throw new JobError("ENCRYPTED");
+  const headAt = buf.subarray(0, 1024).indexOf("%PDF-");
+  if (headAt < 0) throw new JobError("BROKEN");
+  const tailStart = Math.max(0, buf.length - TAIL_BYTES);
+  const tailText = latin(buf, tailStart, buf.length);
+  if (tailText.indexOf("%%EOF") < 0) throw new JobError("BROKEN");
+  // Verschluesselung steht im Trailer bzw. Xref-Strom-Woerterbuch am Dateiende.
+  if (/\/Encrypt\b/.test(tailText)) throw new JobError("ENCRYPTED");
 
   // Kandidaten sammeln, je Objektnummer nur die letzte (neueste) Fassung.
   const found = new Map();
   const key = Buffer.from("/EmbeddedFile");
   let from = 0;
+  let seen = 0;
   for (;;) {
     const i = buf.indexOf(key, from);
     if (i < 0) break;
     from = i + key.length;
     if (isWord(buf[from] ?? 0)) continue; // /EmbeddedFiles (Namensbaum)
+    if (++seen > MAX_CANDIDATES) throw new JobError("TOO_MANY");
     const start = objectStart(buf, i);
     if (!start) continue;
-    const s = buf.indexOf("stream", i);
-    if (s < 0) continue;
+    const rel = buf.subarray(i, Math.min(buf.length, i + MAX_DICT_BYTES)).indexOf("stream");
+    if (rel < 0) continue;
+    const s = i + rel;
     if (s >= 3 && buf.subarray(s - 3, s).toString("latin1") === "end") continue;
+    if (s - start.bodyAt > MAX_DICT_BYTES) continue;
     const dict = latin(buf, start.bodyAt, s);
     if (!/\/Type\s*\/EmbeddedFile\b/.test(dict)) continue;
     found.set(start.num, { num: start.num, at: start.at, dict, streamAt: s });
@@ -171,50 +212,63 @@ function extract(input) {
   const names = filespecNames(buf);
 
   const attachments = [];
-  let returned = 0;
+  let total = 0;
   for (const e of entries) {
+    const name = names.get(e.num) ?? null;
+    const skip = (issue) => attachments.push({ name, size: 0, xml: false, bytes: null, issue });
     let p = e.streamAt + 6;
     if (buf[p] === 0x0d) p++;
     if (buf[p] === 0x0a) p++;
-    const len = resolveLength(buf, e.dict);
-    let end;
-    if (len >= 0) {
-      end = p + len;
-      if (end > buf.length) throw new JobError("BROKEN");
-    } else {
-      end = buf.indexOf("endstream", p);
-      if (end < 0) throw new JobError("BROKEN");
+    const end = streamEnd(buf, p, resolveLength(buf, e.dict));
+    if (end < 0) {
+      skip("BROKEN");
+      continue;
     }
     const raw = buf.subarray(p, end);
     const filters = [...e.dict.matchAll(/\/([A-Za-z0-9]+Decode|Crypt)\b/g)].map((m) => m[1]);
-    const name = names.get(e.num) ?? null;
-    if (filters.some((f) => f !== "FlateDecode")) {
-      attachments.push({ name, size: 0, xml: false, bytes: null });
+    if (filters.some((f) => f !== "FlateDecode") || filters.length > 1) {
+      skip("UNSUPPORTED");
       continue;
     }
     let data = raw;
-    if (filters.length > 0) {
+    if (filters.length === 1) {
+      // Nur die ersten Bytes entpacken; nur XML-artige Anlagen werden ganz entpackt.
+      const head = inflateHead(raw);
+      if (head === null) {
+        skip("BROKEN");
+        continue;
+      }
+      if (!looksLikeXml(head)) {
+        skip("NOT_XML");
+        continue;
+      }
       try {
-        data = inflateSync(raw, { maxOutputLength: MAX_ATTACHMENT_BYTES });
+        stats.inflateCalls++;
+        data = inflateSync(raw, { maxOutputLength: Math.min(MAX_ATTACHMENT_BYTES, Math.max(1, MAX_TOTAL_BYTES - total)) });
       } catch (err) {
         if (err && err.code === "ERR_BUFFER_TOO_LARGE") throw new JobError("TOO_LARGE");
-        throw new JobError("BROKEN");
+        skip("BROKEN");
+        continue;
       }
+      stats.inflatedBytes += data.length;
+    } else if (!looksLikeXml(raw)) {
+      skip("NOT_XML");
+      continue;
     } else if (raw.length > MAX_ATTACHMENT_BYTES) {
       throw new JobError("TOO_LARGE");
     }
-    const xml = looksLikeXml(data);
-    if (xml) {
-      returned += data.length;
-      if (returned > MAX_RETURNED_BYTES) throw new JobError("TOO_LARGE");
-    }
-    attachments.push({ name, size: data.length, xml, bytes: xml ? new Uint8Array(data) : null });
+    total += data.length;
+    if (total > MAX_TOTAL_BYTES) throw new JobError("TOO_LARGE");
+    attachments.push({ name, size: data.length, xml: true, bytes: new Uint8Array(data) });
   }
-  return { attachments };
+  return { attachments, stats };
 }
 
 try {
   if (workerData?.job !== "pdf-attachments") throw new JobError("UNKNOWN_JOB");
+  for (const v of [MAX_ATTACHMENTS, MAX_ATTACHMENT_BYTES, MAX_TOTAL_BYTES, MAX_CANDIDATES]) {
+    if (!Number.isSafeInteger(v) || v <= 0) throw new JobError("BAD_PARAMS");
+  }
   parentPort.postMessage({ ok: true, value: extract(workerData.input) });
 } catch (err) {
   // Nie Meldung oder Eingabeinhalt weitergeben, nur einen festen Code.

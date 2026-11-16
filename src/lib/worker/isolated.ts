@@ -10,6 +10,8 @@ export interface IsolatedJob<I> {
   /** Auftragsname; das Produktivskript kennt "pdf-attachments". */
   job: string;
   input: I;
+  /** Zahlengrenzen fuer das Worker-Skript (das Skript hat keine Projekt-Importe). */
+  params?: Record<string, number>;
   timeoutMs: number;
   maxHeapMb: number;
   /** Nur fuer Tests: anderes Worker-Skript. */
@@ -48,7 +50,9 @@ export function runIsolated<I, O>(spec: IsolatedJob<I>): Promise<IsolatedResult<
     };
     try {
       worker = new Worker(spec.scriptPath ?? workerScriptPath(), {
-        workerData: { job: spec.job, input: spec.input },
+        workerData: { job: spec.job, input: spec.input, params: spec.params ?? {} },
+        // Hinweis: env: {} sperrt weder Netz noch Dateizugriff des Threads. Der Schutz besteht nur darin,
+        // dass das Skript eigener Code ist, fremde Bytes nie ausfuehrt und Heap/Zeit begrenzt sind.
         env: {},
         stdout: true,
         stderr: true,

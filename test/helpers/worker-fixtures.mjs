@@ -8,6 +8,8 @@ if (workerData.job === "loop") {
 } else if (workerData.job === "heap") {
   const keep = [];
   for (;;) keep.push(new Array(100_000).fill({ a: keep.length }));
+} else if (workerData.job === "exit") {
+  process.exit(0);
 } else if (workerData.job === "throw") {
   throw new Error("GEHEIM " + String(workerData.input));
 } else {
