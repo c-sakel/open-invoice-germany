@@ -282,6 +282,41 @@ Die Liste zeigt neueste zuerst Lieferant, Rechnungsnummer, Datum, Betrag, Art (z
 - **Dateien:** Originaldatei, Rechnungs-XML und eingebettete Anlagen als Download. Vor der Ausgabe wird die Datei gegen ihre Prüfsumme geprüft.
 - **Druckansicht:** eine druckbare Fassung der Lesefassung samt Prüfergebnis (Browser-Druck).
 
+### Bearbeiten und freigeben
+
+Jede Eingangsrechnung hat einen Bearbeitungsstatus: **Neu**, **Geprüft**, **Freigegeben**, **Bezahlt** oder **Abgelehnt**. Die Reiter der Liste filtern danach; „Fällig (7 Tage)“ zeigt offene Rechnungen, die bis heute plus 7 Tage fällig sind, überfällige mit dem Vermerk „überfällig“. Über der Liste wählst du zusätzlich den Prüfstatus.
+
+- **Weiterschalten:** Neu → Geprüft → Freigegeben → Bezahlt. „Bezahlt“ ist nur ein **Merker** mit Zahltag (nicht in der Zukunft) und optionalem Vermerk. Die Anwendung bucht nichts, führt keine Überweisung aus und verbindet die Rechnung nicht mit Zahlungen oder dem Bankabgleich.
+- **Ablehnen und zurücksetzen** verlangen einen Grund (3 bis 500 Zeichen). Abgelehnt ist der Weg für irrtümlich oder doppelt abgelegte Rechnungen: Gelöscht wird nie, die Datei bleibt aufbewahrt. „Zurücksetzen“ führt einen Schritt zurück (aus „Abgelehnt“ nach „Neu“).
+- Jede Änderung steht mit Zeitpunkt im **Änderungsprotokoll**; die Begründungen sind Teil davon.
+- **Interne Notiz:** im Detail erfassbar, erscheint nie in Liste, Druckansicht, Exporten oder Mails. Im Änderungsprotokoll steht nur eine Prüfsumme mit der Länge.
+
+### Lieferant zuordnen
+
+Im Detail ordnest du die Rechnung einem vorhandenen **Kontakt** zu (Auswahl mit Suche; Vorschläge nach USt-IdNr. oder Name) oder legst aus den Angaben der Rechnung einen neuen an. Fehlt etwas Pflichtiges (z. B. das Land), fragt das Formular nach; geraten wird nichts. Die Zuordnung ist in „Neu“ und „Geprüft“ änderbar. Die Liste lässt sich nach dem zugeordneten Kontakt filtern.
+
+### Kopfdaten von Hand
+
+Liefert die Datei weder Rechnungsnummer noch Betrag (sonstige PDF oder Bilder, nicht auslesbare E-Rechnung), erfasst du Lieferant, Nummer, Datum, Bruttobetrag, Währung und Fälligkeit selbst. Die Angaben sind als „von Hand erfasst“ gekennzeichnet. Liefert die Datei die Daten, bleibt sie maßgeblich und die Erfassung ist gesperrt.
+
+### Zahlung prüfen
+
+Das Detail zeigt Empfänger, IBAN, BIC und Verwendungszweck aus der Rechnung, die Fälligkeit und die Skontostufen (bis, Satz, Abzug, Zahlbetrag). Dazu:
+
+- **GiroCode** (EPC-QR) für die Überweisung in Euro, bei Skonto je Stufe bis zum Fristtag zusätzlich. Kein GiroCode bei Fremdwährung, Lastschrift, Karte, Verrechnung mit Gutschrift oder ungültiger IBAN; der Grund steht dabei.
+- **Warnung bei geänderter IBAN:** Weicht die IBAN von der letzten Rechnung desselben Lieferanten ab, erscheint eine deutliche Warnung mit der früheren IBAN; die neue Bankverbindung ist beim Lieferanten bestätigen zu lassen (bekanntes Betrugsmuster). Liegt keine frühere IBAN vor, steht ein Hinweis, dass kein Vergleich möglich ist.
+- Die Anwendung veranlasst keine Zahlung. Du überweist selbst in deinem Online-Banking.
+
+### Benachrichtigung zur Fälligkeit
+
+Die Glocke meldet „Eingangsrechnung fällig“ ab 3 Tage vor der Fälligkeit und einmal bei Überfälligkeit (nur offene Rechnungen: Neu, Geprüft, Freigegeben). Die Meldung lässt sich unter Einstellungen → Benachrichtigungen abwählen; sie enthält keine Notiz.
+
+### Übergabe an die Buchhaltung
+
+Im Menü „Eingang“ wählst du einen Zeitraum nach Eingangsdatum (höchstens 366 Tage) und lädst ein **ZIP** mit den Originalen (`belege/`, bei Hybrid-Rechnungen auch die XML), der Tabelle `eingangsrechnungen.csv` und einer Lies-mich-Datei. Abgelehnte Rechnungen sind nur auf Wunsch dabei. Das ZIP enthält keine internen Notizen und keine Zahlungsvermerke; Grenzen: 2.000 Dateien, 500 MB. Auch der **Prüferexport** (Einstellungen → Prüfung) enthält die Eingangsrechnungen mit Originalen im Ordner `eingang/`.
+
+REST und MCP bieten dieselben Schritte: [API.md](API.md#eingangsrechnungen), [MCP.md](MCP.md#eingangsrechnungen).
+
 ### Weitere Hinweise
 
 - **Mögliche Dublette:** Dieselbe Rechnungsnummer desselben Lieferanten in einer anderen Datei wird angenommen und gekennzeichnet.

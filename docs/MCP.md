@@ -315,7 +315,7 @@ Rechnungen von Lieferanten annehmen, lesen und prüfen (UBL/CII-XML, PDF mit ein
 | Tool | Zweck | Beispiel |
 |---|---|---|
 | `receive_incoming_invoice` | Datei als Base64 (`contentBase64`, dekodiert höchstens 2 MB, `fileName`) annehmen; dieselbe Datei nur einmal (`ALREADY_RECEIVED`); höchstens 60 je Minute und Firma; größere Dateien über REST oder die Oberfläche | „Lege diese Rechnung des Lieferanten ab." |
-| `list_incoming_invoices` | Auflisten (neueste zuerst; Filter `status`, `validationStatus`, `kind`, `receivedFrom`, `receivedTo`, `supplier`; `updatedSince` und `cursor` für den Abgleich) | „Welche Eingangsrechnungen sind fehlerhaft?" |
+| `list_incoming_invoices` | Auflisten (neueste zuerst; Filter `status`, `validationStatus`, `kind`, `receivedFrom`, `receivedTo`, `supplier`, `due`, `supplierContactId`; `updatedSince` und `cursor` für den Abgleich) | „Welche Eingangsrechnungen sind fehlerhaft?" |
 | `get_incoming_invoice` | Kopf, Lesefassung (Parteien, höchstens 200 Positionen mit `linesTruncated`, Steuern, Summen, Zahlung, Hinweise) und letztes Prüfergebnis | „Zeig Eingangsrechnung …" |
 | `validate_incoming_invoice` | Prüfung gegen EN 16931 und XRechnung erneut ausführen (neue, unveränderliche Ergebniszeile; höchstens 10 je Minute) | „Prüfe die Rechnung noch einmal." |
 | `set_incoming_invoice_status` | Bearbeitungsstatus ändern: `CHECK`, `APPROVE`, `MARK_PAID` (nur ein Merker mit `paidOn` und optionalem `paidNote`, keine Buchung), `REJECT` und `REVERT` (mit `reason`, 3 bis 500 Zeichen); Ergebnis wie das REST-Detail mit `allowedActions` | „Gib die Eingangsrechnung frei." |
