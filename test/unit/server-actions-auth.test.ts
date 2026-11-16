@@ -6,6 +6,7 @@
 import { describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
+import ts from "typescript";
 
 vi.mock("next/cache", () => ({ revalidatePath: () => undefined }));
 vi.mock("@/lib/auth/server", () => ({ getCurrentUserId: async () => null }));
@@ -34,6 +35,29 @@ describe("Server-Aktionen verlangen eine Sitzung", () => {
     expect(src).not.toMatch(/getActiveOrg\b/);
     expect(src).not.toMatch(/getCurrentUserId\b/);
     expect(src).not.toMatch(/\?\?\s*"system"/);
+  });
+
+  it.each(serverFiles.filter((f) => !PUBLIC_ACTIONS.has(f)))("%s: jede exportierte Aktion pruft die Sitzung selbst", (rel) => {
+    const file = path.join(ROOT, rel);
+    const source = ts.createSourceFile(file, fs.readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true);
+    const exported: { name: string; text: string }[] = [];
+    // Lokale Huell-Funktionen (nicht exportiert), die selbst die Sitzung verlangen, z. B. ctx() oder guard().
+    const helpers = new Set<string>(["requireActionOrg", "requireSessionActor"]);
+    const AUTH = (text: string): boolean => [...helpers].some((h) => new RegExp(`\\b${h}\\(`).test(text));
+    for (const st of source.statements) {
+      const isExported = ts.canHaveModifiers(st) && ts.getModifiers(st)?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
+      if (ts.isFunctionDeclaration(st) && st.name) {
+        if (isExported) exported.push({ name: st.name.text, text: st.getText() });
+        else if (AUTH(st.getText())) helpers.add(st.name.text);
+      } else if (ts.isVariableStatement(st)) {
+        for (const d of st.declarationList.declarations) {
+          if (isExported) exported.push({ name: d.name.getText(), text: d.getText() });
+          else if (AUTH(d.getText())) helpers.add(d.name.getText());
+        }
+      }
+    }
+    const missing = exported.filter((e) => !AUTH(e.text)).map((e) => e.name);
+    expect(missing).toEqual([]);
   });
 
   it("ohne Sitzung: Abbruch mit festem Fehler und ohne Schreibwirkung", async () => {

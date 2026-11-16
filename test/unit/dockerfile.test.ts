@@ -101,6 +101,14 @@ describe("Dockerfile", () => {
     for (const f of ["gen-base-cii.xml", "cii-summen-falsch.xml"]) expect(read(`test/fixtures/incoming/${f}`).length).toBeGreaterThan(100);
   });
 
+  it("docker.yml laedt imapflow und den Mail-Worker im Image wie in der Anwendung", () => {
+    const wf = read(".github/workflows/docker.yml");
+    expect(wf).toMatch(/--user 1000:1000 --entrypoint node oig:ci --input-type=module - < scripts\/probe-mail-runtime\.mjs/);
+    const probe = read("scripts/probe-mail-runtime.mjs");
+    expect(probe).toContain('import("imapflow")');
+    expect(probe).toContain("mail-worker.mjs");
+  });
+
   it("next.config.ts nimmt Worker-Skript und Pruefartefakte ins Tracing auf", () => {
     const cfg = read("next.config.ts");
     expect(cfg).toContain("outputFileTracingIncludes");
