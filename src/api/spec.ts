@@ -52,6 +52,8 @@ export interface RouteSpec {
   errors: number[];
   /** Zusatztext je Fehlerstatus (z. B. fachliche Codes), wird an die Standardbeschreibung angehaengt. */
   errorNotes?: Partial<Record<number, string>>;
+  /** Antwort ist eine Datei (Bytes statt JSON-Umschlag): Medientyp und Beschreibung der Erfolgsantwort. */
+  binary?: { contentType: string; description: string };
   /** Weitere Antwort-Medientypen der Erfolgsantwort neben application/json (z. B. text/csv). */
   alternateContent?: Record<string, { description: string }>;
 }

@@ -40,3 +40,8 @@ export const MAX_LIST_ITEMS = 200;
 
 /** Betraege aus fremden Dateien: groesster zulaessiger Betrag in Cent (Spaltenbreite Int32). */
 export const MAX_AMOUNT_CENTS = 2_147_483_647;
+
+/** Positionen je Antwort des MCP-Werkzeugs (die Antwort geht durch den Modellkontext). */
+export const MAX_MCP_LINES = 200;
+/** Manuelle Pruefungen je Minute und Firma (jede Pruefung startet einen eigenen Prozess). */
+export const INCOMING_VALIDATE_PER_MINUTE = 10;

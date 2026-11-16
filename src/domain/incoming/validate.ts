@@ -5,10 +5,11 @@
  * Pruefung gleichzeitig. Jede Pruefung legt eine neue, unveraenderliche Ergebniszeile an.
  */
 import { dbInternal } from "@/lib/db";
+import { rateLimit } from "@/lib/rate-limit";
 import { NotFoundError } from "@/domain/errors";
 import { getIncomingFile } from "./files";
 import { selectEngine, type EngineOutcome, type NotCheckedReason, type ValidationEngine } from "./engine";
-import { VALIDATE_TIMEOUT_MS } from "./limits";
+import { INCOMING_VALIDATE_PER_MINUTE, VALIDATE_TIMEOUT_MS } from "./limits";
 
 export type IncomingValidationResult = "VALID" | "WARNINGS" | "INVALID" | "NOT_CHECKED" | "NOT_APPLICABLE";
 
@@ -109,6 +110,12 @@ export async function validateIncomingInvoice(
     });
     return { result, validationId: created.id };
   });
+}
+
+/** Manuelle Pruefung (REST, MCP, Oberflaeche): wie `validateIncomingInvoice`, aber je Firma auf wenige Laeufe je Minute begrenzt. */
+export function requestIncomingValidation(orgId: string, id: string, opts: ValidateOptions = {}): ReturnType<typeof validateIncomingInvoice> {
+  rateLimit(`incoming-validate:${orgId}`, { limit: INCOMING_VALIDATE_PER_MINUTE, windowMs: 60_000 });
+  return validateIncomingInvoice(orgId, id, opts);
 }
 
 /** Reiht eine Pruefung ein; Fehler werden nur mit Id und Code protokolliert (nie mit Dateiinhalt). */
