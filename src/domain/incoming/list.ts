@@ -208,3 +208,11 @@ export async function getIncomingInvoiceDetail(orgId: string, id: string, opts: 
     : null;
   return { header, view, validation, validations };
 }
+
+/** Anzahl je Pruefstatus fuer die Reiter der Oberflaeche (nur die eigene Organisation). */
+export async function countIncomingByValidationStatus(orgId: string): Promise<Record<string, number>> {
+  const groups = await dbInternal.incomingInvoice.groupBy({ by: ["validationStatus"], where: { orgId }, _count: { _all: true } });
+  const out: Record<string, number> = {};
+  for (const g of groups) out[g.validationStatus] = g._count._all;
+  return out;
+}
