@@ -197,6 +197,41 @@ describe("withApi — Body-Limit (Should-fix 5)", () => {
     expect(j.error.code).toBe("PAYLOAD_TOO_LARGE");
   });
 
+  it("chunked Body ohne Content-Length ueber dem Limit -> 413, Stream wird abgebrochen", async () => {
+    const key = await issueKey({ scopes: ["write"] });
+    let pulled = 0;
+    let cancelled = false;
+    const enc = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled++;
+        controller.enqueue(enc.encode("x".repeat(16)));
+        if (pulled > 10_000) controller.close();
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const r = new Request("http://x/api/v1/echo", {
+      method: "POST",
+      headers: { authorization: `Bearer ${key.token}`, "content-type": "application/json" },
+      body: stream,
+      duplex: "half",
+    } as RequestInit & { duplex: "half" });
+    expect(r.headers.get("content-length")).toBeNull();
+    const res = await smallLimitPost(r);
+    expect(res.status).toBe(413);
+    expect(cancelled).toBe(true);
+    expect(pulled).toBeLessThan(100);
+  });
+
+  it("Mehrbyte-Zeichen im Body werden unveraendert dekodiert", async () => {
+    const key = await issueKey({ scopes: ["write"] });
+    const res = await smallLimitPost(req("http://x/api/v1/echo", { method: "POST", token: key.token, body: { t: "äöü€" } }));
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.received).toEqual({ t: "äöü€" });
+  });
+
   it("Body unter dem Limit -> normale Verarbeitung", async () => {
     const key = await issueKey({ scopes: ["write"] });
     const res = await smallLimitPost(req("http://x/api/v1/echo", { method: "POST", token: key.token, body: { a: 1 } }));

@@ -25,6 +25,17 @@ const MAX_NAMETEXT = 400;
 const LOOKBACK = 1024;
 const MAX_DICT_BYTES = 8192;
 const TAIL_BYTES = 64 * 1024;
+/** Nachsuche nach dem Ende eines Stroms: nie weiter als die zulaessige Anlagengroesse plus Rahmen. */
+const STREAM_END_SLACK = 64;
+/** Hoechstens so viele Fundstellen je gesuchtem Objekt (inkrementelle Updates). */
+const FIND_OBJECT_GUARD = 8;
+const TYPE_EMBEDDED_RE = /\/Type\s*\/EmbeddedFile\b/;
+const ENCRYPT_RE = /\/Encrypt\b/;
+const FILTER_RE = /\/([A-Za-z0-9]+Decode|Crypt)\b/g;
+const OBJ_NUM_RE = /(\d+)\s+(\d+)\s+$/;
+const DIRECT_LENGTH_RE = /\/Length\s+(\d+)(?!\s+\d+\s+R)/;
+const REF_LENGTH_RE = /\/Length\s+(\d+)\s+\d+\s+R/;
+const ENDSTREAM_TAIL_RE = /^\s*endstream/;
 /** Zaehler fuer den Nachweis, dass nur Anlagen (nie Objektstroeme) entpackt werden. */
 const stats = { inflateCalls: 0, inflatedBytes: 0 };
 
@@ -44,20 +55,29 @@ function latin(buf, from, to) {
 /** Beginn des Objekts "N G obj", das die Position enthaelt; null wenn nicht gefunden. */
 function objectStart(buf, pos) {
   const lo = Math.max(0, pos - LOOKBACK);
-  const idx = pos > 0 ? buf.lastIndexOf("obj", pos - 1) : -1;
-  if (idx < lo || idx < 0) return null;
+  // Nur das feste Fenster durchsuchen (nie bis zum Dateianfang).
+  const rel = pos > lo ? buf.subarray(lo, pos).lastIndexOf("obj") : -1;
+  if (rel < 0) return null;
+  const idx = lo + rel;
   if (idx > 0 && buf[idx - 1] === 0x64) return null; // "endobj": Position liegt ausserhalb eines Objekts
   const from = Math.max(0, idx - 30);
-  const m = /(\d+)\s+(\d+)\s+$/.exec(latin(buf, from, idx));
+  const m = OBJ_NUM_RE.exec(latin(buf, from, idx));
   if (!m) return null;
   return { num: Number(m[1]), at: from + m.index, bodyAt: idx + 3 };
 }
 
 /** Letztes Vorkommen von "N G obj" (inkrementelle Updates: neuere Fassung gewinnt). */
-function findObject(buf, num) {
+function findObject(buf, num, cache) {
+  if (cache.has(num)) return cache.get(num);
+  const at = findObjectUncached(buf, num);
+  cache.set(num, at);
+  return at;
+}
+
+function findObjectUncached(buf, num) {
   const needle = Buffer.from(`${num} 0 obj`);
   let at = buf.lastIndexOf(needle);
-  for (let guard = 0; at >= 0 && guard < 64; guard++) {
+  for (let guard = 0; at >= 0 && guard < FIND_OBJECT_GUARD; guard++) {
     const before = at > 0 ? buf[at - 1] : 0x0a;
     if (!isWord(before)) return at + needle.length;
     at = buf.lastIndexOf(needle, at - 1);
@@ -132,12 +152,12 @@ function filespecNames(buf) {
   return names;
 }
 
-function resolveLength(buf, dict) {
-  const direct = /\/Length\s+(\d+)(?!\s+\d+\s+R)/.exec(dict);
+function resolveLength(buf, dict, cache) {
+  const direct = DIRECT_LENGTH_RE.exec(dict);
   if (direct) return Number(direct[1]);
-  const ref = /\/Length\s+(\d+)\s+\d+\s+R/.exec(dict);
+  const ref = REF_LENGTH_RE.exec(dict);
   if (ref) {
-    const at = findObject(buf, Number(ref[1]));
+    const at = findObject(buf, Number(ref[1]), cache);
     if (at >= 0) {
       const m = /^\s*(\d+)/.exec(latin(buf, at, at + 40));
       if (m) return Number(m[1]);
@@ -166,9 +186,12 @@ function inflateHead(raw) {
 function streamEnd(buf, p, len) {
   if (len >= 0 && p + len <= buf.length) {
     const tail = latin(buf, p + len, p + len + 16);
-    if (/^\s*endstream/.test(tail)) return p + len;
+    if (ENDSTREAM_TAIL_RE.test(tail)) return p + len;
   }
-  let e = buf.indexOf("endstream", p);
+  // Suchfenster: hoechstens die zulaessige Anlagengroesse (komprimiert nie groesser) plus Rahmen.
+  const limit = Math.min(buf.length, p + MAX_ATTACHMENT_BYTES + STREAM_END_SLACK);
+  const rel = buf.subarray(p, limit).indexOf("endstream");
+  let e = rel < 0 ? -1 : p + rel;
   // Suche als Rueckfall: den Zeilenumbruch vor "endstream" nicht zur Anlage zaehlen.
   if (e > p && buf[e - 1] === 0x0a) e--;
   if (e > p && buf[e - 1] === 0x0d) e--;
@@ -182,8 +205,9 @@ function extract(input) {
   const tailStart = Math.max(0, buf.length - TAIL_BYTES);
   const tailText = latin(buf, tailStart, buf.length);
   if (tailText.indexOf("%%EOF") < 0) throw new JobError("BROKEN");
-  // Verschluesselung steht im Trailer bzw. Xref-Strom-Woerterbuch am Dateiende.
-  if (/\/Encrypt\b/.test(tailText)) throw new JobError("ENCRYPTED");
+  // Verschluesselung steht im Trailer bzw. Xref-Strom-Woerterbuch am Dateiende, bei linearisierten
+  // PDFs zusaetzlich im Trailer der ersten Seite am Dateianfang.
+  if (ENCRYPT_RE.test(tailText) || ENCRYPT_RE.test(latin(buf, 0, TAIL_BYTES))) throw new JobError("ENCRYPTED");
 
   // Kandidaten sammeln, je Objektnummer nur die letzte (neueste) Fassung.
   const found = new Map();
@@ -204,7 +228,7 @@ function extract(input) {
     if (s >= 3 && buf.subarray(s - 3, s).toString("latin1") === "end") continue;
     if (s - start.bodyAt > MAX_DICT_BYTES) continue;
     const dict = latin(buf, start.bodyAt, s);
-    if (!/\/Type\s*\/EmbeddedFile\b/.test(dict)) continue;
+    if (!TYPE_EMBEDDED_RE.test(dict)) continue;
     found.set(start.num, { num: start.num, at: start.at, dict, streamAt: s });
     if (found.size > MAX_ATTACHMENTS) throw new JobError("TOO_MANY");
   }
@@ -212,6 +236,7 @@ function extract(input) {
   const names = filespecNames(buf);
 
   const attachments = [];
+  const lengthCache = new Map();
   let total = 0;
   for (const e of entries) {
     const name = names.get(e.num) ?? null;
@@ -219,13 +244,13 @@ function extract(input) {
     let p = e.streamAt + 6;
     if (buf[p] === 0x0d) p++;
     if (buf[p] === 0x0a) p++;
-    const end = streamEnd(buf, p, resolveLength(buf, e.dict));
+    const end = streamEnd(buf, p, resolveLength(buf, e.dict, lengthCache));
     if (end < 0) {
       skip("BROKEN");
       continue;
     }
     const raw = buf.subarray(p, end);
-    const filters = [...e.dict.matchAll(/\/([A-Za-z0-9]+Decode|Crypt)\b/g)].map((m) => m[1]);
+    const filters = [...e.dict.matchAll(FILTER_RE)].map((m) => m[1]);
     if (filters.some((f) => f !== "FlateDecode") || filters.length > 1) {
       skip("UNSUPPORTED");
       continue;
@@ -246,7 +271,14 @@ function extract(input) {
         stats.inflateCalls++;
         data = inflateSync(raw, { maxOutputLength: Math.min(MAX_ATTACHMENT_BYTES, Math.max(1, MAX_TOTAL_BYTES - total)) });
       } catch (err) {
-        if (err && err.code === "ERR_BUFFER_TOO_LARGE") throw new JobError("TOO_LARGE");
+        if (err && err.code === "ERR_BUFFER_TOO_LARGE") {
+          // Einzelgrenze: nur diese Anlage ueberspringen; Gesamtgrenze: Abbruch.
+          if (MAX_TOTAL_BYTES - total >= MAX_ATTACHMENT_BYTES) {
+            skip("TOO_LARGE");
+            continue;
+          }
+          throw new JobError("TOO_LARGE");
+        }
         skip("BROKEN");
         continue;
       }
@@ -255,7 +287,8 @@ function extract(input) {
       skip("NOT_XML");
       continue;
     } else if (raw.length > MAX_ATTACHMENT_BYTES) {
-      throw new JobError("TOO_LARGE");
+      skip("TOO_LARGE");
+      continue;
     }
     total += data.length;
     if (total > MAX_TOTAL_BYTES) throw new JobError("TOO_LARGE");

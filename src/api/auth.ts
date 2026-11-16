@@ -101,6 +101,27 @@ function invalidIdempotencyKeyError(): z.ZodError {
   return new z.ZodError([{ code: "custom", path: ["Idempotency-Key"], message: `Idempotency-Key muss 1..${MAX_IDEMPOTENCY_KEY_LENGTH} Zeichen lang sein.` }]);
 }
 
+/** Body als UTF-8-Text lesen: der Stream wird mit Byte-Zaehler gelesen und beim Ueberschreiten der
+ *  Grenze sofort abgebrochen (auch chunked bzw. ohne oder mit falschem Content-Length). */
+async function readBodyTextLimited(req: Request, maxBytes: number): Promise<string> {
+  if (!req.body) return "";
+  const tooLarge = () => new PayloadTooLargeError(`Request-Body ueberschreitet das Limit von ${maxBytes} Bytes.`);
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => undefined);
+      throw tooLarge();
+    }
+    chunks.push(value);
+  }
+  return new TextDecoder("utf-8").decode(Buffer.concat(chunks));
+}
+
 /** Marker-Property (Fix-Welle, Nit 12): am Rueckgabewert von `withApi` gesetzt, damit ein
  *  Test jede exportierte GET/POST/PATCH/PUT/DELETE-Funktion unter src/app/api/v1 darauf
  *  pruefen kann, ob sie tatsaechlich ein withApi-Produkt ist — `discoverRouteSpecs`
@@ -146,11 +167,8 @@ export function withApi<TParams = Record<string, string>>(
         if (contentLength && Number(contentLength) > maxBodyBytes) {
           throw new PayloadTooLargeError(`Request-Body ueberschreitet das Limit von ${maxBodyBytes} Bytes.`);
         }
-        rawBody = await req.text();
+        rawBody = await readBodyTextLimited(req, maxBodyBytes);
         trace.rawBody = rawBody;
-        if (Buffer.byteLength(rawBody, "utf8") > maxBodyBytes) {
-          throw new PayloadTooLargeError(`Request-Body ueberschreitet das Limit von ${maxBodyBytes} Bytes.`);
-        }
         if (rawBody) {
           try {
             body = JSON.parse(rawBody);

@@ -21,6 +21,7 @@ vi.mock("@/lib/auth/server", () => ({ getCurrentUserId: async () => "tester" }))
 import { dbInternal } from "@/lib/db";
 import { createApiKey } from "@/domain/api-key/create";
 import { resetRateLimits } from "@/lib/rate-limit";
+import { archiveRoot } from "@/lib/archive/storage";
 import { server } from "@/mcp/server";
 import { GET as listGet, POST as receivePost } from "@/app/api/v1/IncomingInvoice/route";
 import { GET as detailGet } from "@/app/api/v1/IncomingInvoice/[id]/route";
@@ -365,6 +366,66 @@ describe("Session-Upload und Session-Downloads", () => {
       expect(await foreign.text()).toBe(await unknown.text());
     } finally {
       orgStore.id = orgId;
+    }
+  });
+});
+
+describe("Grenzen und manipuliertes Archiv", () => {
+  it("11. manuelle Pruefung je Minute -> 429 (REST), danach MCP gleich", async () => {
+    for (let i = 0; i < 10; i++) {
+      const r = await validatePost(req(`/api/v1/IncomingInvoice/${ublId}/validate`, writeToken, { method: "POST" }), params(ublId));
+      expect(r.status).toBe(200);
+    }
+    const limited = await validatePost(req(`/api/v1/IncomingInvoice/${ublId}/validate`, writeToken, { method: "POST" }), params(ublId));
+    expect(limited.status).toBe(429);
+    expect((await json(limited)).error?.code).toBe("RATE_LIMITED");
+
+    resetRateLimits();
+    for (let i = 0; i < 10; i++) expect((await call("validate_incoming_invoice", { incomingInvoiceId: ublId })).isError).toBeUndefined();
+    const mcp = await call("validate_incoming_invoice", { incomingInvoiceId: ublId });
+    expect(mcp.isError).toBe(true);
+    expect(mcp.content[0]!.text).toMatch(/Zu viele Anfragen/);
+  });
+
+  it("MCP-Annahme: 61. Aufruf je Minute und Firma abgewiesen, Base64 ueber der Grenze schon im Schema", async () => {
+    for (let i = 0; i < 60; i++) await call("receive_incoming_invoice", { contentBase64: "", fileName: "x.xml" });
+    const limited = await call("receive_incoming_invoice", { contentBase64: b64(png(300)), fileName: "x.png" });
+    expect(limited.isError).toBe(true);
+    expect(limited.content[0]!.text).toMatch(/Zu viele Anfragen/);
+
+    resetRateLimits();
+    const tooBig = await call("receive_incoming_invoice", { contentBase64: "A".repeat(Math.ceil((2 * 1024 * 1024 * 4) / 3) + 17), fileName: "gross.xml" });
+    expect(tooBig.isError).toBe(true);
+    expect(tooBig.content[0]!.text).toMatch(/zu gross/);
+    expect(tooBig.content[0]!.text).toContain("REST");
+  });
+
+  it("Session-Upload: 61. Aufruf je Minute und Firma -> 429 mit Retry-After", async () => {
+    for (let i = 0; i < 60; i++) expect((await uploadPost(await multipart({}))).status).toBe(400);
+    const limited = await uploadPost(await multipart({}));
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("retry-after")).not.toBeNull();
+  });
+
+  it("manipulierte Archivdatei -> 500 mit festem Text ohne Dateiinhalt (REST und Session, file und attachment)", async () => {
+    const SECRET = "GEHEIMER-INHALT-NIE-AUSGEBEN";
+    const att = await json(await receive(writeToken, Buffer.concat([fx("ubl-anlage-bg24.xml"), Buffer.from("\n<!-- tamper -->\n")]), "tamper.xml"));
+    const id = att.data.id as string;
+    const row = await dbInternal.incomingInvoice.findUniqueOrThrow({ where: { id }, select: { originalPath: true } });
+    await fsp.writeFile(path.join(archiveRoot(), ...row.originalPath.split("/")), SECRET);
+
+    const responses = [
+      await fileGet(req(`/api/v1/IncomingInvoice/${id}/file`, readToken), params(id)),
+      await attGet(req(`/api/v1/IncomingInvoice/${id}/attachment/0`, readToken), attParams(id, "0")),
+      await sessionFileGet(new Request(`http://x/api/incoming-invoices/${id}/file`), params(id)),
+      await sessionAttGet(new Request(`http://x/api/incoming-invoices/${id}/attachment/0`), attParams(id, "0")),
+    ];
+    for (const res of responses) {
+      expect(res.status).toBe(500);
+      const text = await res.text();
+      expect(text).not.toContain(SECRET);
+      expect(text).not.toContain("Rechnung");
+      expect(res.headers.get("content-disposition")).toBeNull();
     }
   });
 });

@@ -8,7 +8,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { NotFoundError } from "@/domain/errors";
-import { RateLimitError } from "@/lib/rate-limit";
+import { RateLimitError, rateLimit } from "@/lib/rate-limit";
 import { decodeIncomingBase64 } from "@/domain/incoming/base64";
 import { IncomingBusyError, IncomingDuplicateError, IncomingFormatError } from "@/domain/incoming/errors";
 import { MAX_INCOMING_MCP_BYTES, MAX_MCP_LINES } from "@/domain/incoming/limits";
@@ -30,6 +30,13 @@ function incomingFailure(ctx: McpToolsContext, e: unknown): Result {
   return ctx.failUnknown(e);
 }
 
+/** Eingabe des MCP-Werkzeugs: Base64 hoechstens fuer 2 MB (plus Rahmen), bevor die Annahme prueft (Speicher, Modellkontext). */
+const mcpReceiveInputSchema = z.object({
+  contentBase64: z.string().min(1).max(Math.ceil((MAX_INCOMING_MCP_BYTES * 4) / 3) + 16, `Die Datei ist zu gross (maximal 2 MB).${TOO_LARGE_HINT}`),
+  fileName: incomingReceiveInputSchema.shape.fileName,
+});
+const MCP_RECEIVE_PER_MINUTE = 60;
+
 const idSchema = z.string().min(1).max(64).describe("ID der Eingangsrechnung (aus list_incoming_invoices)");
 
 export function registerIncomingTools(server: McpServer, ctx: McpToolsContext): void {
@@ -42,12 +49,13 @@ export function registerIncomingTools(server: McpServer, ctx: McpToolsContext): 
       description:
         "Nimmt eine Eingangsrechnung (XML nach UBL/CII, PDF mit eingebetteter XML oder Bild) als Base64 an (`contentBase64`, dekodiert höchstens 2 MB; größere Dateien über REST oder die Oberfläche). " +
         "Die Datei wird unverändert und unveränderlich abgelegt und nie gelöscht. Es wird nichts gebucht. Dieselbe Datei wird nur einmal angenommen.",
-      inputSchema: incomingReceiveInputSchema.shape,
+      inputSchema: mcpReceiveInputSchema.shape,
     },
     async (args): Promise<Result> => {
       try {
         const org = await ctx.requireOrg();
-        const input = incomingReceiveInputSchema.parse(args);
+        rateLimit(`incoming-receive-mcp:${org.id}`, { limit: MCP_RECEIVE_PER_MINUTE, windowMs: 60_000 });
+        const input = mcpReceiveInputSchema.parse(args);
         const bytes = decodeIncomingBase64(input.contentBase64, MAX_INCOMING_MCP_BYTES);
         const result = await receiveIncomingInvoice(org.id, bytes, { fileName: input.fileName, channel: "MCP", actor: "mcp" });
         return json(serializeReceiveResult(result));

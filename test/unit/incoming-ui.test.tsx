@@ -14,6 +14,7 @@ const { IncomingInvoiceView } = await import("@/components/incoming/IncomingInvo
 const { ValidationResult } = await import("@/components/incoming/ValidationResult");
 const { IncomingList } = await import("@/components/incoming/IncomingList");
 const { PrintHeader } = await import("@/components/incoming/PrintHeader");
+const { PrintArea, INCOMING_PRINT_AREA_ID } = await import("@/components/incoming/PrintArea");
 const { IncomingDropzone } = await import("@/components/incoming/IncomingDropzone");
 const { RevalidateButton } = await import("@/components/incoming/RevalidateButton");
 const { classifyUploadReply, planUploads, formatIncomingMoney } = await import("@/components/incoming/incoming-ui");
@@ -122,6 +123,15 @@ describe("Prüfergebnis", () => {
 });
 
 describe("Druckansicht und Liste", () => {
+  it("Druckbereich hat eine eigene Id und blendet beim Drucken alles andere aus", () => {
+    const html = renderToStaticMarkup(<PrintArea><p>Inhalt</p></PrintArea>);
+    expect(html).toContain(`id="${INCOMING_PRINT_AREA_ID}"`);
+    expect(html).toContain("@media print");
+    expect(html).toContain("body * { visibility: hidden; }");
+    expect(html).toContain(`#${INCOMING_PRINT_AREA_ID} *`);
+    expect(html).toContain("Inhalt");
+  });
+
   it("Druckkopf nennt die Originaldatei, den Eingangszeitpunkt und den SHA-256", () => {
     const sha = "a".repeat(64);
     const html = renderToStaticMarkup(<PrintHeader receivedAt="2026-11-16T10:00:00.000Z" sha256={sha} fileName="r.xml" />);

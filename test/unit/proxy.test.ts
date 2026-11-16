@@ -41,6 +41,16 @@ describe("proxy", () => {
     expect(res.status).toBe(401);
   });
 
+  it("Downloads und Upload der Eingangsrechnungen ohne Cookie -> 401, Druckansicht -> Redirect /login", async () => {
+    for (const p of ["/api/incoming-invoices/x/file", "/api/incoming-invoices/x/attachment/0"]) {
+      expect((await proxy(new NextRequest(`http://localhost${p}`))).status).toBe(401);
+    }
+    expect((await proxy(new NextRequest("http://localhost/api/incoming-invoices", { method: "POST" }))).status).toBe(401);
+    const page = await proxy(new NextRequest("http://localhost/eingang/x/druck"));
+    expect(page.status).toBe(307);
+    expect(page.headers.get("location")).toContain("/login");
+  });
+
   it("/api/imports/contacts ohne Cookie -> 401, /kunden/import -> Redirect /login (Phase 18b)", async () => {
     expect((await proxy(new NextRequest("http://localhost/api/imports/contacts"))).status).toBe(401);
     const page = await proxy(new NextRequest("http://localhost/kunden/import"));

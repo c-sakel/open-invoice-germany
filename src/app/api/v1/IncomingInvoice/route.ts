@@ -49,10 +49,11 @@ export const spec = {
     scope: "write",
     request: { body: incomingReceiveInputSchema },
     response: apiDataResponseSchema(incomingReceiveResultSchema),
-    errors: [400, 401, 403, 409, 413, 422, 429, 503],
+    errors: [400, 401, 403, 409, 413, 422, 429, 500, 503],
     errorNotes: {
       409: "ALREADY_RECEIVED: dieselbe Datei wurde schon angenommen (details.incomingInvoiceId).",
       422: "Dateifehler mit fachlichem Code in error.reason (z. B. FORBIDDEN_MARKUP, ZIP_NOT_SUPPORTED, NOT_UTF8, MALFORMED).",
+      500: "Interner Fehler (z. B. Ablage nicht verfügbar); die Datei wurde nicht angenommen, später erneut versuchen.",
       503: "Die Annahme ist ausgelastet; später erneut versuchen (Retry-After).",
     },
   },

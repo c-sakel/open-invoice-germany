@@ -6,6 +6,7 @@ import { serializeIncomingDetail } from "@/api/serializers/incoming";
 import { IncomingInvoiceView } from "@/components/incoming/IncomingInvoiceView";
 import { PrintButton } from "@/components/incoming/PrintButton";
 import { PrintHeader } from "@/components/incoming/PrintHeader";
+import { PrintArea } from "@/components/incoming/PrintArea";
 
 export const dynamic = "force-dynamic";
 
@@ -25,8 +26,10 @@ export default async function EingangDruckPage({ params }: { params: Promise<{ i
   return (
     <div className="space-y-4">
       <PrintButton />
-      <PrintHeader receivedAt={detail.receivedAt} sha256={detail.originalSha256} fileName={detail.originalFileName} />
-      <IncomingInvoiceView view={detail.view} />
+      <PrintArea>
+        <PrintHeader receivedAt={detail.receivedAt} sha256={detail.originalSha256} fileName={detail.originalFileName} />
+        <IncomingInvoiceView view={detail.view} />
+      </PrintArea>
     </div>
   );
 }

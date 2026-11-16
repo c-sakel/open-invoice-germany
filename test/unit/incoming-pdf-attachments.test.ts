@@ -100,7 +100,8 @@ describe("extractPdfInvoiceXml", () => {
     global.gc?.();
     const before = process.memoryUsage().rss;
     const attach = await extractPdfInvoiceXml(bombA);
-    expect(attach).toEqual({ status: "UNREADABLE", reason: "TOO_LARGE" });
+    // Eine zu grosse Einzelanlage wird uebersprungen, der Lauf bricht nicht ab.
+    expect(attach).toEqual({ status: "NO_INVOICE_XML", attachments: 1, skipped: 1 });
     // Objektstrom wird nie entpackt: keine Anlage, kein Fehler.
     const objStm = await extractPdfInvoiceXml(bombO);
     expect(["NO_INVOICE_XML", "UNREADABLE"]).toContain(objStm.status);
@@ -148,6 +149,35 @@ describe("extractPdfInvoiceXml", () => {
     expect(await extractPdfInvoiceXml(pdfWithManyMarkers(100_000, "/EmbeddedFiles "))).toEqual({ status: "NO_INVOICE_XML", attachments: 0 });
     expect(await extractPdfInvoiceXml(pdfWithManyMarkers(200_000, "1 "))).toEqual({ status: "NO_INVOICE_XML", attachments: 0 });
     expect(Date.now() - t0).toBeLessThan(8_000);
+  });
+
+  it("ueberspringt eine zu grosse XML-Einzelanlage und liest die uebrigen", async () => {
+    const big = embeddedStream(zeroDeflate(20 * 1024 * 1024, 0x3c), "/Filter /FlateDecode");
+    const good = embeddedStream(deflateSync(cii), "/Filter /FlateDecode");
+    const r = await extractPdfInvoiceXml(pdfWithEmbeddedObjects([big, good]));
+    expect(r.status).toBe("XML_FOUND");
+    if (r.status === "XML_FOUND") expect(Buffer.from(r.xml).equals(cii)).toBe(true);
+  });
+
+  it("bleibt bei vielen Objekten ohne endstream und weit entfernten Objektgrenzen im Zeitlimit", async () => {
+    const filler = Buffer.alloc(6 * 1024 * 1024, 0x20);
+    const open = (n: number) => Buffer.from(`${n} 0 obj\n<< /Type /EmbeddedFile /Length 99999999 >>\nstream\n`);
+    const parts: Buffer[] = [Buffer.from("%PDF-1.7\n")];
+    for (let i = 5; i < 5 + 19; i++) parts.push(open(i), Buffer.from("x".repeat(64)));
+    parts.push(filler, Buffer.from("/EmbeddedFile ".repeat(150)), filler, Buffer.from("\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n"));
+    const pdf = Buffer.concat(parts);
+    const t0 = Date.now();
+    const r = await extractPdfInvoiceXml(pdf);
+    expect(Date.now() - t0).toBeLessThan(2_000);
+    expect(r.status).not.toBe("XML_FOUND");
+  });
+
+  it("erkennt /Encrypt auch am Dateianfang (linearisiertes PDF)", async () => {
+    const body = await pdfWithAttachments([{ name: "factur-x.xml", bytes: cii }]);
+    const head = Buffer.from("%PDF-1.7\n1 0 obj\n<< /Linearized 1 /Encrypt 9 0 R >>\nendobj\n");
+    const filler = Buffer.alloc(200 * 1024, 0x20);
+    const pdf = Buffer.concat([head, filler, body.subarray(body.indexOf("%PDF-") + 8), Buffer.from("\n%%EOF\n")]);
+    expect(await extractPdfInvoiceXml(pdf)).toEqual({ status: "UNREADABLE", reason: "ENCRYPTED" });
   });
 
   it("liest die Anlage trotz gefaelschter /Length", async () => {

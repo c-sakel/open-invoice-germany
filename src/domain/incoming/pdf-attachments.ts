@@ -31,6 +31,7 @@ interface WorkerAttachment {
 
 const INVOICE_FILE_NAMES = new Set(["factur-x.xml", "zugferd-invoice.xml", "xrechnung.xml"]);
 const PDF_WORKER_HEAP_MB = 192;
+const WORKER_ISSUES = new Set(["BROKEN", "UNSUPPORTED", "NOT_XML", "TOO_LARGE"]);
 
 function isWorkerAttachment(v: unknown): v is WorkerAttachment {
   if (typeof v !== "object" || v === null) return false;
@@ -38,6 +39,7 @@ function isWorkerAttachment(v: unknown): v is WorkerAttachment {
   if (!(o.name === null || typeof o.name === "string")) return false;
   if (typeof o.size !== "number" || !Number.isFinite(o.size) || o.size < 0) return false;
   if (typeof o.xml !== "boolean") return false;
+  if (!(o.issue === undefined || (typeof o.issue === "string" && WORKER_ISSUES.has(o.issue)))) return false;
   return o.bytes === null || (ArrayBuffer.isView(o.bytes) && o.bytes.byteLength === o.size);
 }
 
