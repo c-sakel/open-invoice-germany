@@ -67,6 +67,7 @@ const code = async (p: Promise<unknown>): Promise<string> => {
 
 beforeAll(async () => {
   tmp = await fsp.mkdtemp(path.join(os.tmpdir(), "incoming-workflow-"));
+  process.env.AUTH_SECRET = process.env.AUTH_SECRET ?? "test-auth-secret-mindestens-16-zeichen";
   prevDir = process.env.ARCHIVE_DIR;
   process.env.ARCHIVE_DIR = tmp;
   const mk = async (n: string) =>
@@ -162,7 +163,7 @@ describe("Zuordnung, Notiz, Kopfdaten von Hand", () => {
     const log = await dbInternal.changeLog.findMany({ where: { orgId, entityId: id }, select: { diffJson: true } });
     const all = log.map((l) => l.diffJson).join("\n");
     expect(all).not.toContain("geheime Notiz");
-    expect(all).toContain("sha256");
+    expect(all).toContain("hmac");
     const detail = await getIncomingInvoiceDetail(orgId, id, { ibanMode: "full" }, NOW);
     expect(detail.internalNote).toBe("geheime Notiz 4711");
     expect(await dbInternal.incomingInvoice.findUniqueOrThrow({ where: { id }, select: { originalSha256: true, number: true, grossCents: true, dueDate: true, supplierName: true } })).toEqual(before);

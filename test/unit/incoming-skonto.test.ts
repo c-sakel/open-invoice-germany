@@ -50,6 +50,13 @@ describe("skontoSchedule", () => {
     expect(s[0]).toMatchObject({ discountCents: 250, payCents: 11650 });
   });
 
+  it("Basisbetrag groesser als der Zahlbetrag ergibt keine Stufe mit negativem Zahlbetrag", () => {
+    const s = skontoSchedule([{ days: 7, percentBp: 5000, basisCents: 100000 }, { days: 14, percentBp: 100, basisCents: null }], "2034-06-01", 11900);
+    expect(s).toHaveLength(1);
+    expect(s[0]).toMatchObject({ percentBp: 100 });
+    expect(s.every((x) => x.payCents >= 0)).toBe(true);
+  });
+
   it("ohne Datum oder Betrag keine Stufen", () => {
     expect(skontoSchedule([{ days: 7, percentBp: 200, basisCents: null }], null, 1000)).toEqual([]);
     expect(skontoSchedule([{ days: 7, percentBp: 200, basisCents: null }], "2034-06-01", null)).toEqual([]);

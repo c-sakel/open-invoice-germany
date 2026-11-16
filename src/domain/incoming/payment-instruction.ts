@@ -8,7 +8,7 @@ import type { ParsedIncomingInvoice } from "@/schemas/incoming";
 import { MAX_EPC_NAME_LENGTH, MAX_EPC_REMITTANCE_LENGTH } from "./limits";
 import type { skontoSchedule } from "./skonto";
 
-export type GirocodeBlock = "CURRENCY" | "NO_IBAN" | "IBAN_INVALID" | "AMOUNT" | "DIRECT_DEBIT" | "CARD" | "CREDIT_NOTE" | "EPC_LIMIT";
+export type GirocodeBlock = "CURRENCY" | "NO_IBAN" | "IBAN_INVALID" | "AMOUNT" | "DIRECT_DEBIT" | "CARD" | "CREDIT_NOTE" | "NO_RECIPIENT" | "EPC_LIMIT";
 
 export interface PaymentInstruction {
   iban: string | null;
@@ -24,6 +24,8 @@ export interface PaymentInstruction {
 
 const TRANSFER_CODES = new Set(["30", "58", "42"]);
 const CARD_CODES = new Set(["48", "54", "55"]);
+/** Dokumenttypen (BT-3), die eine Gutschrift/Erstattung des Lieferanten sind; hierfuer keine Ueberweisung. */
+export const CREDIT_TYPE_CODES: ReadonlySet<string> = new Set(["381", "261", "262", "296", "308", "396", "420", "458", "532"]);
 
 /** Erste Zahlungsangabe mit IBAN, die fuer eine Ueberweisung gilt (ohne Lastschrift/Karte). */
 export function pickTransferMeans<T extends { iban: string | null; code: string | null }>(means: readonly T[]): T | null {
@@ -76,7 +78,7 @@ export function buildPaymentInstruction(input: {
   };
 
   const block = (b: GirocodeBlock): PaymentInstruction => ({ ...info, blockedBy: b });
-  if (input.typeCode === "381") return block("CREDIT_NOTE");
+  if (input.typeCode !== null && CREDIT_TYPE_CODES.has(input.typeCode)) return block("CREDIT_NOTE");
   if (input.currency !== "EUR") return block("CURRENCY");
   if (transfer === null) {
     if (input.means.some((m) => m.code === "59")) return block("DIRECT_DEBIT");
@@ -85,10 +87,11 @@ export function buildPaymentInstruction(input: {
   }
   if (!ibanValid || iban === null) return block("IBAN_INVALID");
   if (input.payableCents === null || input.payableCents <= 0) return block("AMOUNT");
+  if (recipient === null) return block("NO_RECIPIENT");
 
   try {
     const make = (amountCents: number): string =>
-      buildEpcPayload({ name: recipient ?? "", iban, bic: info.bic, amountCents, remittance: remittance ?? "" });
+      buildEpcPayload({ name: recipient, iban, bic: info.bic, amountCents, remittance: remittance ?? "" });
     const girocodes: PaymentInstruction["girocodes"] = [
       { label: "FULL", until: null, amountCents: input.payableCents, payload: make(input.payableCents) },
     ];

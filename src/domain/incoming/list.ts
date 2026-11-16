@@ -18,7 +18,6 @@ import { suggestSupplierContacts, type SupplierSuggestion } from "./supplier";
 import { EDITABLE_STATUSES, parseManual } from "./update";
 import { allowedActions, INCOMING_OPEN_STATUSES, type IncomingAction, type IncomingStatus } from "./workflow";
 
-const STATUS_SET: ReadonlySet<string> = new Set(["NEW", "CHECKED", "APPROVED", "PAID", "REJECTED"]);
 import { IncomingFormatError } from "./errors";
 import { getIncomingFile } from "./files";
 import { parseIncomingXml } from "./parse";
@@ -26,6 +25,8 @@ import { maskIban } from "@/lib/iban";
 import { buildIncomingView, type IncomingViewOptions } from "./view";
 
 import { INCOMING_HEADER_SELECT, type IncomingHeaderRow } from "./header";
+
+const STATUS_SET: ReadonlySet<string> = new Set(["NEW", "CHECKED", "APPROVED", "PAID", "REJECTED"]);
 export { INCOMING_HEADER_SELECT, type IncomingHeaderRow };
 
 export interface IncomingListResult {
@@ -134,7 +135,7 @@ export interface IncomingDetail {
   allowedActions: IncomingAction[];
   /** Interne Notiz (nur Detail, nie in Listen oder Exporten). */
   internalNote: string | null;
-  /** Zahlungsvermerk: nur in der Oberflaeche (ibanMode "full"), nicht in REST und MCP. */
+  /** Zahlungsvermerk (Detail; auch in REST und MCP, nie in Listen oder Exporten). */
   paidNote: string | null;
   supplierContact: { id: string; name: string; customerNumber: string | null } | null;
   manual: IncomingManual | null;

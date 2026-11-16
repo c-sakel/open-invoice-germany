@@ -6,7 +6,7 @@
 import { dbInternal } from "@/lib/db";
 import { withChangeLogRetry } from "@/lib/chain-retry";
 import { berlinDateKey } from "@/lib/berlin-time";
-import { sha256Hex } from "@/lib/archive/storage";
+import { NOTE_HMAC_PURPOSE, purposeHmacHex } from "@/lib/crypto/secrets";
 import { appendChangeLog } from "@/domain/audit";
 import { logActivity } from "@/domain/activity/log";
 import { NotFoundError } from "@/domain/errors";
@@ -39,7 +39,7 @@ export async function changeIncomingStatus(orgId: string, id: string, raw: unkno
   if (reason !== "" && (input.action === "REJECT" || input.action === "REVERT")) diff.reason = reason;
   if (input.action === "MARK_PAID") {
     diff.paidOn = input.paidOn ?? todayBerlin;
-    if (plan.patch.paidNote) diff.paidNoteSha256 = sha256Hex(Buffer.from(plan.patch.paidNote, "utf8"));
+    if (plan.patch.paidNote) diff.paidNote = { hmac: purposeHmacHex(NOTE_HMAC_PURPOSE, plan.patch.paidNote), length: plan.patch.paidNote.length };
   }
 
   const header = await withChangeLogRetry(() =>

@@ -5,7 +5,7 @@
  */
 import { dbInternal } from "@/lib/db";
 import { withChangeLogRetry } from "@/lib/chain-retry";
-import { sha256Hex } from "@/lib/archive/storage";
+import { NOTE_HMAC_PURPOSE, purposeHmacHex } from "@/lib/crypto/secrets";
 import { appendChangeLog } from "@/domain/audit";
 import { NotFoundError } from "@/domain/errors";
 import { incomingManualSchema, incomingPatchSchema, type IncomingManual } from "@/schemas/incoming";
@@ -61,7 +61,7 @@ export async function updateIncomingInvoice(orgId: string, id: string, raw: unkn
     const next = t === "" ? null : t;
     if (next !== row.internalNote) {
       data.internalNote = next;
-      diff.internalNote = { sha256: next === null ? null : sha256Hex(Buffer.from(next, "utf8")), length: next === null ? 0 : next.length };
+      diff.internalNote = { hmac: next === null ? null : purposeHmacHex(NOTE_HMAC_PURPOSE, next), length: next === null ? 0 : next.length };
     }
   }
 

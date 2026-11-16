@@ -57,6 +57,7 @@ export function skontoSchedule(
     const basis = t.basisCents ?? payableCents;
     if (until === null || basis === null || payableCents === null) continue;
     const discount = Number((BigInt(basis) * BigInt(t.percentBp) + BigInt(5000)) / BigInt(10000));
+    if (discount > payableCents) continue; // Basisbetrag groesser als der Zahlbetrag: keine sinnvolle Stufe
     out.push({ until, percentBp: t.percentBp, discountCents: discount, payCents: payableCents - discount });
   }
   return out;

@@ -102,6 +102,7 @@ export const GIROCODE_BLOCK_TEXT: Record<string, string> = {
   DIRECT_DEBIT: "Betrag wird per Lastschrift eingezogen — nicht überweisen.",
   CARD: "Die Zahlung erfolgt per Karte — keine Überweisung nötig.",
   CREDIT_NOTE: "Gutschrift des Lieferanten — keine Überweisung nötig.",
+  NO_RECIPIENT: "Kein GiroCode: Die Rechnung nennt keinen Zahlungsempfänger.",
   EPC_LIMIT: "Kein GiroCode: Name oder Verwendungszweck sind zu lang.",
 };
 

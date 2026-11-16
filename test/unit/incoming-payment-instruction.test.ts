@@ -48,6 +48,11 @@ describe("buildPaymentInstruction", () => {
   it("Sperren", () => {
     expect(buildPaymentInstruction({ ...base, currency: "USD" }).blockedBy).toBe("CURRENCY");
     expect(buildPaymentInstruction({ ...base, typeCode: "381" }).blockedBy).toBe("CREDIT_NOTE");
+    for (const code of ["381", "261", "262", "296", "308", "396", "420", "458", "532"]) {
+      expect(buildPaymentInstruction({ ...base, typeCode: code }).blockedBy).toBe("CREDIT_NOTE");
+    }
+    expect(buildPaymentInstruction({ ...base, typeCode: "384" }).blockedBy).toBeNull();
+    expect(buildPaymentInstruction({ ...base, sellerName: null }).blockedBy).toBe("NO_RECIPIENT");
     expect(buildPaymentInstruction({ ...base, means: [] }).blockedBy).toBe("NO_IBAN");
     expect(buildPaymentInstruction({ ...base, means: means({ iban: null }) }).blockedBy).toBe("NO_IBAN");
     expect(buildPaymentInstruction({ ...base, means: means({ code: "59" }) }).blockedBy).toBe("DIRECT_DEBIT");
