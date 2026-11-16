@@ -100,6 +100,31 @@ jobs:
             'find /app -path /app/node_modules -prune -o -type f \( -name "*.md" -o -name "*.png" -o -name "*.test.*" -o -name "*.tsx" -o -name ".env*" -o -name "*.db" -o -path "/app/docs/*" -o -path "/app/test/*" -o -path "/app/src/*.ts" \) -print')
           if [ -n "$stray" ]; then echo "Unerwartete Dateien im Image:"; echo "$stray"; exit 1; fi
           docker image inspect oig:ci --format 'Groesse: {{.Size}} Bytes'
+      - name: Pruefer fuer Eingangsrechnungen im Image (Nutzer node, Image-Laufzeit)
+        run: |
+          set -eu
+          # Der Validator laeuft wie in der Anwendung: eigener Java-Prozess aus /opt/jre, Nutzer node, nur
+          # lesbare Eingabe und ein beschreibbares Arbeitsverzeichnis. Erwartet: gueltige Datei = accept (Exit 0),
+          # Datei mit falschen Summen = reject (Exit 1), jeweils unter 20 s.
+          probe() {
+            file=$1; expected=$2
+            start=$(date +%s)
+            set +e
+            docker run --rm --entrypoint /opt/jre/bin/java --user 1000:1000 \
+              -v "$PWD/test/fixtures/incoming:/fixtures:ro" --tmpfs /work:rw,mode=1777 \
+              oig:ci -Xmx384m -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:+ExitOnOutOfMemoryError \
+              -jar /opt/validator/validator.jar -s /opt/validator/config/scenarios.xml -r /opt/validator/config \
+              -o /work "/fixtures/$file" > /tmp/probe.log 2>&1
+            code=$?
+            set -e
+            secs=$(( $(date +%s) - start ))
+            echo "$file: Exit $code (erwartet $expected), $secs s"
+            test "$code" = "$expected" || { cat /tmp/probe.log; exit 1; }
+            test "$secs" -lt 20 || { echo "Pruefung zu langsam"; exit 1; }
+          }
+          probe gen-base-cii.xml 0
+          probe cii-summen-falsch.xml 1
+          docker run --rm --entrypoint sh oig:ci -c 'test -f /opt/validator/LICENSES/NOTICE-validator.txt && /opt/jre/bin/java -version'
       - name: Gegen PostgreSQL starten
         run: |
           set -eu

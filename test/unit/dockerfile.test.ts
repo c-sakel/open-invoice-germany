@@ -83,6 +83,17 @@ describe("Dockerfile", () => {
     }
   });
 
+  it("docker.yml fuehrt den Pruefer im Image als Nutzer node gegen Fixtures aus (accept und reject, unter 20 s)", () => {
+    const wf = read(".github/workflows/docker.yml");
+    expect(wf).toMatch(/--user 1000:1000/);
+    expect(wf).toMatch(/--entrypoint \/opt\/jre\/bin\/java/);
+    expect(wf).toMatch(/probe gen-base-cii\.xml 0/);
+    expect(wf).toMatch(/probe cii-summen-falsch\.xml 1/);
+    expect(wf).toMatch(/-lt 20/);
+    // Die Fixtures, gegen die der Schritt prueft, existieren.
+    for (const f of ["gen-base-cii.xml", "cii-summen-falsch.xml"]) expect(read(`test/fixtures/incoming/${f}`).length).toBeGreaterThan(100);
+  });
+
   it("next.config.ts nimmt Worker-Skript und Pruefartefakte ins Tracing auf", () => {
     const cfg = read("next.config.ts");
     expect(cfg).toContain("outputFileTracingIncludes");
