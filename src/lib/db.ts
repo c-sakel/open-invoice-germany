@@ -677,6 +677,15 @@ function assertInboundAttachmentUpdateAllowed(data: unknown): void {
   }
 }
 
+/** Nach der Uebernahme (ACCEPTED) sind Status und Verknuepfung zur Eingangsrechnung endgueltig. */
+async function guardInboundAttachmentAccepted(where: unknown, data: unknown): Promise<void> {
+  const record = (data ?? {}) as Record<string, unknown>;
+  if (!("status" in record) && !("incomingInvoiceId" in record)) return;
+  const filter = { AND: [(where ?? {}) as never, { status: "ACCEPTED" }] } as never;
+  const row = await base.inboundMailAttachment.findFirst({ where: filter, select: { id: true } });
+  if (row) throw new InboundMailAttachmentImmutableError("uebernommene Anlage: status/incomingInvoiceId nicht aenderbar");
+}
+
 /**
  * Phase 17a: Das VIES-Pruefprotokoll (`VatIdCheck`) ist append-only; nur `create` ist erlaubt.
  */
@@ -1256,14 +1265,17 @@ export const prisma = base.$extends({
     inboundMailAttachment: {
       async update({ args, query }) {
         assertInboundAttachmentUpdateAllowed(args.data);
+        await guardInboundAttachmentAccepted(args.where, args.data);
         return query(args);
       },
       async updateMany({ args, query }) {
         assertInboundAttachmentUpdateAllowed(args.data);
+        await guardInboundAttachmentAccepted(args.where, args.data);
         return query(args);
       },
       async updateManyAndReturn({ args, query }) {
         assertInboundAttachmentUpdateAllowed(args.data);
+        await guardInboundAttachmentAccepted(args.where, args.data);
         return query(args);
       },
       async upsert() {

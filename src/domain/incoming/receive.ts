@@ -41,6 +41,10 @@ export interface ReceiveOptions {
   channel: IncomingChannel;
   actor: string;
   now?: Date;
+  /** Herkunft bei Kanal MAILBOX; erscheint im Aenderungsprotokoll (ohne Betreff und Absenderadresse). */
+  source?: { inboundAttachmentId: string; mailInternalDate: Date | null; fetchedAt: Date; senderDomain: string | null };
+  /** Weitere Schreibvorgaenge in derselben Transaktion (nach dem Anlegen, vor dem Aenderungsprotokoll). */
+  withinTx?: (tx: Prisma.TransactionClient, incomingInvoiceId: string) => Promise<void>;
 }
 
 /** Timeouts je Datei (Organisation + Hash) im Prozess; ab MAX_PDF_TIMEOUTS wird die Datei abgelegt statt erneut versucht. */
@@ -326,6 +330,7 @@ export async function receiveIncomingInvoice(orgId: string, bytes: Uint8Array, o
             select: { id: true },
           });
         }
+        if (opts.withinTx) await opts.withinTx(tx, row.id);
         await appendChangeLog(tx, {
           orgId,
           entity: "INCOMING_INVOICE",
@@ -333,7 +338,22 @@ export async function receiveIncomingInvoice(orgId: string, bytes: Uint8Array, o
           action: "RECEIVE",
           actor: opts.actor,
           at: receivedAt,
-          diff: { sha256, size: bytes.byteLength, channel: opts.channel, kind: cls.kind },
+          diff: {
+            sha256,
+            size: bytes.byteLength,
+            channel: opts.channel,
+            kind: cls.kind,
+            ...(opts.source
+              ? {
+                  source: {
+                    inboundAttachmentId: opts.source.inboundAttachmentId,
+                    mailInternalDate: opts.source.mailInternalDate?.toISOString() ?? null,
+                    fetchedAt: opts.source.fetchedAt.toISOString(),
+                    senderDomain: opts.source.senderDomain,
+                  },
+                }
+              : {}),
+          },
         });
         return row;
       }),

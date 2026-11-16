@@ -4,6 +4,7 @@
 import { domainToASCII } from "node:url";
 import net from "node:net";
 import { z } from "zod";
+import { syncFilterShape } from "@/domain/sync/updated-since";
 import { isBlockedAddress } from "@/lib/mailbox/net-guard";
 
 export const MAX_SENDER_DOMAINS = 50;
@@ -66,3 +67,19 @@ export const mailboxSettingsInputSchema = z
   });
 
 export type MailboxSettingsInput = z.infer<typeof mailboxSettingsInputSchema>;
+
+export const INBOUND_ATTACHMENT_STATUSES = ["INBOX", "ACCEPTED", "DISCARDED", "DUPLICATE", "SKIPPED"] as const;
+export const MAX_ACCEPT_BATCH = 20;
+
+export const inboundAttachmentListQuerySchema = z.object({
+  status: z.enum(INBOUND_ATTACHMENT_STATUSES).optional(),
+  ...syncFilterShape,
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+export type InboundAttachmentListQuery = z.infer<typeof inboundAttachmentListQuerySchema>;
+
+export const inboundDiscardInputSchema = z
+  .object({ reason: z.string().trim().max(500).optional() })
+  .strict();
+
+export const inboundAcceptBatchSchema = z.array(z.string().min(1).max(64)).min(1).max(MAX_ACCEPT_BATCH);

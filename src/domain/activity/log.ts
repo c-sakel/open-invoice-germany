@@ -136,6 +136,10 @@ export const ACTIVITY_TYPES = {
   DATEV_MAPPING_CONFIRMED: "DATEV: Kontenzuordnung bestaetigt",
   DATEV_DEBTOR_ACCOUNT_SET: "DATEV: Debitorennummer geaendert",
   DATEV_EXPORT_CREATED: "DATEV: Export erstellt",
+  // Postfach-Abruf (entityType INBOUND_MAIL, entityId = Anlage; Daten ohne Betreff, Absenderadresse und Grundtext).
+  INBOUND_MAIL_ACCEPTED: "Postfach-Anlage uebernommen",
+  INBOUND_MAIL_DISCARDED: "Postfach-Anlage verworfen",
+  INBOUND_MAIL_RESTORED: "Postfach-Anlage wiederhergestellt",
 } as const;
 
 export type ActivityType = keyof typeof ACTIVITY_TYPES;

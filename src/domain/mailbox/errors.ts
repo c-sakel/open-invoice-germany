@@ -20,3 +20,25 @@ export class StagingTamperedError extends Error {
     this.name = "StagingTamperedError";
   }
 }
+
+export type InboundMailErrorCode = "NOT_INBOX" | "CONFLICT" | "PURGED" | "STAGING_MISSING" | "ALREADY_RECEIVED";
+
+const INBOUND_MESSAGES: Record<InboundMailErrorCode, string> = {
+  NOT_INBOX: "Die Anlage wartet nicht mehr auf eine Entscheidung.",
+  CONFLICT: "Die Anlage wurde gleichzeitig anders entschieden.",
+  PURGED: "Die verworfene Anlage ist nicht mehr wiederherstellbar.",
+  STAGING_MISSING: "Die Datei in der Zwischenablage fehlt oder wurde veraendert.",
+  ALREADY_RECEIVED: "Diese Datei wurde bereits als Eingangsrechnung angenommen.",
+};
+
+/** Entscheidung ueber eine Postfach-Anlage nicht moeglich; 409. */
+export class InboundMailError extends Error {
+  readonly status = 409;
+  constructor(
+    readonly code: InboundMailErrorCode,
+    readonly details?: { incomingInvoiceId?: string },
+  ) {
+    super(INBOUND_MESSAGES[code]);
+    this.name = "InboundMailError";
+  }
+}

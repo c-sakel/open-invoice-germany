@@ -159,7 +159,7 @@ export const incomingHeaderSchema = z.object({
   objectName: z.literal("IncomingInvoice"),
   id: z.string(),
   receivedAt: z.string().nullable(),
-  channel: z.string().describe("UPLOAD | API | MCP"),
+  channel: z.string().describe("UPLOAD | API | MCP | MAILBOX"),
   originalFileName: z.string(),
   originalMime: z.string(),
   originalSize: z.number().int(),
