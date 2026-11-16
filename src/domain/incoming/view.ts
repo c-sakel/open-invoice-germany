@@ -163,6 +163,7 @@ export function buildIncomingView(row: IncomingViewRow, parsed: ParsedIncomingIn
           means: parsed.payment.means.map((m) => ({ ...m, iban: m.iban !== null && opts.ibanMode === "masked" ? maskIban(m.iban) : m.iban })),
           terms: parsed.payment.terms,
           dueDate: parsed.payment.dueDate,
+          remittance: parsed.payment.remittance,
         }
       : null,
     attachments: (parsed?.attachments ?? []).map((a) => ({

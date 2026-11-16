@@ -161,6 +161,8 @@ const day = z
   .string()
   .refine((v) => /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00.000Z`)), "Datum als YYYY-MM-DD.");
 
+export const INCOMING_DUE_FILTERS = ["DUE_SOON", "OVERDUE"] as const;
+
 export const incomingListQuerySchema = z.object({
   status: z.enum(INCOMING_STATUSES).optional(),
   validationStatus: z.enum(INCOMING_VALIDATION_STATUSES).optional(),
@@ -168,6 +170,8 @@ export const incomingListQuerySchema = z.object({
   receivedFrom: day.optional().describe("Eingang ab (Berliner Kalendertag, YYYY-MM-DD)"),
   receivedTo: day.optional().describe("Eingang bis einschliesslich (Berliner Kalendertag, YYYY-MM-DD)"),
   supplier: z.string().trim().min(1).max(100).optional().describe("Teiltext aus Lieferantenname oder USt-IdNr."),
+  due: z.enum(INCOMING_DUE_FILTERS).optional().describe("DUE_SOON = offen und faellig bis heute + 7 Tage (inkl. ueberfaellig), OVERDUE = offen und ueberfaellig"),
+  supplierContactId: z.string().min(1).max(64).optional().describe("Zugeordneter Kontakt"),
   ...syncFilterShape,
   limit: z.coerce.number().int().min(1).max(200).default(50),
   offset: z.coerce.number().int().min(0).default(0),
@@ -221,6 +225,7 @@ export const incomingViewSchema = z.object({
       ),
       terms: z.string().nullable(),
       dueDate: z.string().nullable(),
+      remittance: z.string().nullable().describe("Verwendungszweck (BT-83)"),
     })
     .nullable(),
   attachments: z.array(
@@ -237,3 +242,58 @@ export const incomingViewSchema = z.object({
   hints: z.array(hintSchema),
 });
 export type IncomingView = z.infer<typeof incomingViewSchema>;
+
+// ── Arbeitsablauf ────────────────────────────────────────────────────────────────
+
+export const INCOMING_ACTIONS = ["CHECK", "APPROVE", "MARK_PAID", "REJECT", "REVERT"] as const;
+
+export const incomingStatusInputSchema = z
+  .object({
+    action: z.enum(INCOMING_ACTIONS),
+    reason: z.string().max(500).nullable().optional().describe("Grund (Ablehnen, Zuruecksetzen), 3 bis 500 Zeichen"),
+    paidOn: day.nullable().optional().describe("Zahltag (Berliner Kalendertag), Standard heute; nur ein Merker, keine Buchung"),
+    paidNote: z.string().max(500).nullable().optional().describe("Vermerk zur Zahlung"),
+  })
+  .strict();
+export type IncomingStatusInput = z.infer<typeof incomingStatusInputSchema>;
+
+export const incomingManualSchema = z
+  .object({
+    supplierName: z.string().trim().min(1).max(200),
+    number: z.string().trim().min(1).max(100),
+    issueDate: day,
+    grossCents: z.number().int().min(0).max(MAX_AMOUNT_CENTS),
+    currency: z
+      .string()
+      .refine((v) => /^[A-Z]{3}$/.test(v), "Waehrungscode mit 3 Grossbuchstaben.")
+      .default("EUR"),
+    dueDate: day.optional(),
+  })
+  .strict();
+export type IncomingManual = z.infer<typeof incomingManualSchema>;
+
+export const incomingPatchSchema = z
+  .object({
+    supplierContactId: z.string().min(1).max(64).nullable().optional(),
+    internalNote: z.string().max(4000).nullable().optional(),
+    manual: incomingManualSchema.nullable().optional(),
+  })
+  .strict()
+  .refine((v) => Object.keys(v).length > 0, "Mindestens ein Feld angeben.");
+export type IncomingPatch = z.infer<typeof incomingPatchSchema>;
+
+export const incomingContactInputSchema = z
+  .object({
+    name: z.string().trim().min(1).max(200).optional(),
+    addressLine1: z.string().trim().min(1).max(120).optional(),
+    postalCode: z.string().trim().min(1).max(12).optional(),
+    city: z.string().trim().min(1).max(80).optional(),
+    countryCode: z
+      .string()
+      .refine((v) => /^[A-Z]{2}$/.test(v), "Laendercode mit 2 Grossbuchstaben.")
+      .optional(),
+    email: z.string().trim().max(200).optional(),
+    vatId: z.string().trim().max(30).optional(),
+  })
+  .strict();
+export type IncomingContactInput = z.infer<typeof incomingContactInputSchema>;

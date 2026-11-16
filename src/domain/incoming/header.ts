@@ -1,0 +1,52 @@
+/**
+ * Kopfzeile einer Eingangsrechnung fuer Listen und Ergebnisse. Enthaelt bewusst weder die interne
+ * Notiz noch den Zahlungsvermerk (nur die Detailansicht liest sie).
+ */
+import type { Prisma } from "@/generated/prisma/client";
+
+export const INCOMING_HEADER_SELECT = {
+  id: true,
+  receivedAt: true,
+  channel: true,
+  originalFileName: true,
+  originalMime: true,
+  originalSize: true,
+  originalSha256: true,
+  xmlPath: true,
+  kind: true,
+  syntax: true,
+  profile: true,
+  isEInvoice: true,
+  typeCode: true,
+  number: true,
+  issueDate: true,
+  dueDate: true,
+  deliveryDate: true,
+  currency: true,
+  netCents: true,
+  taxCents: true,
+  grossCents: true,
+  payableCents: true,
+  supplierName: true,
+  supplierVatId: true,
+  buyerName: true,
+  buyerVatId: true,
+  hintsJson: true,
+  validationStatus: true,
+  duplicateOfId: true,
+  status: true,
+  supplierContactId: true,
+  manualJson: true,
+  dueAt: true,
+  checkedAt: true,
+  checkedBy: true,
+  approvedAt: true,
+  approvedBy: true,
+  rejectedAt: true,
+  rejectedBy: true,
+  rejectReason: true,
+  paidMarkedAt: true,
+  createdAt: true,
+  updatedAt: true,
+} as const satisfies Prisma.IncomingInvoiceSelect;
+export type IncomingHeaderRow = Prisma.IncomingInvoiceGetPayload<{ select: typeof INCOMING_HEADER_SELECT }>;
