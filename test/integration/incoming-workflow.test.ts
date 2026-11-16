@@ -253,6 +253,21 @@ describe("IBAN-Wechsel", () => {
   });
 });
 
+describe("IBAN-Wechsel nach Zuordnung", () => {
+  it("bleibt IBAN_CHANGED mit Vorgaenger A, wenn B einem Kontakt zugeordnet wird", async () => {
+    const vat = "DE910810710";
+    const t = (n: number) => new Date(NOW.getTime() + n * 60_000);
+    const a = await receive(ubl({ vat, name: "Zuordnung Test GmbH", iban: IBAN_A }), t(1));
+    const b = await receive(ubl({ vat, name: "Zuordnung Test GmbH", iban: IBAN_B }), t(2));
+    const r = await createContactFromIncoming(orgId, b, { addressLine1: "Weg 2", postalCode: "10115", city: "Berlin", countryCode: "DE" }, actor, NOW);
+    expect(r.header.supplierContactId).toBe(r.contactId);
+    const w = (await getIncomingInvoiceDetail(orgId, b, { ibanMode: "full" }, NOW)).ibanWarning;
+    expect(w?.code).toBe("IBAN_CHANGED");
+    expect(w?.previous?.id).toBe(a);
+    expect(w?.previous?.iban).toBe(IBAN_A);
+  });
+});
+
 describe("IBAN-Vergleich", () => {
   it("viele fremde Lieferanten mit gleichem Laendercode verdraengen den Vorgaenger nicht", async () => {
     const vat = "DE700800700";

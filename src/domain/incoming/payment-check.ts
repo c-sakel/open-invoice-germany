@@ -55,10 +55,21 @@ export async function previousSupplierIban(
   const name = normalizeName(row.supplierName);
   const token = firstNameToken(row.supplierName);
 
+  // Lieferanten-Schluessel ohne Zuordnung: USt-IdNr. (Vorfilter auf deren letzte Ziffern), sonst Name.
+  let keyFilter: Record<string, unknown> | null = null;
+  if (vat !== null && vat.length >= 4) keyFilter = { supplierVatId: ciContains(vat.slice(-3)) };
+  else if (name !== null && token !== null) keyFilter = { supplierName: ciContains(token) };
+
+  // Mit Zuordnung zaehlen auch fruehere, noch nicht zugeordnete Rechnungen desselben Lieferanten.
   let supplier: Record<string, unknown>;
-  if (row.supplierContactId !== null) supplier = { supplierContactId: row.supplierContactId };
-  else if (vat !== null && vat.length >= 4) supplier = { supplierVatId: ciContains(vat.slice(0, 2)) };
-  else if (name !== null && token !== null) supplier = { supplierName: ciContains(token) };
+  if (row.supplierContactId !== null) {
+    supplier = {
+      OR: [
+        { supplierContactId: row.supplierContactId },
+        ...(keyFilter !== null ? [{ supplierContactId: null, ...keyFilter }] : []),
+      ],
+    };
+  } else if (keyFilter !== null) supplier = keyFilter;
   else return null;
 
   let bound: { receivedAt: Date; id: string } = { receivedAt: row.receivedAt, id: row.id };
@@ -68,15 +79,17 @@ export async function previousSupplierIban(
         orgId,
         status: { not: "REJECTED" },
         id: { not: row.id },
-        OR: [{ receivedAt: { lt: bound.receivedAt } }, { receivedAt: bound.receivedAt, id: { lt: bound.id } }],
-        ...supplier,
+        AND: [
+          { OR: [{ receivedAt: { lt: bound.receivedAt } }, { receivedAt: bound.receivedAt, id: { lt: bound.id } }] },
+          supplier,
+        ],
       },
       orderBy: [{ receivedAt: "desc" }, { id: "desc" }],
       take: pageSize,
-      select: { id: true, receivedAt: true, number: true, supplierVatId: true, supplierName: true, paymentJson: true },
+      select: { id: true, receivedAt: true, number: true, supplierContactId: true, supplierVatId: true, supplierName: true, paymentJson: true },
     });
     for (const c of cands) {
-      if (row.supplierContactId === null) {
+      if (row.supplierContactId === null || c.supplierContactId === null) {
         const same =
           vat !== null && vat.length >= 4
             ? c.supplierVatId !== null && normalizeVatId(c.supplierVatId) === vat
