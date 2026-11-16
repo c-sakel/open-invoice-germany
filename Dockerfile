@@ -45,6 +45,9 @@ RUN set -eu; cd .next/standalone; \
              assets/fonts/SourceSerif4-Regular.ttf \
              src/app/favicon.ico \
              src/workers/incoming-worker.mjs \
+             src/workers/mail-worker.mjs \
+             node_modules/postal-mime/package.json \
+             node_modules/postal-mime/dist/esm/postal-mime.js \
              assets/einvoice-validation/pins.env \
              assets/einvoice-validation/LICENSES/LICENSE-en16931-validation-EUPL-1.2.txt \
              node_modules/swagger-ui-dist/swagger-ui-bundle.js \
@@ -163,7 +166,7 @@ COPY --from=build /app/LICENSE ./LICENSE
 COPY --from=einvoice-validator /opt/validator /opt/validator
 COPY --from=jre /opt/jre /opt/jre
 RUN /opt/jre/bin/java -version \
- && test -s /opt/validator/validator.jar && test -f /app/src/workers/incoming-worker.mjs
+ && test -s /opt/validator/validator.jar && test -f /app/src/workers/incoming-worker.mjs && test -f /app/src/workers/mail-worker.mjs
 
 # Beschreibbar fuer "node" sind nur die Datenverzeichnisse (Volumes oig-attachments /
 # oig-archive; neue benannte Volumes uebernehmen Eigentuemer und Rechte, 750 = Belege

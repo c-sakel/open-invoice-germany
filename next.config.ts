@@ -12,7 +12,10 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["pdfkit"],
   // Dateien, die zur Laufzeit relativ zu process.cwd() gelesen werden (Worker-Skript fuer fremde PDF-Anlagen,
   // Hinweise/Lizenztexte der Pruefartefakte): das Tracing erkennt sie nicht, auch nicht deren relative Importe.
-  outputFileTracingIncludes: { "/*": ["./src/workers/**/*", "./assets/einvoice-validation/**/*"] },
+  // Das Worker-Skript fuer fremde Mails importiert die MIME-Bibliothek selbst (kein Tracing ueber new Worker).
+  outputFileTracingIncludes: {
+    "/*": ["./src/workers/**/*", "./assets/einvoice-validation/**/*", "./node_modules/postal-mime/**/*"],
+  },
   // Eindeutige Workspace-Wurzel (verhindert Fehl-Inferenz bei mehreren Lockfiles).
   turbopack: { root: import.meta.dirname },
 };
