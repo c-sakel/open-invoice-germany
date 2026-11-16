@@ -48,6 +48,9 @@ export const PAYLINK_TOKEN_PURPOSE = "oig-paylink-token-v1";
 /** Eigener HKDF-Info-String fuer die Pruefsumme interner Notizen im Aenderungsprotokoll. */
 export const NOTE_HMAC_PURPOSE = "oig-note-hmac-v1";
 
+/** Eigener HKDF-Info-String fuer das Passwort des Rechnungs-Postfachs. */
+export const INBOUND_MAIL_PASSWORD_PURPOSE = "oig-imap-v1";
+
 function key(purpose: string): Buffer {
   const secret = process.env.AUTH_SECRET;
   if (!secret || secret.length < 16) throw new SecretsUnavailableError();

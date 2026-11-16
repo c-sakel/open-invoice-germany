@@ -31,7 +31,7 @@ export type ActivityDbClient = Prisma.TransactionClient | PrismaClient;
 // keine entityId und der Versuch waere ohnehin nur ueber die E-Mail identifizierbar,
 // die laut R12 nie ins Protokoll darf; die IP-Bremse (src/lib/rate-limit.ts) deckt das
 // Durchprobieren unbekannter Adressen ab.
-export type ActivityEntityType = "INVOICE" | "QUOTE" | "DELIVERY_NOTE" | "CUSTOMER" | "RECURRING" | "API_KEY" | "TAG" | "TEMPLATE" | "USER" | "EXCHANGE_RATE" | "LAYOUT_DESIGN" | "POSTAL" | "IMPORT" | "INVOICE_BATCH" | "PORTAL" | "BANK_IMPORT" | "BANK_TRANSACTION" | "PAYMENT_RULE" | "PAYMENT_PROVIDER" | "DATEV" | "INCOMING_INVOICE";
+export type ActivityEntityType = "INVOICE" | "QUOTE" | "DELIVERY_NOTE" | "CUSTOMER" | "RECURRING" | "API_KEY" | "TAG" | "TEMPLATE" | "USER" | "EXCHANGE_RATE" | "LAYOUT_DESIGN" | "POSTAL" | "IMPORT" | "INVOICE_BATCH" | "PORTAL" | "BANK_IMPORT" | "BANK_TRANSACTION" | "PAYMENT_RULE" | "PAYMENT_PROVIDER" | "DATEV" | "INCOMING_INVOICE" | "INBOUND_MAIL";
 
 /** Aktivitaetstypen (`ActivityLog.type`) mit deutschem Anzeigetext (Task-3-Brief). */
 export const ACTIVITY_TYPES = {

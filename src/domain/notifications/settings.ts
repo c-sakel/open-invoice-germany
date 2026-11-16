@@ -30,6 +30,8 @@ export const NOTIFICATION_TYPES = {
   DATEV_LATE_ITEMS: "DATEV: Nachtraege in bereits exportierten Monaten",
   KU_THRESHOLD: "Kleinunternehmer-Umsatzgrenzen (§ 19 UStG)",
   INCOMING_DUE: "Eingangsrechnung faellig",
+  INBOUND_MAIL_NEW: "Neue Belege im Postfach",
+  INBOUND_MAIL_ERROR: "Postfach-Abruf gestört",
 } as const;
 
 export type NotificationType = keyof typeof NOTIFICATION_TYPES;

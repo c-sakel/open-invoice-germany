@@ -91,6 +91,9 @@ model Organization {
   datevMappings           DatevAccountMapping[]
   datevExports            DatevExport[]
   incomingInvoices        IncomingInvoice[]
+  inboundMailboxSettings  InboundMailboxSettings?
+  inboundMailMessages     InboundMailMessage[]
+  inboundMailAttachments  InboundMailAttachment[]
   datevExportItems        DatevExportItem[]
   sepaCreditorId          String? // Phase 18e: SEPA-Glaeubiger-ID (BT-90), normalisiert
 }
@@ -2161,6 +2164,7 @@ model IncomingInvoice {
   createdAt         DateTime                    @default(now())
   updatedAt         DateTime                    @updatedAt
   validations       IncomingInvoiceValidation[]
+  mailAttachment    InboundMailAttachment?
 
   @@unique([orgId, originalSha256])
   @@index([orgId, status, receivedAt])
@@ -2191,4 +2195,85 @@ model IncomingInvoiceValidation {
   durationMs        Int             @default(0)
 
   @@index([incomingInvoiceId, at])
+}
+
+/// Postfach-Abruf je Firma; Standard aus. Passwort nur verschluesselt (Zugangsdaten nie in Ausgaben).
+model InboundMailboxSettings {
+  id                       String       @id @default(cuid())
+  orgId                    String       @unique
+  org                      Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  enabled                  Boolean      @default(false)
+  host                     String?
+  port                     Int          @default(993)
+  security                 String       @default("TLS") // TLS (993) | STARTTLS (143)
+  username                 String?
+  passwordEnc              String?
+  folder                   String       @default("INBOX")
+  fetchSince               DateTime? // Kalendertag, aeltere Mails werden nicht abgerufen
+  allowedSenderDomainsJson String       @default("[]")
+  credentialsChangedAt     DateTime?
+  lastTestAt               DateTime?
+  lastTestOk               Boolean?
+  lastTestError            String? // nur Fehlercode
+  lastRunAt                DateTime?
+  lastRunOk                Boolean?
+  lastRunError             String? // nur Fehlercode
+  lastRunFetched           Int          @default(0)
+  createdAt                DateTime     @default(now())
+  updatedAt                DateTime     @updatedAt
+}
+
+/// Protokoll je abgerufener Mail (append-only; nur der Betreff darf auf NULL gesetzt werden).
+model InboundMailMessage {
+  id            String                  @id @default(cuid())
+  orgId         String
+  org           Organization            @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  accountKey    String // sha256(host|port|username|folder), 32 Zeichen
+  uidValidity   String
+  uid           String
+  messageIdHash String? // sha256 der normalisierten Message-ID
+  internalDate  DateTime?
+  fetchedAt     DateTime
+  size          Int
+  senderDomain  String?
+  subject       String? // max. 200, nach 180 Tagen NULL
+  result        String // STAGED | NO_ATTACHMENT | TOO_LARGE | PARSE_FAILED | DUPLICATE_MESSAGE | SENDER_NOT_ALLOWED
+  attachments   InboundMailAttachment[]
+  createdAt     DateTime                @default(now())
+
+  @@unique([orgId, accountKey, uidValidity, uid])
+  @@index([orgId, messageIdHash])
+  @@index([orgId, fetchedAt])
+}
+
+/// Anlage einer abgerufenen Mail; nie loeschbar. INBOX = Zwischenablage, ACCEPTED = Eingangsrechnung angelegt.
+model InboundMailAttachment {
+  id                      String             @id @default(cuid())
+  orgId                   String
+  org                     Organization       @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  messageId               String
+  message                 InboundMailMessage @relation(fields: [messageId], references: [id], onDelete: Restrict)
+  partIndex               Int
+  fileName                String
+  mime                    String
+  size                    Int
+  sha256                  String
+  stagingPath             String? // relativ zu ATTACHMENTS_DIR; NULL nach Uebernahme oder Entfernen
+  status                  String // INBOX | ACCEPTED | DISCARDED | DUPLICATE | SKIPPED
+  skipReason              String? // TYPE | TOO_LARGE | TOO_MANY
+  previewJson             String?
+  incomingInvoiceId       String?            @unique
+  incomingInvoice         IncomingInvoice?   @relation(fields: [incomingInvoiceId], references: [id], onDelete: Restrict)
+  duplicateOfIncomingId   String?
+  duplicateOfAttachmentId String?
+  decidedAt               DateTime?
+  decidedBy               String?
+  discardReason           String?
+  purgedAt                DateTime?
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+
+  @@unique([messageId, partIndex])
+  @@index([orgId, status, createdAt])
+  @@index([orgId, sha256])
 }
