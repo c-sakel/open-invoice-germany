@@ -57,7 +57,8 @@ export const mailboxSettingsInputSchema = z
       .array(senderDomainSchema)
       .max(MAX_SENDER_DOMAINS)
       .optional()
-      .transform((v) => [...new Set(v ?? [])]),
+      /** Weggelassen = unveraendert. */
+      .transform((v) => (v === undefined ? undefined : [...new Set(v)])),
   })
   .strict()
   .superRefine((v, ctx) => {

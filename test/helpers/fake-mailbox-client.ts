@@ -17,6 +17,8 @@ export interface FakeMailboxOptions {
   markSeenThrows?: boolean;
   /** fetchRaw wartet so lange (ms) und gibt erst dann zurueck; close() bricht ab. */
   fetchDelayMs?: number;
+  /** fetchRaw scheitert fuer diese UIDs jedes Mal mit PROTOCOL_ERROR (Sitzung wird geschlossen). */
+  failFetchUids?: string[];
 }
 
 export class FakeMailboxClient implements MailboxClient {
@@ -57,7 +59,7 @@ export class FakeMailboxClient implements MailboxClient {
         alive();
         this.fetched.push(uid);
         const m = this.opts.mails.find((x) => x.uid === uid);
-        if (!m) return kill("PROTOCOL_ERROR");
+        if (!m || this.opts.failFetchUids?.includes(uid)) return kill("PROTOCOL_ERROR");
         if (this.opts.fetchDelayMs) {
           await new Promise<void>((resolve, reject) => {
             const t = setTimeout(resolve, this.opts.fetchDelayMs);

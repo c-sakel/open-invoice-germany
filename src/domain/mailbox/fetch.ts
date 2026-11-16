@@ -24,6 +24,7 @@ import {
   MAX_MAIL_BYTES,
   MAX_MAILS_PER_RUN,
   MAX_PARSE_ATTEMPTS,
+  MAX_STAGED_PER_DOMAIN_PER_DAY,
   MAX_SUBJECT_CHARS,
 } from "./limits";
 import { stagingRelPath, writeStagingFile } from "./staging";
@@ -206,13 +207,25 @@ export async function fetchMailboxForOrg(
     const fresh = uids.filter((u) => !known.has(u)).slice(0, MAX_MAILS_PER_RUN);
     for (const uid of fresh) {
       if (timedOut) throw new MailboxError("TIMEOUT");
+      // Kontingent je Mail pruefen: ein Lauf darf die Sichtung nicht ueber die Grenze fuellen.
+      if ((await inboxUsage(orgId)).quotaReached) {
+        error = "QUOTA_FULL";
+        break;
+      }
       let r: number | null;
       try {
         r = await processUid(uid);
       } catch (e) {
-        if (!(e instanceof ParseRetry)) throw e;
-        retries += 1;
-        continue;
+        if (e instanceof ParseRetry) {
+          retries += 1;
+          continue;
+        }
+        // Dauerhafter Protokollfehler an genau dieser Mail (z. B. defekte Nachricht): nach mehreren Versuchen
+        // vermerken und als gelesen markieren, sonst blockiert sie jeden Folgelauf.
+        const poison =
+          e instanceof MailboxError && e.code === "PROTOCOL_ERROR" && !timedOut && uidValidity !== "" && countAttempt(`fetch:${orgId}:${accountKey}:${uidValidity}:${uid}`) >= MAX_PARSE_ATTEMPTS;
+        if (!poison) throw e;
+        r = await commit(uid, { orgId, accountKey, uidValidity, uid, internalDate: null, fetchedAt: now, size: 0, result: "FETCH_FAILED", messageIdHash: null, senderDomain: null, subject: null }, []);
       }
       if (r === null) continue;
       messages += 1;
@@ -259,11 +272,15 @@ export async function fetchMailboxForOrg(
       senderDomain: mail.senderDomain,
       subject: mail.subject ? mail.subject.slice(0, MAX_SUBJECT_CHARS) : null,
     };
-    if (mail.messageIdHash !== null) {
-      const dup = await dbInternal.inboundMailMessage.findFirst({ where: { orgId, messageIdHash: mail.messageIdHash }, select: { id: true } });
-      if (dup) return commit(uid, { ...head, result: "DUPLICATE_MESSAGE" }, []);
-    }
+    // Die Message-Id stammt vom Absender und dient nur als Hinweis im Protokoll, nie zum Verwerfen:
+    // Doppelte Abrufe erkennt die Position (Konto, UIDVALIDITY, UID), doppelte Belege der Datei-Hash.
     if (!senderAllowed(mail.senderDomain, allowed)) return commit(uid, { ...head, result: "SENDER_NOT_ALLOWED" }, []);
+    if (mail.senderDomain !== null) {
+      const stagedToday = await dbInternal.inboundMailMessage.count({
+        where: { orgId, senderDomain: mail.senderDomain, result: "STAGED", fetchedAt: { gt: new Date(now.getTime() - DAY_MS) } },
+      });
+      if (stagedToday >= MAX_STAGED_PER_DOMAIN_PER_DAY) return commit(uid, { ...head, result: "SENDER_LIMIT" }, []);
+    }
 
     const rows: AttachmentRow[] = [];
     const seenHashes = new Map<string, number>();
@@ -300,7 +317,8 @@ export async function fetchMailboxForOrg(
       }
       const sameMail = seenHashes.get(sha256);
       const other = await dbInternal.inboundMailAttachment.findFirst({
-        where: { orgId, sha256, status: { in: ["INBOX", "DISCARDED"] } },
+        // Verworfene Anlagen ohne Kopie (aufgeraeumt) zaehlen nicht mehr: ein spaeter erneut gesendetes Dokument kommt wieder in die Sichtung.
+        where: { orgId, sha256, status: { in: ["INBOX", "DISCARDED"] }, stagingPath: { not: null } },
         select: { id: true },
       });
       if (other || sameMail !== undefined) {
@@ -320,7 +338,9 @@ export async function fetchMailboxForOrg(
     }
     rows.sort((a, b) => a.partIndex - b.partIndex);
     const inbox = rows.filter((r) => r.status === "INBOX").length;
-    return commit(uid, { ...head, result: inbox > 0 ? "STAGED" : "NO_ATTACHMENT" }, rows);
+    // Dublette nur, wenn jede Anlage der Mail bereits bekannt ist; Anlagen werden immer einzeln geprueft.
+    const allDuplicates = rows.length > 0 && rows.every((r) => r.status === "DUPLICATE");
+    return commit(uid, { ...head, result: inbox > 0 ? "STAGED" : allDuplicates ? "DUPLICATE_MESSAGE" : "NO_ATTACHMENT" }, rows);
   }
 
   async function commit(

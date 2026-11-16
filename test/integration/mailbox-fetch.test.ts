@@ -117,6 +117,14 @@ describe("Einstellungen", () => {
     expect(view.allowedSenderDomains).toEqual(["lieferant.example.org"]);
   });
 
+  it("Teil-Update ohne allowedSenderDomains laesst den Absenderfilter unveraendert", async () => {
+    const orgId = await mkActiveOrg("Teilupdate", { allowedSenderDomains: ["lieferant.example.org"] });
+    const view = await saveMailboxSettings(orgId, settingsInput({ password: undefined }), "tester", NOW);
+    expect(view.allowedSenderDomains).toEqual(["lieferant.example.org"]);
+    const cleared = await saveMailboxSettings(orgId, settingsInput({ password: undefined, allowedSenderDomains: [] }), "tester", NOW);
+    expect(cleared.allowedSenderDomains).toEqual([]);
+  });
+
   it("lehnt unpassende Port/Sicherheit-Paare, gesperrte IP-Literale und falsche Daten ab", async () => {
     const orgId = await mkOrg("Eingabe");
     await expect(saveMailboxSettings(orgId, settingsInput({ port: 143 }), "t", NOW)).rejects.toThrow();
@@ -271,6 +279,76 @@ describe("Abruf", () => {
     expect(await dbInternal.inboundMailAttachment.count({ where: { orgId, status: "INBOX" } })).toBe(1);
   });
 
+  it("eine vorab geschickte Mail mit gleicher Message-Id unterdrueckt die echte Mail nicht", async () => {
+    const orgId = await mkActiveOrg("Vorab", { allowedSenderDomains: ["lieferant.example.org"] });
+    const id = "<erwartet-123@lieferant.example.org>";
+    const real = mail("2", { messageId: id });
+    const c = client([
+      { uid: "1", raw: buildMail({ messageId: id, from: "X <x@fremd.example.org>", attachments: [] }) },
+      { uid: "3", raw: buildMail({ messageId: id, attachments: [] }) },
+      real,
+    ]);
+    await fetchMailboxForOrg(orgId, NOW, c);
+    const msgs = await dbInternal.inboundMailMessage.findMany({ where: { orgId }, orderBy: { uid: "asc" } });
+    expect(msgs.map((m) => m.result)).toEqual(["SENDER_NOT_ALLOWED", "STAGED", "NO_ATTACHMENT"]);
+    expect(await dbInternal.inboundMailAttachment.count({ where: { orgId, status: "INBOX" } })).toBe(1);
+  });
+
+  it("Mail mit lauter bekannten Anlagen ist eine Dublette, Mail mit einer neuen Anlage nicht", async () => {
+    const orgId = await mkActiveOrg("Teildublette");
+    const a = { name: "a.xml", type: "application/xml", data: ubl(5001) };
+    const b = { name: "b.xml", type: "application/xml", data: ubl(5002) };
+    await fetchMailboxForOrg(orgId, NOW, client([mail("1", { attachments: [a] })]));
+    await fetchMailboxForOrg(orgId, NOW, client([mail("2", { attachments: [a] }), mail("3", { attachments: [a, b] })], { uidValidity: "9" }));
+    const msgs = await dbInternal.inboundMailMessage.findMany({ where: { orgId }, orderBy: [{ fetchedAt: "asc" }, { uid: "asc" }] });
+    expect(msgs.map((m) => m.result)).toEqual(["STAGED", "DUPLICATE_MESSAGE", "STAGED"]);
+  });
+
+  it("verworfene Anlage ohne Kopie zaehlt nicht als Dublette: erneutes Senden landet wieder in der Sichtung", async () => {
+    const orgId = await mkActiveOrg("Wiederholt");
+    const att = [{ name: "w.xml", type: "application/xml", data: ubl(6001) }];
+    await fetchMailboxForOrg(orgId, NOW, client([mail("1", { attachments: att })]));
+    await dbInternal.inboundMailAttachment.updateMany({ where: { orgId }, data: { status: "DISCARDED", decidedAt: new Date(NOW.getTime() - 40 * DAY) } });
+    expect((await purgeMailboxStaging(orgId, NOW)).purged).toBe(1);
+    await fetchMailboxForOrg(orgId, NOW, client([mail("1", { attachments: att })], { uidValidity: "77" }));
+    expect(await dbInternal.inboundMailAttachment.count({ where: { orgId, status: "INBOX" } })).toBe(1);
+  });
+
+  it("dauerhaft fehlerhafte Mail blockiert nach drei Versuchen die Folgelaeufe nicht", async () => {
+    const orgId = await mkActiveOrg("Giftmail");
+    const mails = [mail("1"), mail("2")];
+    const run = () => fetchMailboxForOrg(orgId, NOW, client(mails, { failFetchUids: ["1"] }));
+    expect((await run()).error).toBe("PROTOCOL_ERROR");
+    expect((await run()).error).toBe("PROTOCOL_ERROR");
+    const third = await run();
+    expect(third.error).toBeNull();
+    const msgs = await dbInternal.inboundMailMessage.findMany({ where: { orgId }, orderBy: { uid: "asc" } });
+    expect(msgs.map((m) => m.result)).toEqual(["FETCH_FAILED", "STAGED"]);
+    expect(mails[0]?.seen).toBe(true);
+    expect((await run()).messages).toBe(0);
+  });
+
+  it("Kontingent wird je Mail geprueft, nicht nur vor dem Lauf", async () => {
+    const orgId = await mkActiveOrg("Kontingent mitten");
+    const m = await dbInternal.inboundMailMessage.create({ data: { orgId, accountKey: "q".repeat(32), uidValidity: "1", uid: "1", fetchedAt: NOW, size: 1, result: "STAGED" }, select: { id: true } });
+    for (const i of [0, 1]) {
+      await dbInternal.inboundMailAttachment.create({ data: { orgId, messageId: m.id, partIndex: i, fileName: "g.xml", mime: "application/xml", size: 1_073_741_500, sha256: `${i}`.padStart(64, "d"), status: "INBOX" }, select: { id: true } });
+    }
+    const r = await fetchMailboxForOrg(orgId, NOW, client([mail("1"), mail("2"), mail("3")]));
+    expect(r.error).toBe("QUOTA_FULL");
+    expect(r.messages).toBe(1);
+  });
+
+  it("je Absenderdomain werden am Tag hoechstens 50 neue Mails in die Sichtung gelegt", async () => {
+    const orgId = await mkActiveOrg("Tageslimit");
+    await dbInternal.inboundMailMessage.createMany({
+      data: Array.from({ length: 50 }, (_, i) => ({ orgId, accountKey: "t".repeat(32), uidValidity: "1", uid: `s${i}`, fetchedAt: new Date(NOW.getTime() - 3600_000), size: 1, result: "STAGED", senderDomain: "lieferant.example.org" })),
+    });
+    await fetchMailboxForOrg(orgId, NOW, client([mail("1"), mail("2", { from: "Z <z@anders.example.org>" })]));
+    const msgs = await dbInternal.inboundMailMessage.findMany({ where: { orgId, uid: { in: ["1", "2"] } }, orderBy: { uid: "asc" } });
+    expect(msgs.map((x) => x.result)).toEqual(["SENDER_LIMIT", "STAGED"]);
+  });
+
   it("gleiche Anlage in zwei Mails und bereits hochgeladene Datei sind Dubletten", async () => {
     const orgId = await mkActiveOrg("Dubletten");
     const same = ubl(4242);
@@ -377,6 +455,24 @@ describe("Abruf", () => {
       return { ...s, searchUnseen: async () => { throw new MailboxError("TIMEOUT"); } };
     };
     expect((await fetchMailboxForOrg(orgId, NOW, c)).error).toBe("TIMEOUT");
+  });
+});
+
+describe("Zwischenablage", () => {
+  it("legt Verzeichnis 0700 und Datei 0600 an und folgt beim Lesen keinem Symlink", async () => {
+    const orgId = await mkOrg("Rechte");
+    const data = ubl(7001);
+    const rel = `mail-inbox/${orgId}/${sha(data)}.xml`;
+    await writeStagingFile(rel, data);
+    const abs = path.join(tmpAtt, ...rel.split("/"));
+    expect(fs.statSync(abs).mode & 0o777).toBe(0o600);
+    expect(fs.statSync(path.dirname(abs)).mode & 0o777).toBe(0o700);
+    expect((await readStagingFile(rel, sha(data))).equals(data)).toBe(true);
+    const target = path.join(tmpAtt, "ziel.xml");
+    fs.writeFileSync(target, data);
+    fs.rmSync(abs);
+    fs.symlinkSync(target, abs);
+    await expect(readStagingFile(rel, sha(data))).rejects.toThrow();
   });
 });
 

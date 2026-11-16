@@ -146,9 +146,9 @@ export async function saveMailboxSettings(orgId: string, raw: unknown, actor: st
   if (passwordEnc !== undefined) changed.push("password");
   if ((input.password === null || dropPassword) && existing?.passwordEnc != null) changed.push("password");
   const credentialsChanged = changed.some((k) => ["host", "port", "security", "username", "folder", "password"].includes(k));
-  const domainsJson = JSON.stringify(input.allowedSenderDomains);
-  if (existing && existing.allowedSenderDomainsJson !== domainsJson) changed.push("allowedSenderDomains");
-  if (!existing && input.allowedSenderDomains.length > 0) changed.push("allowedSenderDomains");
+  const domainsJson = input.allowedSenderDomains === undefined ? undefined : JSON.stringify(input.allowedSenderDomains);
+  if (domainsJson !== undefined && existing && existing.allowedSenderDomainsJson !== domainsJson) changed.push("allowedSenderDomains");
+  if (!existing && input.allowedSenderDomains !== undefined && input.allowedSenderDomains.length > 0) changed.push("allowedSenderDomains");
   if (fetchSince !== undefined && (existing?.fetchSince?.getTime() ?? null) !== (fetchSince?.getTime() ?? null)) changed.push("fetchSince");
 
   const data = {
@@ -157,7 +157,7 @@ export async function saveMailboxSettings(orgId: string, raw: unknown, actor: st
     security: input.security,
     username: input.username,
     folder: input.folder,
-    allowedSenderDomainsJson: domainsJson,
+    ...(domainsJson !== undefined ? { allowedSenderDomainsJson: domainsJson } : {}),
     ...(passwordEnc !== undefined ? { passwordEnc } : input.password === null || dropPassword ? { passwordEnc: null } : {}),
     ...(fetchSince !== undefined ? { fetchSince } : {}),
     ...(credentialsChanged ? { enabled: false, lastTestOk: null, credentialsChangedAt: now } : {}),

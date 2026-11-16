@@ -3,7 +3,7 @@
  * das write-once-Archiv wird erst bei der Uebernahme beschrieben und hier nie angefasst.
  */
 import { createHash, randomBytes } from "node:crypto";
-import { promises as fs } from "node:fs";
+import { constants as fsConstants, promises as fs } from "node:fs";
 import path from "node:path";
 import { StagingTamperedError } from "./errors";
 
@@ -37,10 +37,10 @@ function resolveInside(rel: string): string {
 /** Atomar schreiben (Temp-Datei, dann rename); gleicher Hash-Pfad = gleicher Inhalt. */
 export async function writeStagingFile(rel: string, bytes: Buffer): Promise<void> {
   const abs = resolveInside(rel);
-  await fs.mkdir(path.dirname(abs), { recursive: true });
+  await fs.mkdir(path.dirname(abs), { recursive: true, mode: 0o700 });
   const tmp = `${abs}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
   try {
-    await fs.writeFile(tmp, bytes, { flag: "wx" });
+    await fs.writeFile(tmp, bytes, { flag: "wx", mode: 0o600 });
     await fs.rename(tmp, abs);
   } finally {
     await fs.rm(tmp, { force: true });
@@ -52,7 +52,15 @@ export async function readStagingFile(rel: string, expectedSha256: string): Prom
   const abs = resolveInside(rel);
   let data: Buffer;
   try {
-    data = await fs.readFile(abs);
+    // Kein Symlink folgen (weder Datei noch Firmenverzeichnis).
+    if ((await fs.lstat(path.dirname(abs))).isSymbolicLink()) throw new StagingTamperedError();
+    const fh = await fs.open(abs, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+    try {
+      if (!(await fh.stat()).isFile()) throw new StagingTamperedError();
+      data = await fh.readFile();
+    } finally {
+      await fh.close();
+    }
   } catch {
     throw new StagingTamperedError();
   }
@@ -82,7 +90,7 @@ export async function listStagingFiles(orgId: string): Promise<StagingFileInfo[]
   const out: StagingFileInfo[] = [];
   for (const name of names) {
     try {
-      const st = await fs.stat(path.join(dir, name));
+      const st = await fs.lstat(path.join(dir, name));
       if (st.isFile()) out.push({ rel: `${STAGING_DIR}/${orgId}/${name}`, mtimeMs: st.mtimeMs });
     } catch {
       // verschwunden
