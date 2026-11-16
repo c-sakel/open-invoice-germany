@@ -217,7 +217,12 @@ export function parseCii(root: XmlElement, ctx: ParseCtx): ParsedBody {
       roundingCents: ctx.cents(textAt(sum, NS, "ram:RoundingAmount"), "totals.rounding"),
       payableCents: ctx.cents(textAt(sum, NS, "ram:DuePayableAmount"), "totals.payable"),
     },
-    payment: { means, terms: ctx.str(textAt(terms, NS, "ram:Description"), "payment.terms"), dueDate },
+    payment: {
+      means,
+      terms: ctx.str(textAt(terms, NS, "ram:Description"), "payment.terms"),
+      dueDate,
+      remittance: ctx.str(textAt(settlement, NS, "ram:PaymentReference"), "payment.remittance"),
+    },
     attachments,
   };
 }

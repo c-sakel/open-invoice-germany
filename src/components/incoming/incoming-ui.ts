@@ -16,18 +16,137 @@ export const VALIDATION_LABELS: Record<string, string> = {
   NOT_APPLICABLE: "keine vollständige E-Rechnung",
 };
 
-export const INCOMING_TABS = ["ALL", "PENDING", "VALID", "WARNINGS", "INVALID", "NOT_CHECKED", "NOT_APPLICABLE"] as const;
+/** Reiter der Liste nach Bearbeitungsstatus; DUE = offen und fällig bis heute + 7 Tage (inkl. überfällig). */
+export const INCOMING_TABS = ["ALL", "NEW", "CHECKED", "APPROVED", "DUE", "PAID", "REJECTED"] as const;
 export type IncomingTab = (typeof INCOMING_TABS)[number];
 
 export const TAB_LABELS: Record<IncomingTab, string> = {
   ALL: "Alle",
-  PENDING: "Wird geprüft",
-  VALID: "Gültig",
-  WARNINGS: "Mit Hinweisen",
-  INVALID: "Fehlerhaft",
-  NOT_CHECKED: "Nicht geprüft",
-  NOT_APPLICABLE: "Keine vollständige E-Rechnung",
+  NEW: "Neu",
+  CHECKED: "Geprüft",
+  APPROVED: "Freigegeben",
+  DUE: "Fällig (7 Tage)",
+  PAID: "Bezahlt",
+  REJECTED: "Abgelehnt",
 };
+
+/** Filter nach Prüfstatus (Auswahl neben den Reitern). */
+export const VALIDATION_FILTERS = ["PENDING", "VALID", "WARNINGS", "INVALID", "NOT_CHECKED", "NOT_APPLICABLE"] as const;
+export type ValidationFilter = (typeof VALIDATION_FILTERS)[number];
+
+export const STATUS_LABELS: Record<string, string> = {
+  NEW: "Neu",
+  CHECKED: "Geprüft",
+  APPROVED: "Freigegeben",
+  PAID: "Bezahlt",
+  REJECTED: "Abgelehnt",
+};
+
+export function statusLabel(status: string): string {
+  return STATUS_LABELS[status] ?? status;
+}
+
+/** Anzahl je Reiter; ALL ist die Summe aller Bearbeitungsstatus (DUE_SOON ist keine eigene Gruppe). */
+export function tabCount(tab: IncomingTab, counts: Record<string, number>): number {
+  if (tab === "DUE") return counts.DUE_SOON ?? 0;
+  if (tab === "ALL") return Object.entries(counts).reduce((s, [k, n]) => (k === "DUE_SOON" ? s : s + n), 0);
+  return counts[tab] ?? 0;
+}
+
+/** Listenfilter zum Reiter. */
+export function tabFilter(tab: IncomingTab): { status?: string; due?: "DUE_SOON" } {
+  if (tab === "ALL") return {};
+  if (tab === "DUE") return { due: "DUE_SOON" };
+  return { status: tab };
+}
+
+const OPEN_STATUSES = new Set(["NEW", "CHECKED", "APPROVED"]);
+
+/** Überfällig: offener Status und Fälligkeit (Kalendertag) vor heute. Beide als YYYY-MM-DD. */
+export function isOverdue(status: string, dueAt: string | null, todayBerlin: string): boolean {
+  return OPEN_STATUSES.has(status) && dueAt !== null && dueAt < todayBerlin;
+}
+
+// ── Aktionen ────────────────────────────────────────────────────────────────────────
+
+export type IncomingActionName = "CHECK" | "APPROVE" | "MARK_PAID" | "REJECT" | "REVERT";
+
+export const ACTION_LABELS: Record<IncomingActionName, string> = {
+  CHECK: "Als geprüft markieren",
+  APPROVE: "Freigeben",
+  MARK_PAID: "Als bezahlt vermerken",
+  REJECT: "Ablehnen",
+  REVERT: "Zurücksetzen",
+};
+
+/** Ablehnen und Zurücksetzen verlangen einen Grund (3 bis 500 Zeichen). */
+export function actionNeedsReason(action: IncomingActionName): boolean {
+  return action === "REJECT" || action === "REVERT";
+}
+
+export function reasonProblem(reason: string): string | null {
+  const t = reason.trim();
+  return t.length < 3 || t.length > 500 ? "Bitte einen Grund angeben (3 bis 500 Zeichen)." : null;
+}
+
+export const NOTE_HINT = "Nur intern — erscheint in keinem Export und keiner Druckansicht";
+export const PAID_HINT = "Merker für die eigene Übersicht — es wird nichts gebucht.";
+export const PAYMENT_NOTICE =
+  "Zahlungsangaben stammen aus der Rechnungsdatei. Vor der Überweisung beim Lieferanten bestätigen lassen, besonders bei geänderter Bankverbindung.";
+
+export const GIROCODE_BLOCK_TEXT: Record<string, string> = {
+  CURRENCY: "Kein GiroCode: Er ist nur für Beträge in Euro möglich.",
+  NO_IBAN: "Kein GiroCode: Die Rechnung enthält keine Überweisungsangaben.",
+  IBAN_INVALID: "Kein GiroCode: Die IBAN ist ungültig.",
+  AMOUNT: "Kein GiroCode: Es gibt keinen positiven Zahlbetrag.",
+  DIRECT_DEBIT: "Betrag wird per Lastschrift eingezogen — nicht überweisen.",
+  CARD: "Die Zahlung erfolgt per Karte — keine Überweisung nötig.",
+  CREDIT_NOTE: "Gutschrift des Lieferanten — keine Überweisung nötig.",
+  NO_RECIPIENT: "Kein GiroCode: Die Rechnung nennt keinen Zahlungsempfänger.",
+  EPC_LIMIT: "Kein GiroCode: Name oder Verwendungszweck sind zu lang.",
+};
+
+export const CONTACT_FIELD_LABELS: Record<string, string> = {
+  name: "Name",
+  addressLine1: "Straße und Hausnummer",
+  postalCode: "PLZ",
+  city: "Ort",
+  countryCode: "Land (2 Buchstaben)",
+  email: "E-Mail",
+  vatId: "USt-IdNr.",
+};
+
+const HISTORY_KEYS: Record<string, string> = {
+  supplierContactId: "Zuordnung",
+  internalNote: "Notiz",
+  manual: "Kopfdaten von Hand",
+};
+
+/** Eine Zeile des Verlaufs; Texte nur aus festen Bausteinen und dem gespeicherten Grund. */
+export function historyText(h: { action: string; summary: Record<string, unknown> }): string {
+  const s = h.summary;
+  const str = (k: string): string | null => (typeof s[k] === "string" ? (s[k] as string) : null);
+  if (h.action === "STATUS") {
+    const from = str("from");
+    const to = str("to");
+    const base = from && to ? `${statusLabel(from)} → ${statusLabel(to)}` : "Status geändert";
+    const reason = str("reason");
+    const paidOn = str("paidOn");
+    return `${base}${paidOn ? ` (Zahltag ${formatIsoDay(paidOn)})` : ""}${reason ? ` — ${reason}` : ""}`;
+  }
+  if (h.action === "UPDATE") {
+    const keys = Array.isArray(s.changedKeys) ? s.changedKeys.filter((k): k is string => typeof k === "string") : [];
+    const names = keys.map((k) => HISTORY_KEYS[k] ?? "Angabe");
+    return names.length > 0 ? `Geändert: ${[...new Set(names)].join(", ")}` : "Geändert";
+  }
+  if (h.action === "CREATE") return "Eingang";
+  return h.action;
+}
+
+/** Basispunkte als Prozent mit Komma (200 -> "2,00 %"). */
+export function formatBp(bp: number): string {
+  return `${(bp / 100).toFixed(2).replace(".", ",")} %`;
+}
 
 export function validationLabel(status: string): string {
   return VALIDATION_LABELS[status] ?? status;
@@ -124,4 +243,13 @@ export function classifyUploadReply(status: number, body: unknown): UploadOutcom
   if (status === 429) return { kind: "rejected", text: "Zu viele Uploads — bitte kurz warten." };
   const text = str(b.error);
   return { kind: "rejected", text: text ?? "Die Datei wurde nicht angenommen." };
+}
+
+/** Fehlertext einer Antwort der Uebergabe-Route: `{ error: "..." }` oder `{ error: { message } }`. */
+export function handoverErrorText(body: unknown, fallback: string): string {
+  if (typeof body !== "object" || body === null || !("error" in body)) return fallback;
+  const e = body.error;
+  if (typeof e === "string" && e !== "") return e;
+  if (typeof e === "object" && e !== null && "message" in e && typeof e.message === "string" && e.message !== "") return e.message;
+  return fallback;
 }

@@ -48,7 +48,7 @@ function parseFerd1Head(root: XmlElement, ctx: ParseCtx): ParsedBody {
       roundingCents: null,
       payableCents: ctx.cents(at("DuePayableAmount"), "totals.payable"),
     },
-    payment: { means: [], terms: null, dueDate: null },
+    payment: { means: [], terms: null, dueDate: null, remittance: null },
     attachments: [],
   };
   const issue = headEl ? descendantByLocalName(headEl, "IssueDateTime", 2) : null;

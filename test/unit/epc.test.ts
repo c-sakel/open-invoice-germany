@@ -99,3 +99,13 @@ describe("buildEpcPayload — Validierung (EpcError)", () => {
     ).toThrow(EpcError);
   });
 });
+
+import { buildEpcPayload as buildEpcCtl, EpcError as EpcCtlError } from "@/lib/pdf/epc";
+describe("Steuerzeichen", () => {
+  it("werden abgelehnt", () => {
+    const ok = { name: "A", iban: "DE02120300000000202051", amountCents: 100, remittance: "x" };
+    expect(() => buildEpcCtl({ ...ok, name: "A\nB" })).toThrow(EpcCtlError);
+    expect(() => buildEpcCtl({ ...ok, bic: "COBADEFF\r" })).toThrow(EpcCtlError);
+    expect(() => buildEpcCtl({ ...ok, remittance: "x\r\ny" })).toThrow(EpcCtlError);
+  });
+});

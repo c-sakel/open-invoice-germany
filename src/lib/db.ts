@@ -576,7 +576,9 @@ function assertBankTransactionUpdateAllowed(data: unknown): void {
 
 /**
  * Eingangsrechnung: Kopffelder, Hashes, Pfade und Annahmezeitpunkt sind nach dem Anlegen gesperrt;
- * aenderbar sind nur Bearbeitungsstatus und Pruefstatus. Loeschen ist nie erlaubt (Aufbewahrung).
+ * aenderbar sind nur der Bearbeitungsstand (Status, Pruef-/Freigabe-/Ablehnungs-/Bezahlt-Merker),
+ * die Lieferantenzuordnung, die interne Notiz, von Hand erfasste Kopfdaten und die wirksame
+ * Faelligkeit. Loeschen ist nie erlaubt (Aufbewahrung).
  */
 export class IncomingInvoiceImmutableError extends Error {
   constructor(detail: string) {
@@ -592,7 +594,24 @@ export class IncomingInvoiceValidationImmutableError extends Error {
   }
 }
 
-const INCOMING_INVOICE_MUTABLE_KEYS: ReadonlySet<string> = new Set(["status", "validationStatus", "updatedAt"]);
+const INCOMING_INVOICE_MUTABLE_KEYS: ReadonlySet<string> = new Set([
+  "status",
+  "validationStatus",
+  "updatedAt",
+  "supplierContactId",
+  "internalNote",
+  "manualJson",
+  "dueAt",
+  "checkedAt",
+  "checkedBy",
+  "approvedAt",
+  "approvedBy",
+  "rejectedAt",
+  "rejectedBy",
+  "rejectReason",
+  "paidMarkedAt",
+  "paidNote",
+]);
 
 function assertIncomingInvoiceUpdateAllowed(data: unknown): void {
   assertOnlyKeys(data, INCOMING_INVOICE_MUTABLE_KEYS, (d) => new IncomingInvoiceImmutableError(d));

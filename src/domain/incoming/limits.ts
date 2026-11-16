@@ -48,3 +48,23 @@ export const INCOMING_VALIDATE_PER_MINUTE = 10;
 
 /** Hoechstens so viele Pruefungen duerfen laufen oder warten, damit eine manuelle Pruefung angenommen wird; sonst 503. */
 export const MAX_MANUAL_VALIDATION_WAITING = 2;
+
+/** Arbeitsablauf: Grund einer Ablehnung/Rueckstufung, Zahlungsvermerk, Empfaengername und Verwendungszweck (EPC). */
+export const MIN_REASON_LENGTH = 3;
+export const MAX_REASON_LENGTH = 500;
+export const MAX_PAID_NOTE_LENGTH = 500;
+export const MAX_EPC_NAME_LENGTH = 70;
+export const MAX_EPC_REMITTANCE_LENGTH = 140;
+/** Skonto: Stufen je Rechnung und groesste Frist in Tagen. */
+export const MAX_SKONTO_TERMS = 3;
+export const MAX_SKONTO_DAYS = 365;
+
+/** Uebergabe an die Buchhaltung: Belege je ZIP, Summe der Originalgroessen, Aufrufe je Minute und Firma. */
+export const MAX_HANDOVER_FILES = 2_000;
+export const MAX_HANDOVER_BYTES = 500 * MB;
+export const INCOMING_EXPORT_PER_MINUTE = 10;
+/** Pruefer-Export: Eingangsrechnungen je Export. */
+export const AUDIT_EXPORT_MAX_INCOMING = 20_000;
+/** Pruefer-Export: Summe der Originalgroessen der Eingangsrechnungen und Aufrufe je Minute und Firma. */
+export const AUDIT_EXPORT_MAX_INCOMING_BYTES = 2_048 * MB;
+export const AUDIT_EXPORT_PER_MINUTE = 10;

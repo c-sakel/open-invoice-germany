@@ -2144,6 +2144,19 @@ model IncomingInvoice {
   duplicateOf       IncomingInvoice?            @relation("IncomingDuplicate", fields: [duplicateOfId], references: [id], onDelete: Restrict)
   duplicates        IncomingInvoice[]           @relation("IncomingDuplicate")
   status            String                      @default("NEW")
+  supplierContactId String? // zugeordneter Kontakt (Customer.id derselben Org; ohne FK, Kontakte werden nie geloescht)
+  internalNote      String? // intern; nie in Export, Uebergabe, Pruefer-Export oder Druck
+  manualJson        String? // von Hand erfasste Kopfdaten (nur ohne Kopfdaten aus der Datei)
+  dueAt             DateTime? // wirksame Faelligkeit (BT-9 aus der Datei, sonst von Hand)
+  checkedAt         DateTime?
+  checkedBy         String?
+  approvedAt        DateTime?
+  approvedBy        String?
+  rejectedAt        DateTime?
+  rejectedBy        String?
+  rejectReason      String?
+  paidMarkedAt      DateTime?
+  paidNote          String?
   createdBy         String
   createdAt         DateTime                    @default(now())
   updatedAt         DateTime                    @updatedAt
@@ -2156,6 +2169,8 @@ model IncomingInvoice {
   @@index([orgId, validationStatus])
   @@index([orgId, number])
   @@index([validationStatus, receivedAt])
+  @@index([orgId, status, dueAt])
+  @@index([orgId, supplierContactId])
   @@index([duplicateOfId])
 }
 

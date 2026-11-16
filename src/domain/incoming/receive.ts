@@ -258,6 +258,7 @@ export async function receiveIncomingInvoice(orgId: string, bytes: Uint8Array, o
             number: p?.number ?? null,
             issueDate: isoToDate(p?.issueDate ?? null),
             dueDate: isoToDate(p?.dueDate ?? null),
+            dueAt: isoToDate(p?.dueDate ?? p?.payment.dueDate ?? null),
             deliveryDate: isoToDate(p?.deliveryDate ?? null),
             currency: p?.currency ?? null,
             netCents: p?.totals.netCents ?? null,

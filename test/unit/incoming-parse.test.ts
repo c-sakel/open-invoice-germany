@@ -190,4 +190,18 @@ describe("parseIncomingXml", () => {
     const xml = `<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">${"<a/>".repeat(MAX_XML_ELEMENTS + 1)}</Invoice>`;
     expect(() => parseIncomingXml(xml)).toThrowError(expect.objectContaining({ code: "TOO_MANY_ELEMENTS" }));
   });
+  it("Verwendungszweck (BT-83) wird gelesen und gekuerzt", () => {
+    expect(parseIncomingXml(fx("gen-base-ubl.xml")).payment.remittance).toBeNull();
+    expect(parseIncomingXml(fx("gen-base-cii.xml")).payment.remittance).toBeNull();
+    const ubl = fx("gen-base-ubl.xml").replace("<cbc:PaymentMeansCode>58</cbc:PaymentMeansCode>", "<cbc:PaymentMeansCode>58</cbc:PaymentMeansCode><cbc:PaymentID>VZ-4711</cbc:PaymentID>");
+    expect(parseIncomingXml(ubl).payment.remittance).toBe("VZ-4711");
+    const long = fx("gen-base-ubl.xml").replace("<cbc:PaymentMeansCode>58</cbc:PaymentMeansCode>", `<cbc:PaymentMeansCode>58</cbc:PaymentMeansCode><cbc:PaymentID>${"V".repeat(1500)}</cbc:PaymentID>`);
+    const r = parseIncomingXml(long);
+    expect(r.payment.remittance).toHaveLength(1000);
+    expect(r.hints).toContainEqual({ code: "TEXT_TRUNCATED", field: "payment.remittance" });
+    const base = fx("gen-base-cii.xml");
+    expect(base).toContain("<ram:ApplicableHeaderTradeSettlement>");
+    const cii = base.replace("<ram:ApplicableHeaderTradeSettlement>", "<ram:ApplicableHeaderTradeSettlement><ram:PaymentReference>VZ-CII-9</ram:PaymentReference>");
+    expect(parseIncomingXml(cii).payment.remittance).toBe("VZ-CII-9");
+  });
 });

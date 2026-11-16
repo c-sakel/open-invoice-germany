@@ -14,8 +14,13 @@ import os from "node:os";
 import path from "node:path";
 import { Readable, type Writable } from "node:stream";
 import { dbInternal } from "@/lib/db";
+import { rateLimit } from "@/lib/rate-limit";
 import { ZipWriter } from "@/lib/zip/writer";
 import { getArchivedInvoiceFile } from "@/domain/invoice/archive-read";
+import { getIncomingFile } from "@/domain/incoming/files";
+import { AUDIT_EXPORT_MAX_INCOMING, AUDIT_EXPORT_MAX_INCOMING_BYTES, AUDIT_EXPORT_PER_MINUTE } from "@/domain/incoming/limits";
+import { effectiveHeader, hasSeparateXml, incomingStem, INCOMING_EXPORT_SELECT, originalExtension, separateXmlFileName } from "@/domain/incoming/export-rows";
+import { berlinDayEnd, berlinMidnight } from "@/lib/berlin-time";
 import { verifyOrgChain } from "@/domain/audit/verify-chain";
 import { buyerSnapshotSchema } from "@/schemas";
 import {
@@ -34,11 +39,12 @@ import { buildIndexXml, GDPDU_DTD, GDPDU_DTD_FILENAME } from "./gdpdu/index-xml"
 export const AUDIT_EXPORT_MAX_INVOICES = 20000;
 const INVOICE_PAGE = 500;
 const CHANGELOG_PAGE = 1000;
+const MIB = 1024 * 1024;
 
 export class AuditExportTooLargeError extends Error {
   readonly status = 413;
-  constructor(count: number, max: number) {
-    super(`Der Zeitraum umfasst ${count} Belege (Grenze ${max}). Bitte den Zeitraum verkleinern.`);
+  constructor(count: number, max: number, what = "Belege") {
+    super(`Der Zeitraum umfasst ${count} ${what} (Grenze ${max}). Bitte den Zeitraum verkleinern.`);
     this.name = "AuditExportTooLargeError";
   }
 }
@@ -91,6 +97,14 @@ const CHANGELOG_COLUMNS: readonly CsvColumn[] = [
 ];
 const ARCHIVE_COLUMNS: readonly CsvColumn[] = [t("beleg"), t("kind"), t("sha256"), t("source"), t("created_at")];
 
+const INCOMING_COLUMNS: readonly CsvColumn[] = [
+  t("eingang_id"), { name: "eingang_am", type: "datetime" }, t("kanal"), t("datei_im_export"), t("original_dateiname"), t("mime"), { name: "groesse", type: "int" }, t("sha256"), t("xml_sha256"),
+  t("art"), t("syntax"), t("profil"), t("e_rechnung"), t("typcode"), t("nummer"), date("rechnungsdatum"), date("faellig"), t("waehrung"), amount("netto"), amount("steuer"), amount("brutto"),
+  amount("zahlbetrag"), t("lieferant"), t("lieferant_ust_id"), t("lieferant_steuernummer"), t("pruefstatus"), t("status"), t("kontakt_id"), t("hand_kopfdaten"),
+  { name: "geprueft_am", type: "datetime" }, t("geprueft_von"), { name: "freigegeben_am", type: "datetime" }, t("freigegeben_von"), { name: "abgelehnt_am", type: "datetime" }, t("abgelehnt_von"),
+  t("ablehnungsgrund"), { name: "bezahlt_markiert_am", type: "datetime" }, t("dublette_von"),
+];
+
 const TABLES: ReadonlyArray<{ file: string; name: string; description: string; columns: readonly CsvColumn[] }> = [
   { file: "rechnungen.csv", name: "Rechnungen", description: "Festgeschriebene Rechnungen, Gutschriften und Korrekturen des Zeitraums", columns: INVOICE_COLUMNS },
   { file: "positionen.csv", name: "Positionen", description: "Belegpositionen", columns: LINE_COLUMNS },
@@ -99,6 +113,7 @@ const TABLES: ReadonlyArray<{ file: string; name: string; description: string; c
   { file: "kunden.csv", name: "Kunden", description: "Kundendaten wie am Beleg festgehalten (Snapshot)", columns: CUSTOMER_COLUMNS },
   { file: "aenderungsprotokoll.csv", name: "Aenderungsprotokoll", description: "Hash-verkettetes Aenderungsprotokoll des Zeitraums", columns: CHANGELOG_COLUMNS },
   { file: "archiv.csv", name: "Belegarchiv", description: "Archivierte Belegdateien mit SHA-256", columns: ARCHIVE_COLUMNS },
+  { file: "eingangsrechnungen.csv", name: "Eingangsrechnungen", description: "Empfangene Rechnungen (Eingangsdatum im Zeitraum), Originale im Ordner eingang/", columns: INCOMING_COLUMNS },
 ];
 
 /** Schreibt CSV-Zeilen gepuffert in eine Temp-Datei (Speicher bleibt unabhaengig von der Belegzahl flach). */
@@ -165,6 +180,12 @@ const README = [
   "belege/<nr>.xml ist immer die archivierte XRechnung (UBL), auch bei ZUGFeRD-Belegen; deren",
   "CII steckt eingebettet im PDF, ihr SHA-256 steht in archiv.csv.",
   "",
+  "eingang/ enthaelt die unveraendert abgelegten Originale empfangener Rechnungen (Eingangsdatum im",
+  "Zeitraum, Berliner Kalendertage); eingangsrechnungen.csv nennt Datei, SHA-256 und Kopfdaten. Bei",
+  "Hybrid-Rechnungen liegt die ausgelesene XML daneben (gleicher Name wie die Originaldatei, Endung",
+  ".xml; heisst die Originaldatei selbst .xml, endet der Name auf .einvoice.xml). Die Werte in eingangsrechnungen.csv sind unveraendert uebernommen (ohne Formelschutz).",
+  "Interne Notizen sind nie enthalten.",
+  "",
   "Die amtliche GDPdU-DTD (Version 01.09.2004) ist mitgeliefert (gdpdu-01-09-2004.dtd).",
   "",
 ].join("\r\n");
@@ -198,7 +219,7 @@ export async function buildAuditExport(
   orgId: string,
   range: { from: Date; to: Date },
   out: Writable,
-  opts: { maxInvoices?: number; maxPending?: number } = {},
+  opts: { maxInvoices?: number; maxPending?: number; maxIncoming?: number; maxIncomingBytes?: number } = {},
 ): Promise<{ invoices: number }> {
   const max = opts.maxInvoices ?? AUDIT_EXPORT_MAX_INVOICES;
   const maxPending = opts.maxPending ?? AUDIT_EXPORT_MAX_PENDING;
@@ -207,6 +228,22 @@ export async function buildAuditExport(
   if (count > max) throw new AuditExportTooLargeError(count, max);
   const pending = await dbInternal.invoice.count({ where: { ...where, archivedDocuments: { none: {} } } });
   if (pending > maxPending) throw new AuditExportPendingError(pending, maxPending);
+  // Eingangsrechnungen: Eingangsdatum als Berliner Kalendertag (die Zeitraumgrenzen sind UTC-Tage).
+  const incomingWhere = {
+    orgId,
+    receivedAt: {
+      gte: berlinMidnight(range.from.getUTCFullYear(), range.from.getUTCMonth() + 1, range.from.getUTCDate()),
+      lte: berlinDayEnd(range.to),
+    },
+  };
+  const incomingCount = await dbInternal.incomingInvoice.count({ where: incomingWhere });
+  const maxIncoming = opts.maxIncoming ?? AUDIT_EXPORT_MAX_INCOMING;
+  if (incomingCount > maxIncoming) throw new AuditExportTooLargeError(incomingCount, maxIncoming, "Eingangsrechnungen");
+  const incomingBytes = (await dbInternal.incomingInvoice.aggregate({ where: incomingWhere, _sum: { originalSize: true } }))._sum.originalSize ?? 0;
+  const maxIncomingBytes = opts.maxIncomingBytes ?? AUDIT_EXPORT_MAX_INCOMING_BYTES;
+  if (incomingBytes > maxIncomingBytes) {
+    throw new AuditExportTooLargeError(Math.ceil(incomingBytes / MIB), Math.floor(maxIncomingBytes / MIB), "MB Originaldateien der Eingangsrechnungen");
+  }
 
   const org = await dbInternal.organization.findUnique({ where: { id: orgId }, select: { legalName: true, city: true } });
   const zip = new ZipWriter(out);
@@ -316,6 +353,40 @@ export async function buildAuditExport(
     if (page.length < INVOICE_PAGE) break;
   }
 
+  // Eingangsrechnungen: Originale (und ausgelesene XML bei Hybriden) ueber die hash-geprueften Lesepfade.
+  const usedIncoming = new Set<string>();
+  let incomingCursor: string | undefined;
+  for (;;) {
+    const page = await dbInternal.incomingInvoice.findMany({
+      where: incomingWhere,
+      orderBy: [{ receivedAt: "asc" }, { id: "asc" }],
+      take: 200,
+      ...(incomingCursor ? { cursor: { id: incomingCursor }, skip: 1 } : {}),
+      select: INCOMING_EXPORT_SELECT,
+    });
+    if (page.length === 0) break;
+    incomingCursor = page[page.length - 1].id;
+    for (const r of page) {
+      const head = effectiveHeader(r);
+      const stem = incomingStem(r, head, usedIncoming);
+      const ext = originalExtension(r);
+      const rel = `eingang/${stem}.${ext}`;
+      await zip.addFile(rel, (await getIncomingFile(orgId, r.id, "original")).bytes);
+      if (hasSeparateXml(r)) await zip.addFile(`eingang/${separateXmlFileName(stem, ext)}`, (await getIncomingFile(orgId, r.id, "xml")).bytes);
+      await add("eingangsrechnungen.csv", [
+        r.id, formatDateTimeDe(r.receivedAt), r.channel, rel, r.originalFileName, r.originalMime, r.originalSize, r.originalSha256, r.xmlSha256,
+        r.kind, r.syntax, r.profile, r.isEInvoice ? "ja" : "nein", r.typeCode, head.number, head.issueDate ? formatDateDe(head.issueDate) : null, d(head.dueAt), head.currency,
+        r.netCents === null ? null : formatCentsDe(r.netCents), r.taxCents === null ? null : formatCentsDe(r.taxCents),
+        head.grossCents === null ? null : formatCentsDe(head.grossCents), head.payableCents === null ? null : formatCentsDe(head.payableCents),
+        head.supplierName, r.supplierVatId, r.supplierTaxNumber, r.validationStatus, r.status, r.supplierContactId, head.manual ? "ja" : "nein",
+        r.checkedAt ? formatDateTimeDe(r.checkedAt) : null, r.checkedBy, r.approvedAt ? formatDateTimeDe(r.approvedAt) : null, r.approvedBy,
+        r.rejectedAt ? formatDateTimeDe(r.rejectedAt) : null, r.rejectedBy, r.rejectReason, r.paidMarkedAt ? formatDateTimeDe(r.paidMarkedAt) : null,
+        r.duplicateOf ? (r.duplicateOf.number ?? r.duplicateOf.id) : null,
+      ]);
+    }
+    if (page.length < 200) break;
+  }
+
   // Kettenpruefung NACH dem Archivieren (die Archivierung schreibt ChangeLog-Eintraege).
   const chain = await verifyOrgChain(orgId, "EXPORT");
   const chainText = [
@@ -389,8 +460,9 @@ export async function buildAuditExport(
 export async function buildAuditExportFile(
   orgId: string,
   range: { from: Date; to: Date },
-  opts: { maxInvoices?: number; maxPending?: number } = {},
+  opts: { maxInvoices?: number; maxPending?: number; maxIncoming?: number; maxIncomingBytes?: number } = {},
 ): Promise<{ path: string; invoices: number }> {
+  rateLimit(`audit-export:${orgId}`, { limit: AUDIT_EXPORT_PER_MINUTE, windowMs: 60_000 });
   const dir = await mkdtemp(path.join(os.tmpdir(), "oig-audit-export-"));
   const file = path.join(dir, "export.zip");
   try {

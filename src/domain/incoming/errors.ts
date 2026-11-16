@@ -58,3 +58,42 @@ export function toFormatError(e: unknown): unknown {
   }
   return new IncomingFormatError("Die Datei ist kein gueltiges XML.", "MALFORMED");
 }
+
+export type IncomingWorkflowCode =
+  | "INVALID_TRANSITION"
+  | "REASON_REQUIRED"
+  | "PAID_DATE_INVALID"
+  | "NOTE_TOO_LONG"
+  | "STATUS_CONFLICT"
+  | "STATUS_LOCKED"
+  | "MANUAL_NOT_ALLOWED"
+  | "CONTACT_NOT_FOUND"
+  | "ALREADY_ASSIGNED"
+  | "CONTACT_INCOMPLETE";
+
+const WORKFLOW_STATUS: Record<IncomingWorkflowCode, number> = {
+  INVALID_TRANSITION: 409,
+  REASON_REQUIRED: 400,
+  PAID_DATE_INVALID: 400,
+  NOTE_TOO_LONG: 400,
+  STATUS_CONFLICT: 409,
+  STATUS_LOCKED: 409,
+  MANUAL_NOT_ALLOWED: 422,
+  CONTACT_NOT_FOUND: 422,
+  ALREADY_ASSIGNED: 409,
+  CONTACT_INCOMPLETE: 422,
+};
+
+/** Fehler im Bearbeitungsablauf (Status, Zuordnung, Kopfdaten von Hand); `status` ist der HTTP-Status. */
+export class IncomingWorkflowError extends Error {
+  readonly status: number;
+  constructor(
+    message: string,
+    readonly code: IncomingWorkflowCode,
+    readonly details?: Record<string, unknown>,
+  ) {
+    super(message);
+    this.name = "IncomingWorkflowError";
+    this.status = WORKFLOW_STATUS[code];
+  }
+}

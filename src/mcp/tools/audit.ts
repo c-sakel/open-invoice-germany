@@ -1,14 +1,16 @@
 // ── Audit (Phase 16a) ──────────────────────────────────────────────────────────
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import { copyFileSync, mkdirSync } from "node:fs";
+import { constants as fsConstants } from "node:fs";
+import { copyFile } from "node:fs/promises";
 import path from "node:path";
 
 import { AuditExportPendingError, AuditExportTooLargeError, buildAuditExportFile, removeAuditExportFile } from "@/domain/audit/export";
 import { verifyOrgChain } from "@/domain/audit/verify-chain";
 import { auditChainVerifyInputSchema, auditExportQuerySchema, auditExportRange } from "@/schemas/audit";
 import { z } from "zod";
-import { PROJECT_ROOT } from "../bootstrap";
+import { RateLimitError } from "@/lib/rate-limit";
+import { OutputDirError, resolveOutputDir } from "./output-dir";
 import type { McpToolsContext, Result } from "./context";
 
 export function registerAuditTools(server: McpServer, ctx: McpToolsContext): void {
@@ -34,7 +36,7 @@ export function registerAuditTools(server: McpServer, ctx: McpToolsContext): voi
   const exportInput = z.object({
     from: z.string().describe("Beginn (JJJJ-MM-TT)"),
     to: z.string().describe("Ende inklusive (JJJJ-MM-TT), höchstens 3 Jahre nach Beginn"),
-    outputDir: z.string().optional().describe("Zielverzeichnis (Default: <Projekt>/exports)"),
+    outputDir: z.string().optional().describe("Zielverzeichnis (absolut, muss existieren; Default: <Projekt>/exports)"),
   });
 
   server.registerTool(
@@ -50,19 +52,25 @@ export function registerAuditTools(server: McpServer, ctx: McpToolsContext): voi
         const input = exportInput.parse(args);
         const q = auditExportQuerySchema.parse({ from: input.from, to: input.to });
         const org = await ctx.requireOrg();
+        const dir = resolveOutputDir(input.outputDir);
         const built = await buildAuditExportFile(org.id, auditExportRange(q));
         try {
-          const dir = input.outputDir ? path.resolve(input.outputDir) : path.join(PROJECT_ROOT, "exports");
-          mkdirSync(dir, { recursive: true });
-          const target = path.join(dir, `pruefer-export-${q.from}-${q.to}.zip`);
-          copyFileSync(built.path, target);
+          const stamp = new Date().toISOString().replace(/[-:]/g, "").slice(0, 15);
+          const target = path.join(dir, `pruefer-export-${q.from}-${q.to}-${stamp}.zip`);
+          try {
+            await copyFile(built.path, target, fsConstants.COPYFILE_EXCL);
+          } catch (writeError) {
+            const reason = writeError instanceof Error ? writeError.message : "unbekannt";
+            return ctx.fail(`Die Datei konnte nicht geschrieben werden: ${reason}`);
+          }
           return ctx.ok(`Prüfer-Export geschrieben: ${target}\nBelege: ${built.invoices}`);
         } finally {
           await removeAuditExportFile(built.path);
         }
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(e.issues.map((x) => x.message).join("; "));
-        if (e instanceof AuditExportTooLargeError || e instanceof AuditExportPendingError) return ctx.fail(e.message);
+        if (e instanceof AuditExportTooLargeError || e instanceof AuditExportPendingError || e instanceof OutputDirError) return ctx.fail(e.message);
+        if (e instanceof RateLimitError) return ctx.fail("Zu viele Prüfer-Exporte — bitte kurz warten.");
         return ctx.failUnknown(e);
       }
     },

@@ -45,6 +45,9 @@ export const PAYMENT_WEBHOOK_SECRET_PURPOSE = "oig-payment-webhook-secret-v1";
 /** Eigener HKDF-Info-String fuer Bezahllink-Tokens (Wiederabruf des Links durch den Betreiber). */
 export const PAYLINK_TOKEN_PURPOSE = "oig-paylink-token-v1";
 
+/** Eigener HKDF-Info-String fuer die Pruefsumme interner Notizen im Aenderungsprotokoll. */
+export const NOTE_HMAC_PURPOSE = "oig-note-hmac-v1";
+
 function key(purpose: string): Buffer {
   const secret = process.env.AUTH_SECRET;
   if (!secret || secret.length < 16) throw new SecretsUnavailableError();
@@ -75,4 +78,17 @@ export function decryptSecret(enc: string, purpose: string = DEFAULT_INFO): stri
  */
 export function hmacWithDerivedKey(data: string, purpose: string): string {
   return createHmac("sha256", key(purpose)).update(data, "utf8").digest("hex");
+}
+
+/**
+ * HMAC-SHA256 (hex) mit einem aus AUTH_SECRET abgeleiteten Schluessel: schlaegt kurze Vermerke
+ * nicht dem Woerterbuch preis, ist aber fuer dieselbe Installation reproduzierbar. Ohne AUTH_SECRET: null.
+ */
+export function purposeHmacHex(purpose: string, data: string): string | null {
+  try {
+    return createHmac("sha256", key(purpose)).update(data, "utf8").digest("hex");
+  } catch (e) {
+    if (e instanceof SecretsUnavailableError) return null;
+    throw e;
+  }
 }

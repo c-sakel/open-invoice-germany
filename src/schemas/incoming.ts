@@ -124,6 +124,8 @@ export const parsedIncomingInvoiceSchema = z.object({
       .max(MAX_LIST_ITEMS),
     terms: text.nullable(),
     dueDate: isoDate.nullable(),
+    /** BT-83 Verwendungszweck. */
+    remittance: text.nullable().default(null),
   }),
   attachments: z
     .array(
@@ -155,9 +157,17 @@ export const INCOMING_KINDS = ["EINVOICE", "HYBRID", "OTHER"] as const;
 export const INCOMING_VALIDATION_STATUSES = ["PENDING", "VALID", "WARNINGS", "INVALID", "NOT_CHECKED", "NOT_APPLICABLE"] as const;
 export const INCOMING_STATUSES = ["NEW", "CHECKED", "APPROVED", "PAID", "REJECTED"] as const;
 
-const day = z
-  .string()
-  .refine((v) => /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00.000Z`)), "Datum als YYYY-MM-DD.");
+/** Kalendertag `YYYY-MM-DD` per Round-Trip geprueft (kein Umrechnen von 2026-02-31 auf den 03.03.). */
+export function isValidIsoDay(v: string): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+  if (!m) return false;
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  return d.getUTCFullYear() === Number(m[1]) && d.getUTCMonth() === Number(m[2]) - 1 && d.getUTCDate() === Number(m[3]);
+}
+
+const day = z.string().refine(isValidIsoDay, "Datum als YYYY-MM-DD.");
+
+export const INCOMING_DUE_FILTERS = ["DUE_SOON", "OVERDUE"] as const;
 
 export const incomingListQuerySchema = z.object({
   status: z.enum(INCOMING_STATUSES).optional(),
@@ -166,6 +176,8 @@ export const incomingListQuerySchema = z.object({
   receivedFrom: day.optional().describe("Eingang ab (Berliner Kalendertag, YYYY-MM-DD)"),
   receivedTo: day.optional().describe("Eingang bis einschliesslich (Berliner Kalendertag, YYYY-MM-DD)"),
   supplier: z.string().trim().min(1).max(100).optional().describe("Teiltext aus Lieferantenname oder USt-IdNr."),
+  due: z.enum(INCOMING_DUE_FILTERS).optional().describe("DUE_SOON = offen und faellig bis heute + 7 Tage (inkl. ueberfaellig), OVERDUE = offen und ueberfaellig"),
+  supplierContactId: z.string().min(1).max(64).optional().describe("Zugeordneter Kontakt"),
   ...syncFilterShape,
   limit: z.coerce.number().int().min(1).max(200).default(50),
   offset: z.coerce.number().int().min(0).default(0),
@@ -219,6 +231,7 @@ export const incomingViewSchema = z.object({
       ),
       terms: z.string().nullable(),
       dueDate: z.string().nullable(),
+      remittance: z.string().nullable().describe("Verwendungszweck (BT-83)"),
     })
     .nullable(),
   attachments: z.array(
@@ -235,3 +248,79 @@ export const incomingViewSchema = z.object({
   hints: z.array(hintSchema),
 });
 export type IncomingView = z.infer<typeof incomingViewSchema>;
+
+// ── Arbeitsablauf ────────────────────────────────────────────────────────────────
+
+export const INCOMING_ACTIONS = ["CHECK", "APPROVE", "MARK_PAID", "REJECT", "REVERT"] as const;
+
+export const incomingStatusInputSchema = z
+  .object({
+    action: z.enum(INCOMING_ACTIONS),
+    reason: z.string().max(500).nullable().optional().describe("Grund (Ablehnen, Zuruecksetzen), 3 bis 500 Zeichen"),
+    paidOn: day.nullable().optional().describe("Zahltag (Berliner Kalendertag), Standard heute; nur ein Merker, keine Buchung"),
+    paidNote: z.string().max(500).nullable().optional().describe("Vermerk zur Zahlung"),
+  })
+  .strict();
+export type IncomingStatusInput = z.infer<typeof incomingStatusInputSchema>;
+
+export const incomingManualSchema = z
+  .object({
+    supplierName: z.string().trim().min(1).max(200),
+    number: z.string().trim().min(1).max(100),
+    issueDate: day,
+    grossCents: z.number().int().min(0).max(MAX_AMOUNT_CENTS),
+    currency: z
+      .string()
+      .refine((v) => /^[A-Z]{3}$/.test(v), "Waehrungscode mit 3 Grossbuchstaben.")
+      .default("EUR"),
+    dueDate: day.optional(),
+  })
+  .strict();
+export type IncomingManual = z.infer<typeof incomingManualSchema>;
+
+/** Felder der Bearbeitung ohne die Pflicht "mindestens ein Feld" (fuer MCP-Werkzeugeingaben). */
+export const incomingPatchFieldsSchema = z
+  .object({
+    supplierContactId: z.string().min(1).max(64).nullable().optional(),
+    internalNote: z.string().max(4000).nullable().optional(),
+    manual: incomingManualSchema.nullable().optional(),
+  })
+  .strict();
+
+export const incomingPatchSchema = incomingPatchFieldsSchema.refine((v) => Object.keys(v).length > 0, "Mindestens ein Feld angeben.");
+export type IncomingPatch = z.infer<typeof incomingPatchSchema>;
+
+export const incomingContactInputSchema = z
+  .object({
+    name: z.string().trim().min(1).max(200).optional(),
+    addressLine1: z.string().trim().min(1).max(120).optional(),
+    postalCode: z.string().trim().min(1).max(12).optional(),
+    city: z.string().trim().min(1).max(80).optional(),
+    countryCode: z
+      .string()
+      .refine((v) => /^[A-Z]{2}$/.test(v), "Laendercode mit 2 Grossbuchstaben.")
+      .optional(),
+    email: z.string().trim().max(200).optional(),
+    vatId: z.string().trim().max(30).optional(),
+  })
+  .strict();
+export type IncomingContactInput = z.infer<typeof incomingContactInputSchema>;
+
+/** Zeitraum der Uebergabe an die Buchhaltung (Eingangsdatum, Berliner Kalendertage). */
+export const INCOMING_HANDOVER_MAX_DAYS = 366;
+export const incomingHandoverQuerySchema = z
+  .object({
+    from: day.describe("Eingang ab (Berliner Kalendertag, YYYY-MM-DD)"),
+    to: day.describe("Eingang bis einschliesslich (Berliner Kalendertag, YYYY-MM-DD)"),
+    includeRejected: z
+      .union([z.boolean(), z.enum(["true", "false", "1", "0"])])
+      .default(false)
+      .transform((v) => v === true || v === "true" || v === "1")
+      .describe("Abgelehnte Eingangsrechnungen einbeziehen (Standard: nein)"),
+  })
+  .refine((v) => v.to >= v.from, { message: "Das Enddatum darf nicht vor dem Startdatum liegen.", path: ["to"] })
+  .refine((v) => (Date.parse(`${v.to}T00:00:00.000Z`) - Date.parse(`${v.from}T00:00:00.000Z`)) / 86_400_000 < INCOMING_HANDOVER_MAX_DAYS, {
+    message: `Der Zeitraum darf höchstens ${INCOMING_HANDOVER_MAX_DAYS} Tage umfassen.`,
+    path: ["to"],
+  });
+export type IncomingHandoverQuery = z.infer<typeof incomingHandoverQuerySchema>;

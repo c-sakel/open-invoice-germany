@@ -96,4 +96,17 @@ describe("ZipWriter", () => {
     out.destroy();
     await expect(zip.addFile("a.txt", Buffer.from("a"))).rejects.toThrow("geschlossen");
   });
+
+  it("lehnt doppelte Eintragsnamen ab (ohne Beachtung der Gross-/Kleinschreibung)", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "oig-zip-"));
+    try {
+      const zip = new ZipWriter(createWriteStream(path.join(dir, "d.zip")), new Date("2013-03-01T10:00:00Z"));
+      await zip.addFile("a/B.txt", Buffer.from("1"));
+      await expect(zip.addFile("a/b.TXT", Buffer.from("2"))).rejects.toThrow(/Doppelter Eintragsname/);
+      await expect(zip.addFile("a/B.txt", Buffer.from("3"))).rejects.toThrow(/Doppelter Eintragsname/);
+      await zip.finish();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
