@@ -23,7 +23,7 @@ export interface ParsedMail {
   date: Date | null;
   parts: number;
   attachments: { index: number; fileName: string; declaredType: string; bytes: Uint8Array }[];
-  skipped: { index: number; reason: "TOO_LARGE" | "TOO_MANY" }[];
+  skipped: { index: number; reason: "TOO_LARGE" | "TOO_MANY" | "NESTED" }[];
 }
 
 export type ParseMailResult =
@@ -46,7 +46,7 @@ const workerSchema = z.object({
       }),
     )
     .max(MAX_MAIL_ATTACHMENTS),
-  skipped: z.array(z.object({ index: z.number().int().min(0), reason: z.enum(["TOO_LARGE", "TOO_MANY"]) })).max(10_000),
+  skipped: z.array(z.object({ index: z.number().int().min(0), reason: z.enum(["TOO_LARGE", "TOO_MANY", "NESTED"]) })).max(10_000),
 });
 
 export async function parseMailIsolated(raw: Uint8Array): Promise<ParseMailResult> {

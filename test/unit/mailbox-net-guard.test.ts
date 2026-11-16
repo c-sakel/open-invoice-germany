@@ -37,6 +37,20 @@ describe("Netzpruefung Postfach", () => {
     expect(isBlockedAddress("::1", env)).toBe(true);
   });
 
+  it("6to4 und Teredo sind immer gesperrt, auch mit privater Freigabe; das Dokumentationsnetz nicht", () => {
+    const env = { INBOUND_MAIL_ALLOW_PRIVATE: "1" };
+    for (const a of ["2002:7f00:1::1", "2002:0a00:0001::", "2001:0:4136:e378:8000:63bf:3fff:fdd2"]) {
+      expect(isBlockedAddress(a, {})).toBe(true);
+      expect(isBlockedAddress(a, env)).toBe(true);
+    }
+    expect(isBlockedAddress("2001:db8::1", env)).toBe(false);
+  });
+
+  it("DNS-Aufloesung hat eine Zeitgrenze mit festem Code", async () => {
+    const hang = () => new Promise<{ address: string; family: number }[]>(() => undefined);
+    expect(await codeOf(resolveMailHost("imap.example.org", 993, { lookup: hang, env: {}, dnsTimeoutMs: 30 }))).toBe("DNS_FAILED");
+  });
+
   it("loest auf, prueft alle Adressen und pinnt die erste geprueft Adresse", async () => {
     const t = await resolveMailHost("imap.example.org", 993, { lookup: lookupOf("203.0.113.10"), env: {} });
     expect(t).toEqual({ host: "imap.example.org", address: "203.0.113.10", family: 4, port: 993 });

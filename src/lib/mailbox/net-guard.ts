@@ -5,6 +5,7 @@
 import dns from "node:dns";
 import net from "node:net";
 import { z } from "zod";
+import { MAIL_DNS_TIMEOUT_MS } from "@/domain/mailbox/limits";
 import { MailboxError } from "./client";
 
 type Env = Readonly<Record<string, string | undefined>>;
@@ -45,6 +46,9 @@ const ALWAYS = makeList([
   ["64:ff9b::", 96, "ipv6"],
   ["64:ff9b:1::", 48, "ipv6"],
   ["100::", 64, "ipv6"],
+  // 6to4 und Teredo betten beliebige IPv4-Adressen ein.
+  ["2002::", 16, "ipv6"],
+  ["2001::", 32, "ipv6"],
 ]);
 
 /** Private und reservierte Bereiche; nur diese hebt INBOUND_MAIL_ALLOW_PRIVATE auf. */
@@ -58,8 +62,6 @@ const PRIVATE = makeList([
   ["192.88.99.0", 24, "ipv4"],
   ["fc00::", 7, "ipv6"],
   ["2001:db8::", 32, "ipv6"],
-  ["2002::", 16, "ipv6"],
-  ["2001::", 32, "ipv6"],
 ]);
 
 /** IPv4-mapped IPv6 (::ffff:a.b.c.d oder ::ffff:hhhh:hhhh) auf IPv4 zurueckfuehren. */
@@ -99,6 +101,23 @@ export function mailboxNetworkBlocked(env: Env = process.env): boolean {
 
 const defaultLookup: LookupFn = (host) => dns.promises.lookup(host, { all: true, verbatim: true });
 
+/** Aufloesung mit Zeitgrenze; getaddrinfo kann sonst lange haengen. */
+function lookupWithTimeout(lookup: LookupFn, host: string, timeoutMs: number): Promise<{ address: string; family: number }[]> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new MailboxError("DNS_FAILED")), timeoutMs);
+    lookup(host).then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      () => {
+        clearTimeout(timer);
+        reject(new MailboxError("DNS_FAILED"));
+      },
+    );
+  });
+}
+
 function allowlist(env: Env): Set<string> | null {
   const raw = env.INBOUND_MAIL_HOSTS?.trim();
   if (!raw) return null;
@@ -108,7 +127,7 @@ function allowlist(env: Env): Set<string> | null {
 export async function resolveMailHost(
   host: string,
   port: number,
-  opts: { lookup?: LookupFn; env?: Env } = {},
+  opts: { lookup?: LookupFn; env?: Env; dnsTimeoutMs?: number } = {},
 ): Promise<ResolvedTarget> {
   const env = opts.env ?? process.env;
   const parsed = hostSchema.safeParse(host);
@@ -118,7 +137,7 @@ export async function resolveMailHost(
   if (allowed && !allowed.has(name)) throw new MailboxError("HOST_NOT_ALLOWED");
   let addresses: { address: string; family: number }[];
   try {
-    addresses = await (opts.lookup ?? defaultLookup)(name);
+    addresses = await lookupWithTimeout(opts.lookup ?? defaultLookup, name, opts.dnsTimeoutMs ?? MAIL_DNS_TIMEOUT_MS);
   } catch {
     throw new MailboxError("DNS_FAILED");
   }

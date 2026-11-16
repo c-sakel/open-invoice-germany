@@ -8,6 +8,7 @@ import {
   buildMail,
   buildNestedMail,
   pdfBytes,
+  wrapAsForward,
   xmlBytes,
 } from "../helpers/mail-fixtures";
 
@@ -61,6 +62,16 @@ describe("Mail-Worker", () => {
     expect(ok.ok && ok.mail.attachments.length).toBe(1);
     const tooDeep = await parseMailIsolated(buildNestedMail(6, xmlAtt()));
     expect(tooDeep).toEqual({ ok: false, code: "LIMIT" });
+  });
+
+  it("meldet zu tief verschachtelte Mails als uebersprungen statt sie still zu verwerfen", async () => {
+    let raw = buildMail({ attachments: [xmlAtt("tief.xml")] });
+    for (let i = 0; i < 4; i++) raw = wrapAsForward(raw, i);
+    const r = await parseMailIsolated(raw);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.mail.attachments).toEqual([]);
+    expect(r.mail.skipped.map((x) => x.reason)).toContain("NESTED");
   });
 
   it("lehnt 101 Teile ab", async () => {

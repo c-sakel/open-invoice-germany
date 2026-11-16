@@ -22,6 +22,7 @@ export const MAX_SEARCH_UIDS = 5000;
 
 /** Zeitgrenzen (ms). */
 export const MAIL_CONNECT_TIMEOUT_MS = 20_000;
+export const MAIL_DNS_TIMEOUT_MS = 5_000;
 export const MAIL_COMMAND_TIMEOUT_MS = 60_000;
 export const MAIL_RUN_TIMEOUT_MS = 5 * 60_000;
 export const MAIL_WORKER_TIMEOUT_MS = 15_000;
@@ -41,3 +42,5 @@ export const MAILBOX_TEST_COOLDOWN_MS = 30_000;
 export const MAX_PARSE_ATTEMPTS = 3;
 /** Absender-Domains, Rueckblick fetchSince (Tage). */
 export const MAX_FETCH_SINCE_DAYS = 365;
+/** Neue Beleg-Mails (STAGED) je Absenderdomain in 24 Stunden; darueber hinaus wird nur protokolliert. */
+export const MAX_STAGED_PER_DOMAIN_PER_DAY = 50;

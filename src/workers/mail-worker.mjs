@@ -62,7 +62,6 @@ function messageIdHash(id) {
 }
 
 function isCandidate(att) {
-  if (att.rfc822DepthExceeded) return false;
   const type = String(att.mimeType ?? "").toLowerCase();
   if (att.filename) return true;
   if (att.disposition === "attachment") return true;
@@ -97,6 +96,11 @@ async function parseMail(input) {
   let total = 0;
   for (const att of mail.attachments ?? []) {
     const i = index++;
+    if (att.rfc822DepthExceeded) {
+      // Verschachtelte Mail nicht ausgewertet: nicht still verwerfen.
+      skipped.push({ index: i, reason: "NESTED" });
+      continue;
+    }
     if (!isCandidate(att)) continue;
     const bytes = att.content instanceof ArrayBuffer ? new Uint8Array(att.content) : null;
     if (bytes === null) continue;
@@ -115,7 +119,7 @@ async function parseMail(input) {
       declaredType: String(att.mimeType ?? ""),
       bytes,
     });
-    transfer.push(bytes.buffer);
+    if (!transfer.includes(bytes.buffer)) transfer.push(bytes.buffer);
   }
   const date = mail.date ? Date.parse(mail.date) : NaN;
   const value = {

@@ -125,3 +125,26 @@ export function buildForwardedMail(att: FixtureAttachment): Buffer {
     "latin1",
   );
 }
+
+/** Packt eine Mail als message/rfc822-Teil in eine weitere Mail (beliebig oft ineinander). */
+export function wrapAsForward(inner: Buffer, level = 0): Buffer {
+  const b = `=_fwd${level}`;
+  return Buffer.from(
+    [
+      "From: Chef <chef@example.org>",
+      "To: rechnungen@example.org",
+      "Subject: Fwd",
+      "MIME-Version: 1.0",
+      `Content-Type: multipart/mixed; boundary="${b}"`,
+      "",
+      `--${b}`,
+      "Content-Type: message/rfc822",
+      "Content-Disposition: inline",
+      "",
+      inner.toString("latin1"),
+      `--${b}--`,
+      "",
+    ].join("\r\n"),
+    "latin1",
+  );
+}
