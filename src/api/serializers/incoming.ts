@@ -1,7 +1,8 @@
 import "../openapi-zod-init";
 import { z } from "zod";
-import { incomingViewSchema, INCOMING_KINDS, INCOMING_STATUSES, INCOMING_VALIDATION_STATUSES } from "@/schemas/incoming";
+import { incomingManualSchema, incomingViewSchema, INCOMING_ACTIONS, INCOMING_KINDS, INCOMING_STATUSES, INCOMING_VALIDATION_STATUSES } from "@/schemas/incoming";
 import type { ReceiveResult } from "@/domain/incoming/receive";
+import { parseManual } from "@/domain/incoming/update";
 import { hintCodesOf, hasInvoiceXml, type IncomingDetail, type IncomingFinding, type IncomingHeaderRow, type IncomingValidationHead } from "@/domain/incoming/list";
 import { incomingHintText, incomingReasonText } from "@/domain/incoming/view";
 import type { IncomingValidationResult } from "@/domain/incoming/validate";
@@ -49,6 +50,18 @@ export function serializeIncomingHeader(r: IncomingHeaderRow) {
     validationStatus: r.validationStatus,
     duplicateOfId: r.duplicateOfId,
     status: r.status,
+    dueAt: day(r.dueAt),
+    supplierContactId: r.supplierContactId,
+    manual: parseManual(r.manualJson),
+    manualEntered: r.manualJson !== null,
+    checkedAt: iso(r.checkedAt),
+    checkedBy: r.checkedBy,
+    approvedAt: iso(r.approvedAt),
+    approvedBy: r.approvedBy,
+    rejectedAt: iso(r.rejectedAt),
+    rejectedBy: r.rejectedBy,
+    rejectReason: r.rejectReason,
+    paidMarkedAt: day(r.paidMarkedAt),
     createdAt: iso(r.createdAt),
     updatedAt: iso(r.updatedAt),
   };
@@ -87,7 +100,32 @@ export function serializeIncomingDetail(d: IncomingDetail) {
     view: d.view,
     validation: d.validation ? serializeIncomingValidation(d.validation) : null,
     validations: d.validations.map(serializeValidationHead),
+    internalNote: d.internalNote,
+    paidNote: d.paidNote,
+    workflow: {
+      status: d.workflow.status,
+      dueAt: day(d.workflow.dueAt),
+      checkedAt: iso(d.workflow.checkedAt),
+      checkedBy: d.workflow.checkedBy,
+      approvedAt: iso(d.workflow.approvedAt),
+      approvedBy: d.workflow.approvedBy,
+      rejectedAt: iso(d.workflow.rejectedAt),
+      rejectedBy: d.workflow.rejectedBy,
+      rejectReason: d.workflow.rejectReason,
+      paidMarkedAt: day(d.workflow.paidMarkedAt),
+    },
+    allowedActions: d.allowedActions,
+    supplierContact: d.supplierContact,
+    suggestions: d.suggestions,
+    skonto: { terms: d.skonto.terms, schedule: d.skonto.schedule, freeText: d.skonto.freeText },
+    payment: d.payment,
+    ibanWarning: d.ibanWarning,
+    history: d.history.map((h) => ({ at: iso(h.at), action: h.action, actor: h.actor, summary: h.summary })),
   };
+}
+
+export function serializeCreatedContact(r: { contactId: string; detail: IncomingDetail }) {
+  return { contactId: r.contactId, incomingInvoice: serializeIncomingDetail(r.detail) };
 }
 
 export function serializeReceiveResult(r: ReceiveResult) {
@@ -149,6 +187,18 @@ export const incomingHeaderSchema = z.object({
   validationStatus: z.enum(INCOMING_VALIDATION_STATUSES),
   duplicateOfId: z.string().nullable(),
   status: z.enum(INCOMING_STATUSES),
+  dueAt: z.string().nullable().describe("Wirksame Faelligkeit (Datei, sonst von Hand), Kalendertag"),
+  supplierContactId: z.string().nullable().describe("Zugeordneter Kontakt"),
+  manual: incomingManualSchema.nullable().describe("Kopfdaten von Hand (nur wenn die Datei keine liefert)"),
+  manualEntered: z.boolean(),
+  checkedAt: z.string().nullable(),
+  checkedBy: z.string().nullable(),
+  approvedAt: z.string().nullable(),
+  approvedBy: z.string().nullable(),
+  rejectedAt: z.string().nullable(),
+  rejectedBy: z.string().nullable(),
+  rejectReason: z.string().nullable(),
+  paidMarkedAt: z.string().nullable().describe("Zahltag-Merker, keine Zahlung und keine Buchung"),
   createdAt: z.string().nullable(),
   updatedAt: z.string().nullable(),
 });
@@ -171,11 +221,59 @@ export const incomingValidationSchema = validationHeadSchema.extend({
   findings: z.object({ format: z.array(findingSchema), rules: z.array(findingSchema), notes: z.array(findingSchema) }),
 });
 
+const girocodeSchema = z.object({ label: z.enum(["FULL", "SKONTO"]), until: z.string().nullable(), amountCents: z.number().int(), payload: z.string() });
+
 export const incomingDetailSchema = incomingHeaderSchema.extend({
   view: incomingViewSchema,
   validation: incomingValidationSchema.nullable(),
   validations: z.array(validationHeadSchema),
+  internalNote: z.string().nullable().describe("Interne Notiz (nur Detail, nie in Listen, Exporten oder Mails)"),
+  paidNote: z.string().nullable().describe("Nur in der Oberflaeche; in REST und MCP immer null"),
+  workflow: z.object({
+    status: z.enum(INCOMING_STATUSES),
+    dueAt: z.string().nullable(),
+    checkedAt: z.string().nullable(),
+    checkedBy: z.string().nullable(),
+    approvedAt: z.string().nullable(),
+    approvedBy: z.string().nullable(),
+    rejectedAt: z.string().nullable(),
+    rejectedBy: z.string().nullable(),
+    rejectReason: z.string().nullable(),
+    paidMarkedAt: z.string().nullable(),
+  }),
+  allowedActions: z.array(z.enum(INCOMING_ACTIONS)).describe("Im aktuellen Status moegliche Aktionen"),
+  supplierContact: z.object({ id: z.string(), name: z.string(), customerNumber: z.string().nullable() }).nullable(),
+  suggestions: z.array(
+    z.object({ id: z.string(), name: z.string(), customerNumber: z.string().nullable(), vatId: z.string().nullable(), match: z.enum(["VAT_ID", "NAME"]) }),
+  ),
+  skonto: z.object({
+    terms: z.array(z.object({ days: z.number().int(), percentBp: z.number().int(), basisCents: z.number().int().nullable() })),
+    schedule: z.array(z.object({ until: z.string(), percentBp: z.number().int(), discountCents: z.number().int(), payCents: z.number().int() })),
+    freeText: z.string().nullable(),
+  }),
+  payment: z
+    .object({
+      iban: z.string().nullable().describe("In REST und MCP maskiert"),
+      ibanValid: z.boolean(),
+      bic: z.string().nullable(),
+      recipient: z.string().nullable(),
+      remittance: z.string().nullable(),
+      amountCents: z.number().int().nullable(),
+      currency: z.string().nullable(),
+      girocodes: z.array(girocodeSchema).describe("In REST und MCP immer leer (die Payload enthaelt die volle IBAN)"),
+      blockedBy: z.string().nullable(),
+    })
+    .nullable(),
+  ibanWarning: z
+    .object({
+      code: z.enum(["IBAN_CHANGED", "FIRST_IBAN"]),
+      previous: z.object({ id: z.string(), number: z.string().nullable(), iban: z.string().describe("Maskiert") }).nullable(),
+    })
+    .nullable(),
+  history: z.array(z.object({ at: z.string().nullable(), action: z.string(), actor: z.string(), summary: z.record(z.string(), z.unknown()) })),
 });
+
+export const incomingContactResultSchema = z.object({ contactId: z.string(), incomingInvoice: incomingDetailSchema });
 
 export const incomingReceiveResultSchema = z.object({
   id: z.string(),

@@ -145,7 +145,8 @@ describe("Druckansicht und Liste", () => {
       objectName: "IncomingInvoice" as const, id: "i1", receivedAt: "2026-11-16T10:00:00.000Z", channel: "UPLOAD", originalFileName: "r.xml", originalMime: "application/xml", originalSize: 10,
       originalSha256: "b".repeat(64), hasXml: true, kind: "EINVOICE" as const, syntax: "CII", profile: "XRECHNUNG", isEInvoice: true, typeCode: "380", number: "R-1", issueDate: "2026-11-01", dueDate: "2026-11-30",
       deliveryDate: null, currency: "EUR", netCents: 100, taxCents: 19, grossCents: 119, payableCents: 119, supplierName: "<b>Muster</b> GmbH", supplierVatId: null, buyerName: null, buyerVatId: null,
-      hints: [], validationStatus: "VALID" as const, duplicateOfId: "i0", status: "NEW" as const, createdAt: null, updatedAt: null,
+      hints: [], validationStatus: "VALID" as const, duplicateOfId: "i0", status: "NEW" as const, dueAt: null, supplierContactId: null, manual: null, manualEntered: false,
+      checkedAt: null, checkedBy: null, approvedAt: null, approvedBy: null, rejectedAt: null, rejectedBy: null, rejectReason: null, paidMarkedAt: null, createdAt: null, updatedAt: null,
     };
     const html = renderToStaticMarkup(<IncomingList rows={[row]} tab="ALL" counts={{ VALID: 1, PENDING: 2 }} page={1} pageCount={1} />);
     expect(html).toContain("Alle (3)");

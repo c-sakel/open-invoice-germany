@@ -2,10 +2,12 @@
  * Fehlerabbildung der Eingangsrechnungen fuer REST: nicht lesbare oder unsichere Datei (422 mit
  * fachlichem Code in `reason`), zu grosse Datei (413), bereits angenommene Datei (409
  * ALREADY_RECEIVED mit `incomingInvoiceId`) und ausgelastete Annahme (503). Meldungen enthalten nie
- * Dateiinhalt. Alle anderen Fehler laufen durch das allgemeine Mapping von withApi.
+ * Dateiinhalt. Ablauffehler (Status, Zuordnung, Kopfdaten von Hand) tragen den fachlichen Code in `reason`
+ * und Felder in `details`; zu grosse Uebergabe 413. Alle anderen Fehler laufen durch das allgemeine Mapping von withApi.
  */
 import { NextResponse } from "next/server";
-import { IncomingBusyError, IncomingDuplicateError, IncomingFormatError } from "@/domain/incoming/errors";
+import { IncomingBusyError, IncomingDuplicateError, IncomingFormatError, IncomingWorkflowError } from "@/domain/incoming/errors";
+import { IncomingHandoverTooLargeError } from "@/domain/incoming/handover";
 
 export function incomingErrorResponse(e: unknown): NextResponse | null {
   if (e instanceof IncomingFormatError) {
@@ -20,6 +22,16 @@ export function incomingErrorResponse(e: unknown): NextResponse | null {
   }
   if (e instanceof IncomingBusyError) {
     return NextResponse.json({ error: { code: "INTERNAL", message: e.message, reason: "BUSY" } }, { status: 503, headers: { "Retry-After": "10" } });
+  }
+  if (e instanceof IncomingWorkflowError) {
+    const code = e.status === 409 ? "CONFLICT" : e.status === 400 ? "VALIDATION" : "UNPROCESSABLE";
+    return NextResponse.json(
+      { error: { code, message: e.message, reason: e.code, ...(e.details !== undefined ? { details: e.details } : {}) } },
+      { status: e.status },
+    );
+  }
+  if (e instanceof IncomingHandoverTooLargeError) {
+    return NextResponse.json({ error: { code: "PAYLOAD_TOO_LARGE", message: e.message } }, { status: 413 });
   }
   return null;
 }

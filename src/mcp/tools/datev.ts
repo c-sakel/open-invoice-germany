@@ -3,7 +3,7 @@
 // Kontenzuordnung gibt es nur in der Oberflaeche; jede Aenderung hier macht sie hinfaellig.
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import { mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 
@@ -20,7 +20,7 @@ import { datevStatus, listDatevExports, planDatevExport, readDatevExportFile, ru
 import { getDatevSettings, saveDatevSettings } from "@/domain/export/datev/settings";
 import { RateLimitError, rateLimit } from "@/lib/rate-limit";
 import { datevExportRequestSchema, datevListQuerySchema, datevMappingPutSchema, datevSettingsInputSchema, datevTemplateInputSchema } from "@/schemas/datev";
-import { PROJECT_ROOT } from "../bootstrap";
+import { OutputDirError, resolveOutputDir as resolveOutputDirShared } from "./output-dir";
 import type { McpToolsContext, Result } from "./context";
 
 function datevFail(ctx: McpToolsContext, e: unknown): Result {
@@ -37,23 +37,14 @@ function datevFail(ctx: McpToolsContext, e: unknown): Result {
   return ctx.failUnknown(e);
 }
 
-/** Zielverzeichnis pruefen: absolut, ohne Traversal, existiert als Verzeichnis (Symlinks werden aufgeloest). Default: <Projekt>/exports. */
+/** Zielverzeichnis pruefen (gemeinsame Pruefung, Fehler als DATEV-Validierungsfehler). */
 function resolveOutputDir(outputDir: string | undefined): string {
-  if (!outputDir) {
-    const dir = path.join(PROJECT_ROOT, "exports");
-    mkdirSync(dir, { recursive: true });
-    return realpathSync(dir);
-  }
-  if (!path.isAbsolute(outputDir)) throw new DatevError("VALIDATION", "outputDir muss ein absoluter Pfad sein.");
-  if (outputDir.split(/[\\/]/).includes("..")) throw new DatevError("VALIDATION", "outputDir darf keine ..-Segmente enthalten.");
-  let real: string;
   try {
-    real = realpathSync(outputDir);
-  } catch {
-    throw new DatevError("VALIDATION", "outputDir existiert nicht.");
+    return resolveOutputDirShared(outputDir);
+  } catch (e) {
+    if (e instanceof OutputDirError) throw new DatevError("VALIDATION", e.message);
+    throw e;
   }
-  if (!statSync(real).isDirectory()) throw new DatevError("VALIDATION", "outputDir ist kein Verzeichnis.");
-  return real;
 }
 
 /** Bestaetigungsfelder gibt es nur in der Oberflaeche; im Schema ausdruecklich aufgefuehrt, sonst entfernt das SDK sie still. */

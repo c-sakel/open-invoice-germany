@@ -272,14 +272,16 @@ export const incomingManualSchema = z
   .strict();
 export type IncomingManual = z.infer<typeof incomingManualSchema>;
 
-export const incomingPatchSchema = z
+/** Felder der Bearbeitung ohne die Pflicht "mindestens ein Feld" (fuer MCP-Werkzeugeingaben). */
+export const incomingPatchFieldsSchema = z
   .object({
     supplierContactId: z.string().min(1).max(64).nullable().optional(),
     internalNote: z.string().max(4000).nullable().optional(),
     manual: incomingManualSchema.nullable().optional(),
   })
-  .strict()
-  .refine((v) => Object.keys(v).length > 0, "Mindestens ein Feld angeben.");
+  .strict();
+
+export const incomingPatchSchema = incomingPatchFieldsSchema.refine((v) => Object.keys(v).length > 0, "Mindestens ein Feld angeben.");
 export type IncomingPatch = z.infer<typeof incomingPatchSchema>;
 
 export const incomingContactInputSchema = z
