@@ -363,6 +363,26 @@ describe("Abruf", () => {
     expect((await dbInternal.inboundMailMessage.findFirstOrThrow({ where: { orgId, uid: "1" } })).result).toBe("STAGED");
   });
 
+  it("viele zurueckgestellte Mails eines Absenders verdraengen Mails anderer Absender nicht", async () => {
+    const orgId = await mkActiveOrg("Tageslimit Hunger");
+    await dbInternal.inboundMailMessage.createMany({
+      data: Array.from({ length: 50 }, (_, i) => ({ orgId, accountKey: "h".repeat(32), uidValidity: "1", uid: `s${i}`, fetchedAt: new Date(NOW.getTime() - 3600_000), size: 1, result: "STAGED", senderDomain: "lieferant.example.org" })),
+    });
+    const limited = Array.from({ length: 60 }, (_, i) => mail(String(i + 1)));
+    const real = mail("61", { from: "Z <z@anders.example.org>" });
+    const c1 = client([...limited, real]);
+    await fetchMailboxForOrg(orgId, NOW, c1);
+    expect((await dbInternal.inboundMailMessage.findFirstOrThrow({ where: { orgId, uid: "61" } })).result).toBe("STAGED");
+    // Ohne Download: die zurueckgestellten Mails wurden nicht geladen.
+    expect(c1.fetched).toEqual(["61"]);
+    expect(limited.every((m) => !m.seen)).toBe(true);
+    // Zweiter Lauf: bereits vorgemerkt, nicht einmal die Kopfdaten werden erneut geprueft.
+    const next = mail("62", { from: "Z <z@anders.example.org>" });
+    const c2 = client([...limited, next]);
+    await fetchMailboxForOrg(orgId, new Date(NOW.getTime() + 60_000), c2);
+    expect(c2.fetched).toEqual(["62"]);
+  });
+
   it("gleiche Anlage in zwei Mails und bereits hochgeladene Datei sind Dubletten", async () => {
     const orgId = await mkActiveOrg("Dubletten");
     const same = ubl(4242);

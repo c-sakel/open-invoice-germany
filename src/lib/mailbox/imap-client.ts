@@ -3,6 +3,7 @@
  * werden nie geloescht, verschoben, kopiert oder angehaengt. Zugangsdaten gehen nur an imapflow; Server-
  * Meldungen werden verworfen, Fehler tragen nur einen festen Code.
  */
+import { normalizeSenderDomain } from "@/schemas/mailbox";
 import type { Readable } from "node:stream";
 import { ImapFlow } from "imapflow";
 import {
@@ -151,12 +152,13 @@ export function createImapClient(opts: { connector?: TestConnector } = {}): Mail
           }),
         meta: (uid) =>
           run(async () => {
-            const m = await client.fetchOne(uid, { size: true, internalDate: true }, { uid: true });
+            const m = await client.fetchOne(uid, { size: true, internalDate: true, envelope: true }, { uid: true });
             if (!m) return null;
             const d = m.internalDate ? new Date(m.internalDate) : null;
             return {
               size: typeof m.size === "number" ? m.size : 0,
               internalDate: d !== null && Number.isFinite(d.getTime()) ? d : null,
+              fromDomain: envelopeDomain(m.envelope?.from?.[0]?.address),
             };
           }),
         fetchRaw: (uid, maxBytes) =>
@@ -184,4 +186,13 @@ export function createImapClient(opts: { connector?: TestConnector } = {}): Mail
       };
     },
   };
+}
+
+/** Domain der Absenderadresse aus dem Envelope; null, wenn sie fehlt oder ungueltig ist. */
+function envelopeDomain(address: unknown): string | null {
+  if (typeof address !== "string") return null;
+  const at = address.lastIndexOf("@");
+  if (at < 0) return null;
+  const d = normalizeSenderDomain(address.slice(at + 1));
+  return d.length > 0 ? d : null;
 }

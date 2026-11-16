@@ -55,7 +55,8 @@ export interface MailboxSession {
   uidValidity: string;
   /** UIDs ungelesener Nachrichten, aufsteigend, hoechstens 5.000 gelesen. */
   searchUnseen(since: Date | null): Promise<string[]>;
-  meta(uid: string): Promise<{ size: number; internalDate: Date | null } | null>;
+  /** `fromDomain` stammt aus dem Envelope (ohne Mailinhalt, vom Absender frei waehlbar) und dient nur der Vorabpruefung. */
+  meta(uid: string): Promise<{ size: number; internalDate: Date | null; fromDomain?: string | null } | null>;
   /** Wirft TOO_LARGE bei Ueberschreitung von maxBytes. */
   fetchRaw(uid: string, maxBytes: number): Promise<Uint8Array>;
   markSeen(uid: string): Promise<void>;

@@ -68,6 +68,17 @@ function countAttempt(key: string): number {
   return n;
 }
 
+/** Zurueckgestellte Mails (Tageslimit je Absender): Position -> Ende des Fensters; prozessweit, begrenzt. */
+const DEFERRED_KEY = Symbol.for("oig.mailboxFetch.deferred");
+const MAX_DEFERRED = 5000;
+/** Hoechstens so viele Mails je Lauf werden nur ueber ihre Kopfdaten (ohne Download) zurueckgestellt. */
+const MAX_DEFER_SCANS_PER_RUN = 500;
+function deferredMap(): Map<string, { until: number; domain: string }> {
+  const g = globalThis as { [DEFERRED_KEY]?: Map<string, { until: number; domain: string }> };
+  g[DEFERRED_KEY] ??= new Map();
+  return g[DEFERRED_KEY];
+}
+
 export function senderAllowed(senderDomain: string | null, allowed: string[]): boolean {
   if (allowed.length === 0) return true;
   if (senderDomain === null) return false;
@@ -192,6 +203,25 @@ export async function fetchMailboxForOrg(
   let error: string | null = null;
   /** Absenderdomains, deren Tageslimit erreicht ist; ihre Mails bleiben ungelesen und werden spaeter erneut versucht. */
   const limitedDomains = new Set<string>();
+  let downloads = 0;
+  const deferKey = (uid: string): string => `${orgId}:${accountKey}:${uidValidity}:${uid}`;
+  /** Merkt die Mail bis zum Fensterende des Absender-Tageslimits vor; liefert true, wenn das Limit erreicht ist. */
+  const deferIfLimited = async (uid: string, domain: string): Promise<boolean> => {
+    const since = new Date(now.getTime() - DAY_MS);
+    const times = await dbInternal.inboundMailMessage.findMany({
+      where: { orgId, senderDomain: domain, result: "STAGED", fetchedAt: { gt: since } },
+      orderBy: { fetchedAt: "asc" },
+      select: { fetchedAt: true },
+    });
+    if (times.length < MAX_STAGED_PER_DOMAIN_PER_DAY) return false;
+    // Das Limit unterschreitet der Zaehler, sobald die aelteste noetige Zeile aus dem 24-Stunden-Fenster faellt.
+    const freeing = times[times.length - MAX_STAGED_PER_DOMAIN_PER_DAY];
+    const m = deferredMap();
+    if (m.size >= MAX_DEFERRED) m.clear();
+    m.set(deferKey(uid), { until: (freeing?.fetchedAt.getTime() ?? now.getTime()) + DAY_MS, domain });
+    limitedDomains.add(domain);
+    return true;
+  };
   try {
     const uids = await op((s) => s.searchUnseen(row.fetchSince));
     const known = new Set(
@@ -210,10 +240,15 @@ export async function fetchMailboxForOrg(
     // Zurueckgestellte Mails (Tageslimit) zaehlen nicht gegen die Grenze je Lauf, damit sie andere Absender nicht
     // verdraengen; die Zahl der geprueften Mails bleibt trotzdem begrenzt.
     let handled = 0;
-    let examined = 0;
+    let deferScans = 0;
     for (const uid of fresh) {
-      if (handled >= MAX_MAILS_PER_RUN || examined >= MAX_MAILS_PER_RUN * 3) break;
-      examined += 1;
+      if (handled >= MAX_MAILS_PER_RUN || downloads >= MAX_MAILS_PER_RUN * 3 || deferScans >= MAX_DEFER_SCANS_PER_RUN) break;
+      // Bereits zurueckgestellt und das Fenster laeuft noch: weder Abruf noch Anrechnung auf die Grenzen.
+      const parked = deferredMap().get(deferKey(uid));
+      if (parked && parked.until > now.getTime()) {
+        limitedDomains.add(parked.domain);
+        continue;
+      }
       if (timedOut) throw new MailboxError("TIMEOUT");
       // Kontingent je Mail pruefen: ein Lauf darf die Sichtung nicht ueber die Grenze fuellen.
       if ((await inboxUsage(orgId)).quotaReached) {
@@ -235,7 +270,10 @@ export async function fetchMailboxForOrg(
         if (!poison) throw e;
         r = await commit(uid, { orgId, accountKey, uidValidity, uid, internalDate: null, fetchedAt: now, size: 0, result: "FETCH_FAILED", messageIdHash: null, senderDomain: null, subject: null }, []);
       }
-      if (r === null) continue;
+      if (r === null) {
+        if (deferredMap().has(deferKey(uid))) deferScans += 1;
+        continue;
+      }
       handled += 1;
       messages += 1;
       staged += r;
@@ -258,11 +296,14 @@ export async function fetchMailboxForOrg(
   async function processUid(uid: string): Promise<number | null> {
     const meta = await op((s) => s.meta(uid));
     if (meta === null) return null;
+    // Vorabpruefung ueber den Envelope (ohne Download): Mails eines Absenders ueber dem Tageslimit gar nicht erst laden.
+    if (meta.fromDomain && (await deferIfLimited(uid, meta.fromDomain))) return null;
     const base = { orgId, accountKey, uidValidity, uid, internalDate: meta.internalDate, fetchedAt: now, size: meta.size };
     let raw: Uint8Array | null = null;
     let tooLarge = meta.size > MAX_MAIL_BYTES;
     if (!tooLarge) {
       try {
+        downloads += 1;
         raw = await op((s) => s.fetchRaw(uid, MAX_MAIL_BYTES));
       } catch (e) {
         if (e instanceof MailboxError && e.code === "TOO_LARGE") tooLarge = true;
@@ -288,15 +329,9 @@ export async function fetchMailboxForOrg(
     // Die Message-Id stammt vom Absender und dient nur als Hinweis im Protokoll, nie zum Verwerfen:
     // Doppelte Abrufe erkennt die Position (Konto, UIDVALIDITY, UID), doppelte Belege der Datei-Hash.
     if (!senderAllowed(mail.senderDomain, allowed)) return commit(uid, { ...head, result: "SENDER_NOT_ALLOWED" }, []);
-    if (mail.senderDomain !== null) {
-      const stagedToday = await dbInternal.inboundMailMessage.count({
-        where: { orgId, senderDomain: mail.senderDomain, result: "STAGED", fetchedAt: { gt: new Date(now.getTime() - DAY_MS) } },
-      });
-      if (stagedToday >= MAX_STAGED_PER_DOMAIN_PER_DAY) {
-        // Weder protokollieren noch als gelesen markieren: die Mail wird in einem spaeteren Lauf erneut versucht.
-        limitedDomains.add(mail.senderDomain);
-        return null;
-      }
+    if (mail.senderDomain !== null && (await deferIfLimited(uid, mail.senderDomain))) {
+      // Weder protokollieren noch als gelesen markieren: die Mail wird nach Ablauf des Fensters erneut versucht.
+      return null;
     }
 
     const rows: AttachmentRow[] = [];

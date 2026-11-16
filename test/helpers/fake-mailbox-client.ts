@@ -53,7 +53,9 @@ export class FakeMailboxClient implements MailboxClient {
       meta: async (uid) => {
         alive();
         const m = this.opts.mails.find((x) => x.uid === uid);
-        return m ? { size: m.size ?? m.raw.byteLength, internalDate: m.internalDate ?? new Date("2026-11-10T10:00:00.000Z") } : null;
+        if (!m) return null;
+        const from = /^From:[^\r\n]*@([A-Za-z0-9.-]+)/im.exec(Buffer.from(m.raw.subarray(0, 4096)).toString("latin1"));
+        return { size: m.size ?? m.raw.byteLength, internalDate: m.internalDate ?? new Date("2026-11-10T10:00:00.000Z"), fromDomain: from?.[1]?.toLowerCase() ?? null };
       },
       fetchRaw: async (uid, maxBytes) => {
         alive();
