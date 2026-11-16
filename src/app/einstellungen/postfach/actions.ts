@@ -7,8 +7,7 @@
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { getActiveOrg } from "@/lib/org";
-import { getCurrentUserId } from "@/lib/auth/server";
+import { requireActionOrg, requireSessionActor } from "@/lib/auth/require-session";
 import { isSameOriginHeaders } from "@/lib/http/same-origin";
 import {
   fetchMailboxNowCore,
@@ -24,8 +23,8 @@ const FORBIDDEN = "Anfrage nicht zulässig.";
 async function guard(): Promise<{ orgId: string; actor: string } | null> {
   const h = await headers();
   if (!isSameOriginHeaders(h, h.get("host") ?? "")) return null;
-  const org = await getActiveOrg();
-  return { orgId: org.id, actor: (await getCurrentUserId()) ?? "system" };
+  const org = await requireActionOrg();
+  return { orgId: org.id, actor: await requireSessionActor() };
 }
 
 function refresh(): void {

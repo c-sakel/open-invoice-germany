@@ -7,8 +7,7 @@
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { getActiveOrg } from "@/lib/org";
-import { getCurrentUserId } from "@/lib/auth/server";
+import { requireActionOrg, requireSessionActor } from "@/lib/auth/require-session";
 import { isSameOriginHeaders } from "@/lib/http/same-origin";
 import { MAX_ACCEPT_BATCH } from "@/schemas/mailbox";
 import {
@@ -26,8 +25,8 @@ const idSchema = z.string().trim().min(1).max(64);
 async function guard(): Promise<{ orgId: string; actor: string } | null> {
   const h = await headers();
   if (!isSameOriginHeaders(h, h.get("host") ?? "")) return null;
-  const org = await getActiveOrg();
-  return { orgId: org.id, actor: (await getCurrentUserId()) ?? "system" };
+  const org = await requireActionOrg();
+  return { orgId: org.id, actor: await requireSessionActor() };
 }
 
 function refresh(): void {

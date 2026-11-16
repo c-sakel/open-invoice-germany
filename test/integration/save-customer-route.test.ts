@@ -8,6 +8,7 @@ import { describe, it, expect, beforeAll, vi } from "vitest";
 
 const orgStore: { id: string | null } = vi.hoisted(() => ({ id: null }));
 
+vi.mock("@/lib/auth/server", () => ({ getCurrentUserId: async () => "tester" }));
 vi.mock("@/lib/org", () => ({
   getActiveOrg: async () => {
     if (!orgStore.id) throw new Error("Test-Org noch nicht gesetzt.");

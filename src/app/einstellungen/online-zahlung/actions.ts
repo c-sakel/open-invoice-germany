@@ -7,8 +7,7 @@
  */
 import { revalidatePath } from "next/cache";
 import { z, ZodError } from "zod";
-import { getActiveOrg } from "@/lib/org";
-import { getCurrentUserId } from "@/lib/auth/server";
+import { requireActionOrg, requireSessionActor } from "@/lib/auth/require-session";
 import { describeError } from "@/lib/safe-error";
 import {
   loadOnlinePaymentSettings,
@@ -40,8 +39,8 @@ function fail(e: unknown, label: string): { ok: false; error: string } {
 }
 
 async function ctx(): Promise<{ orgId: string; actor: string }> {
-  const org = await getActiveOrg();
-  return { orgId: org.id, actor: (await getCurrentUserId()) ?? "system" };
+  const org = await requireActionOrg();
+  return { orgId: org.id, actor: await requireSessionActor() };
 }
 
 async function done(orgId: string): Promise<OnlinePaymentActionResult> {

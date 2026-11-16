@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { getActiveOrg } from "@/lib/org";
+import { requireActionOrg } from "@/lib/auth/require-session";
 import { upsertBaseRate, deleteBaseRate } from "@/domain/dunning/base-rate";
 import { ValidationError, NotFoundError } from "@/domain/errors";
 import type { ActionResult } from "./result";
@@ -35,7 +35,7 @@ export async function upsertBaseRateAction(_prev: ActionResult, fd: FormData): P
   const rateBp = Math.round(ratePercent * 100);
 
   try {
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     await upsertBaseRate(org.id, { validFrom, rateBp, source });
   } catch (e) {
     if (e instanceof z.ZodError) return { ok: false, error: firstError(e.issues) };
@@ -53,7 +53,7 @@ export async function deleteBaseRateAction(_prev: ActionResult, fd: FormData): P
   if (!id) return { ok: false, error: "Basiszinssatz nicht gefunden." };
 
   try {
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     await deleteBaseRate(org.id, id);
   } catch (e) {
     if (e instanceof NotFoundError) return { ok: false, error: e.message };

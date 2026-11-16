@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { getActiveOrg } from "@/lib/org";
+import { requireActionOrg } from "@/lib/auth/require-session";
 import {
   savePaymentMethod,
   deletePaymentMethod,
@@ -45,7 +45,7 @@ export async function savePaymentMethodAction(_prev: ActionResult, fd: FormData)
   };
 
   try {
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     await savePaymentMethod(org.id, id, raw);
   } catch (e) {
     if (e instanceof PaymentMethodNotFoundError) return { ok: false, error: "Zahlungsmethode nicht gefunden." };
@@ -65,7 +65,7 @@ export async function deletePaymentMethodAction(_prev: ActionResult, fd: FormDat
   if (!id) return { ok: false, error: "Zahlungsmethode nicht gefunden." };
 
   try {
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     await deletePaymentMethod(org.id, id);
   } catch (e) {
     if (e instanceof PaymentMethodNotFoundError) return { ok: false, error: "Zahlungsmethode nicht gefunden." };

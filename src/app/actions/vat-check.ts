@@ -6,7 +6,7 @@
  */
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { getActiveOrg } from "@/lib/org";
+import { requireActionOrg } from "@/lib/auth/require-session";
 import { checkVatId, VatCheckDisabledError, VatCheckRateLimitError } from "@/domain/customer/vat-check";
 import { CustomerValidationError } from "@/domain/customer/save";
 import { NotFoundError } from "@/domain/errors";
@@ -23,7 +23,7 @@ export async function checkVatIdAction(customerId: string): Promise<VatCheckActi
   const parsed = customerIdSchema.safeParse(customerId);
   if (!parsed.success) return { ok: false, error: "Ungültiger Kunde." };
   try {
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     const row = await checkVatId(org.id, parsed.data, { trigger: "MANUAL" });
     revalidatePath(`/kunden/${parsed.data}`);
     return { ok: true, status: row.status };

@@ -3,8 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { dbInternal } from "@/lib/db";
-import { getActiveOrg } from "@/lib/org";
-import { getCurrentUserId } from "@/lib/auth/server";
+import { requireActionOrg, requireSessionActor } from "@/lib/auth/require-session";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { organizationSchema, customerSchema, productSchema, type CustomerInput } from "@/schemas";
 import { parseEuroToCents } from "@/lib/money";
@@ -30,6 +29,7 @@ function firstError(issues: { message: string; path: PropertyKey[] }[]): string 
 
 // ── Organisation ─────────────────────────────────────────────────────────
 export async function saveOrganization(_prev: ActionResult, fd: FormData): Promise<ActionResult> {
+  await requireSessionActor();
   const parsed = organizationSchema.safeParse({
     legalName: str(fd, "legalName"),
     ownerName: str(fd, "ownerName"),
@@ -150,7 +150,7 @@ export async function saveCustomer(_prev: ActionResult, fd: FormData): Promise<A
   }
 
   try {
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     // Fix-Runde 1 (Koordinator-Ruling a, 2026-09-04): Anlage-/Aenderungslogik
     // (Nummernkreis, defaultPaymentMethodId-Mandantenpruefung) lebt jetzt ausschliesslich
     // in src/domain/customer/save.ts — dieselbe Funktion nutzen MCP-Tools und die v1-API.
@@ -158,7 +158,7 @@ export async function saveCustomer(_prev: ActionResult, fd: FormData): Promise<A
       const res = await dbInternal.customer.findFirst({ where: { id, orgId: org.id }, select: { id: true } });
       if (!res) return { ok: false, error: "Kunde nicht gefunden." };
       // Alle Formularfelder sind Schluessel des Formulars; leere Felder loeschen den Wert (PATCH-Semantik der Domain).
-      await updateCustomerWithDatev(org.id, id, datevAccount === undefined ? v : { ...v, datevAccount }, datevAccount === undefined ? "system" : ((await getCurrentUserId()) ?? "system"));
+      await updateCustomerWithDatev(org.id, id, datevAccount === undefined ? v : { ...v, datevAccount }, await requireSessionActor());
     } else {
       await createCustomer(org.id, v);
     }
@@ -207,7 +207,7 @@ export async function createCustomerInline(input: CreateCustomerInlineInput): Pr
   const v = parsed.data;
 
   try {
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     const customer = await createCustomer(org.id, v);
     revalidatePath("/kunden");
     return {
@@ -230,9 +230,9 @@ export async function createCustomerInline(input: CreateCustomerInlineInput): Pr
 export async function archiveCustomer(fd: FormData): Promise<void> {
   const id = str(fd, "id");
   if (!id) return;
-  const org = await getActiveOrg();
+  const org = await requireActionOrg();
   try {
-    await archiveCustomerDomain(org.id, id, (await getCurrentUserId()) ?? "system");
+    await archiveCustomerDomain(org.id, id, await requireSessionActor());
   } catch {
     // Unbekannte/fremde ID: wie zuvor stillschweigend ignorieren (Server Action ohne Rueckgabewert).
   }
@@ -265,7 +265,7 @@ export async function saveProduct(_prev: ActionResult, fd: FormData): Promise<Ac
   const v = parsed.data;
 
   try {
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     // Fix-Runde 1 (Koordinator-Ruling a, 2026-09-04): Anlage-/Aenderungslogik lebt jetzt
     // ausschliesslich in src/domain/product/save.ts — dieselbe Funktion nutzen MCP-Tools
     // und die v1-API.
@@ -328,7 +328,7 @@ export async function createProductInline(input: CreateProductInlineInput): Prom
   const v = parsed.data;
 
   try {
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     const product = await createProduct(org.id, v);
     revalidatePath("/produkte");
     return { ok: true, product: { id: product.id, name: product.name, unit: product.unit, netPriceCents: product.netPriceCents, taxRate: product.taxRate } };
@@ -342,7 +342,7 @@ export async function createProductInline(input: CreateProductInlineInput): Prom
 export async function archiveProduct(fd: FormData): Promise<void> {
   const id = str(fd, "id");
   if (!id) return;
-  const org = await getActiveOrg();
+  const org = await requireActionOrg();
   try {
     await archiveProductDomain(org.id, id);
   } catch {

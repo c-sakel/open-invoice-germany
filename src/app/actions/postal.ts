@@ -11,8 +11,7 @@
  */
 import { revalidatePath } from "next/cache";
 import { z, ZodError } from "zod";
-import { getActiveOrg } from "@/lib/org";
-import { getCurrentUserId } from "@/lib/auth/server";
+import { requireActionOrg, requireSessionActor } from "@/lib/auth/require-session";
 import { SecretsUnavailableError } from "@/lib/crypto/secrets";
 import { InvalidOperationError, NotFoundError } from "@/domain/errors";
 import { LxpAuthError, LxpRequestError, LxpUnavailableError } from "@/lib/postal/letterxpress";
@@ -59,7 +58,7 @@ function errorText(e: unknown): string {
 }
 
 async function actor(): Promise<string> {
-  return (await getCurrentUserId()) ?? "system";
+  return await requireSessionActor();
 }
 
 function revalidateAll(): void {
@@ -73,7 +72,7 @@ function revalidateAll(): void {
 export async function savePostalSettingsAction(input: unknown): Promise<{ ok: true; settings: PostalSettingsDto } | Fail> {
   try {
     const parsed = postalSettingsUiSchema.parse(input);
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     const current = await loadPostalSettings(org.id);
     const next = effectiveMode(parsed.enabled ?? current.enabled, parsed.mode ?? current.mode);
     // Jeder Wechsel in einen sendenden Modus (auch TEST -> LIVE) braucht die Kostenbestaetigung.
@@ -94,7 +93,7 @@ export async function savePostalSettingsAction(input: unknown): Promise<{ ok: tr
 /** Fragt NUR das Guthaben ab (lesend); versendet nichts. */
 export async function testPostalConnectionAction(): Promise<{ ok: true; balanceCents: number } | Fail> {
   try {
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     const res = await testPostalConnection(org.id);
     revalidatePath("/einstellungen/post");
     return res.ok ? { ok: true, balanceCents: res.balanceCents } : { ok: false, error: res.error };
@@ -117,7 +116,7 @@ const quoteInputSchema = z.object({ items: z.array(itemRefSchema).min(1).max(100
 export async function quotePostalAction(input: unknown): Promise<{ ok: true; quotes: PostalQuoteDto[]; totalCents: number | null } | Fail> {
   try {
     const { items } = quoteInputSchema.parse(input);
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     checkPostalRateLimit(org.id);
     const { quotes, totalCents } = await quotePostal(org.id, items);
     const now = new Date();
@@ -142,7 +141,7 @@ const sendInputSchema = z.object({ items: z.array(sendItemSchema.strict()).min(1
 export async function sendByPostAction(input: unknown): Promise<{ ok: true; results: PostalSendResult[] } | Fail> {
   try {
     const parsed = sendInputSchema.parse(input);
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     const results = await sendByPost(org.id, parsed, { actor: await actor(), trigger: "USER" });
     revalidateAll();
     return { ok: true, results };
@@ -159,7 +158,7 @@ export async function cancelPostalJobAction(jobId: unknown, confirm?: unknown): 
   try {
     const id = idSchema.parse(jobId);
     postalCancelConfirmSchema.parse({ confirm });
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     await cancelPostalJob(org.id, id, { actor: await actor() });
     revalidateAll();
     return { ok: true };
@@ -176,7 +175,7 @@ const resolveSchema = z
 export async function resolveUnknownPostalJobAction(input: unknown): Promise<{ ok: true; status: "DONE" | "FAILED" } | Fail> {
   try {
     const v = resolveSchema.parse(input);
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     const res = await resolveUnknownPostalJob(org.id, v.jobId, v.outcome, v.note, { actor: await actor() });
     revalidateAll();
     return { ok: true, status: res.status };
@@ -199,7 +198,7 @@ export async function quotePendingBatchAction(): Promise<
   { ok: true; items: PendingBatchItemDto[]; totalCents: number | null; blocked: number; effective: PostalQuoteDto["effective"] } | Fail
 > {
   try {
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     checkPostalRateLimit(org.id);
     const pending = await listPendingPostalDunnings(org.id);
     if (pending.length === 0) return { ok: true, items: [], totalCents: 0, blocked: 0, effective: (await loadPostalSettings(org.id)).effective };
@@ -278,7 +277,7 @@ async function summarizeTransferred(orgId: string, rows: PendingBatchResultDto[]
 export async function sendPendingBatchAction(input: unknown): Promise<{ ok: true; results: PendingBatchResultDto[]; summary: PendingBatchSummary } | Fail> {
   try {
     const parsed = batchInputSchema.parse(input);
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     checkPostalRateLimit(org.id);
     const pending = await listPendingPostalDunnings(org.id);
     const info = new Map(pending.map((p) => [p.dunningId, p]));

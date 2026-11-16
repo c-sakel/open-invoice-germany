@@ -19,6 +19,7 @@ vi.mock("@/lib/org", () => ({
 // Bei Erfolg revalidiert die Action "/einstellungen/belege" — ausserhalb eines echten
 // Next.js-Request-Kontexts wirft revalidatePath sonst "Invariant: static generation store
 // missing" (siehe test/integration/customer-inline-action.test.ts).
+vi.mock("@/lib/auth/server", () => ({ getCurrentUserId: async () => "tester" }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 
 import { dbInternal } from "@/lib/db";

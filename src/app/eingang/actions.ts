@@ -7,8 +7,7 @@
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { z, ZodError } from "zod";
-import { getActiveOrg } from "@/lib/org";
-import { getCurrentUserId } from "@/lib/auth/server";
+import { requireActionOrg, requireSessionActor } from "@/lib/auth/require-session";
 import { isSameOriginHeaders } from "@/lib/http/same-origin";
 import { RateLimitError } from "@/lib/rate-limit";
 import { describeError } from "@/lib/safe-error";
@@ -29,7 +28,7 @@ const idSchema = z.string().trim().min(1, "Ungültige Eingangsrechnung.").max(64
 export async function revalidateIncomingAction(id: unknown): Promise<RevalidateIncomingResult> {
   try {
     const parsed = idSchema.parse(id);
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     const r = await requestIncomingValidation(org.id, parsed);
     revalidatePath("/eingang");
     revalidatePath(`/eingang/${parsed}`);
@@ -71,8 +70,8 @@ const WORKFLOW_TEXT: Record<IncomingWorkflowCode, string> = {
 async function guard(): Promise<{ orgId: string; actor: string }> {
   const h = await headers();
   if (!isSameOriginHeaders(h, h.get("host") ?? "")) throw new IncomingWorkflowError("Anfrage nicht zulässig.", "STATUS_LOCKED", { forbidden: true });
-  const org = await getActiveOrg();
-  return { orgId: org.id, actor: (await getCurrentUserId()) ?? "system" };
+  const org = await requireActionOrg();
+  return { orgId: org.id, actor: await requireSessionActor() };
 }
 
 function failure(e: unknown, what: string): { ok: false; error: string } {

@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getActiveOrg } from "@/lib/org";
+import { requireActionOrg } from "@/lib/auth/require-session";
 import { saveMailSettings, sendTestMail, MailNotConfiguredError } from "@/domain/email/settings";
 import { MailSendError } from "@/lib/mail/provider";
 import { SecretsUnavailableError } from "@/lib/crypto/secrets";
@@ -38,7 +38,7 @@ export async function saveMailSettingsAction(_prev: ActionResult, fd: FormData):
   if (!parsed.success) return { ok: false, error: firstError(parsed.error.issues) };
 
   try {
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     await saveMailSettings(org.id, parsed.data);
   } catch (e) {
     if (e instanceof SecretsUnavailableError) return { ok: false, error: e.message };
@@ -53,7 +53,7 @@ export async function saveMailSettingsAction(_prev: ActionResult, fd: FormData):
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Signatur von useActionState (prev, FormData) verlangt beide Parameter.
 export async function sendTestMailAction(_prev: ActionResult, _fd: FormData): Promise<ActionResult> {
   try {
-    const org = await getActiveOrg();
+    const org = await requireActionOrg();
     await sendTestMail(org.id);
   } catch (e) {
     if (e instanceof MailNotConfiguredError) return { ok: false, error: e.message };
