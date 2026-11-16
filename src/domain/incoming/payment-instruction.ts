@@ -25,9 +25,19 @@ export interface PaymentInstruction {
 const TRANSFER_CODES = new Set(["30", "58", "42"]);
 const CARD_CODES = new Set(["48", "54", "55"]);
 
+const BIC_PATTERN = /^[A-Z]{4}[A-Z]{2}[A-Z0-9]{2}([A-Z0-9]{3})?$/;
+
+/** BIC nur bei gueltiger Form, sonst null (Anzeige und QR). */
+function cleanBic(bic: string | null | undefined): string | null {
+  if (bic == null) return null;
+  const t = bic.trim().toUpperCase();
+  return BIC_PATTERN.test(t) ? t : null;
+}
+
 const clip = (s: string | null, max: number): string | null => {
   if (s === null) return null;
-  const t = s.trim();
+  // Steuerzeichen und Zeilenumbrueche aus fremden Dateien -> Leerzeichen, Mehrfach-Leerzeichen zusammenfassen.
+  const t = s.replace(/\p{Cc}/gu, " ").replace(/\s+/g, " ").trim();
   return t === "" ? null : t.slice(0, max);
 };
 
@@ -51,7 +61,7 @@ export function buildPaymentInstruction(input: {
   const info: PaymentInstruction = {
     iban,
     ibanValid,
-    bic: transfer?.bic ?? null,
+    bic: cleanBic(transfer?.bic),
     recipient,
     remittance,
     amountCents: input.payableCents,

@@ -78,3 +78,33 @@ describe("buildPaymentInstruction", () => {
     expect(r.girocodes[1]!.payload.split("\n")[7]).toBe("EUR116.62");
   });
 });
+
+describe("GiroCode ohne Steuerzeichen", () => {
+  const evil = "DE89370400440532013000";
+  const check = (r: ReturnType<typeof buildPaymentInstruction>) => {
+    const lines = r.girocodes[0]!.payload.split("\n");
+    expect(lines).toHaveLength(11);
+    expect(lines[6]).toBe(IBAN);
+    return lines;
+  };
+
+  it("Name mit Zeilenumbruch und fremder IBAN", () => {
+    const r = buildPaymentInstruction({ ...base, means: means({ accountName: `Muster\n${evil}` }) });
+    const lines = check(r);
+    expect(lines[5]).toBe(`Muster ${evil}`);
+  });
+
+  it("BIC mit Zeilenumbruch wird verworfen, gueltige BIC bleibt", () => {
+    const bad = buildPaymentInstruction({ ...base, means: [{ ...means()[0]!, bic: `COBADEFF\n${evil}` }] });
+    expect(bad.bic).toBeNull();
+    expect(check(bad)[4]).toBe("");
+    const ok = buildPaymentInstruction({ ...base, means: [{ ...means()[0]!, bic: " cobadeff " }] });
+    expect(ok.bic).toBe("COBADEFF");
+    expect(check(ok)[4]).toBe("COBADEFF");
+  });
+
+  it("Verwendungszweck mit CRLF", () => {
+    const r = buildPaymentInstruction({ ...base, remittance: `VZ\r\n${evil}\r\nX` });
+    expect(check(r)[10]).toBe(`VZ ${evil} X`);
+  });
+});

@@ -15,6 +15,7 @@ export class EpcError extends Error {
   }
 }
 
+const CONTROL_CHARS = /\p{Cc}/u;
 const MAX_PAYLOAD_BYTES = 331;
 const MAX_NAME_LENGTH = 70;
 const MIN_AMOUNT_CENTS = 1;
@@ -47,6 +48,10 @@ function formatAmount(cents: number): string {
  * resultierende Payload > 331 Byte).
  */
 export function buildEpcPayload(input: EpcPayloadInput): string {
+  // Steuerzeichen (CR/LF u. a.) wuerden Zeilen der Payload verschieben.
+  for (const [label, value] of [["Name", input.name], ["IBAN", input.iban], ["BIC", input.bic ?? ""], ["Verwendungszweck", input.remittance]] as const) {
+    if (CONTROL_CHARS.test(value)) throw new EpcError(`${label} enthaelt Steuerzeichen.`);
+  }
   const name = input.name.trim();
   if (name.length === 0 || name.length > MAX_NAME_LENGTH) {
     throw new EpcError(`Name des Zahlungsempfängers muss 1-${MAX_NAME_LENGTH} Zeichen lang sein.`);
