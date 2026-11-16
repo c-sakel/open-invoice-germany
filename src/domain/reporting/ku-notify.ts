@@ -51,8 +51,10 @@ export async function checkKuNotifications(orgId: string, now: Date): Promise<nu
     const warn = await createNotification({
       orgId,
       type: "KU_THRESHOLD",
-      title: `Kleinunternehmerregelung: Umsatz ${year} nähert sich ${limit} (§ 19 Abs. 1 UStG)`,
-      body: `${amounts}. Bei Überschreiten von ${limit} entfällt die Regelung sofort. ${KU_NOTICE}`,
+      title: ku.reasons.includes("INVOICED_OVER_LIMIT")
+        ? `Kleinunternehmerregelung: berechneter Umsatz ${year} über ${limit} (§ 19 Abs. 1 UStG)`
+        : `Kleinunternehmerregelung: Umsatz ${year} nähert sich ${limit} (§ 19 Abs. 1 UStG)`,
+      body: `${amounts}. Grenze für das laufende Jahr: ${limit} (§ 19 Abs. 1 S. 1 UStG). ${KU_NOTICE}`,
       link: "/",
       dedupeKey: `ku-${year}-limit-warn`,
       at: now,
