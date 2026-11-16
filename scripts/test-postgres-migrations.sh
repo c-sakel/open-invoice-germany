@@ -2032,7 +2032,7 @@ for COL45 in "IncomingInvoice|isEInvoice|boolean|NO" "IncomingInvoice|receivedAt
   T45=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select data_type || '|' || is_nullable from information_schema.columns where table_schema='public' and table_name='$TBL45' and column_name='$CN45'")
   [ "$T45" = "$DT45|$NL45" ] || fail "$TBL45.$CN45 hat '$T45', erwartet $DT45|$NL45"
 done
-for IDX45 in IncomingInvoice_orgId_validationStatus_idx IncomingInvoice_duplicateOfId_idx; do
+for IDX45 in IncomingInvoice_orgId_validationStatus_idx IncomingInvoice_duplicateOfId_idx IncomingInvoice_orgId_number_idx IncomingInvoice_validationStatus_receivedAt_idx; do
   [ "$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from pg_indexes where schemaname='public' and indexname='$IDX45'")" = "1" ] || fail "Index $IDX45 fehlt"
 done
 COUNT45=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from information_schema.tables where table_schema='public'")

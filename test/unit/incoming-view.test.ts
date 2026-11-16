@@ -32,6 +32,17 @@ describe("Lesefassung", () => {
     expect(h[0].field).toMatch(/^BT-/);
   });
 
+  it("Gegenprobe BR-CO-13 (BT-109) und BR-CO-14 (BT-110)", () => {
+    const p = parseIncomingXml(fx("gen-base-ubl.xml"));
+    expect(sumMismatches(p)).toEqual([]);
+    const t = p.totals;
+    const net = { ...p, totals: { ...t, lineNetCents: 10_000, allowanceCents: 500, chargeCents: 200, netCents: 9_701 } };
+    expect(sumMismatches(net)).toContain("BT-109");
+    expect(sumMismatches({ ...net, totals: { ...net.totals, netCents: 9_700 } })).not.toContain("BT-109");
+    const tax = { ...p, taxes: p.taxes.map((x, i) => (i === 0 ? { ...x, taxCents: (x.taxCents ?? 0) + 1 } : x)) };
+    expect(sumMismatches(tax)).toContain("BT-110");
+  });
+
   it("Typ 389 mit Selbstabrechnungs-Text, 381 Gutschrift, unbekannter Typ", () => {
     const p = parseIncomingXml(fx("cii-389-selbstabrechnung.xml"));
     const v = buildIncomingView(row({ syntax: "CII" }), p, masked);

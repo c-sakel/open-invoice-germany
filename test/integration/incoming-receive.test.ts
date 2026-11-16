@@ -233,6 +233,30 @@ describe("Annahme", () => {
     expect(res.hints).toContain("EMBEDDED_XML_INVALID");
   });
 
+  it("sehr viele Positionen (mehr Elemente als der Parser liest): abgelegt, nicht geprueft, mit Grund", async () => {
+    const org = await mkOrg("Eingang Viele Positionen GmbH");
+    const lines = '<cac:InvoiceLine><cbc:ID>1</cbc:ID><cbc:Note>x</cbc:Note></cac:InvoiceLine>'.repeat(70_000);
+    const xml = Buffer.from(
+      '<?xml version="1.0" encoding="UTF-8"?><Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2" ' +
+        'xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" ' +
+        'xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">' +
+        `<cbc:CustomizationID>urn:cen.eu:en16931:2017</cbc:CustomizationID>${lines}</Invoice>`,
+    );
+    expect(xml.byteLength).toBeLessThan(15 * 1024 * 1024);
+    const res = await receiveIncomingInvoice(org, xml, opts("viele.xml"));
+    expect(res.kind).toBe("EINVOICE");
+    expect(res.syntax).toBe("UBL");
+    expect(res.validationStatus).toBe("NOT_CHECKED");
+    expect(res.hints).toContain("TOO_MANY_ELEMENTS");
+    const row = await dbInternal.incomingInvoice.findUniqueOrThrow({
+      where: { id: res.id },
+      select: { originalSha256: true, originalPath: true, validations: { select: { engine: true, result: true, reason: true } } },
+    });
+    expect(row.originalSha256).toBe(sha(xml));
+    expect(fs.readFileSync(path.join(archiveRoot(), row.originalPath)).equals(xml)).toBe(true);
+    expect(row.validations).toEqual([{ engine: "none", result: "NOT_CHECKED", reason: "TOO_MANY_LINES" }]);
+  }, 60_000);
+
   it("31. Annahme in einer Minute: RateLimitError", async () => {
     const org = await mkOrg("Eingang Limit GmbH");
     for (let i = 0; i < 30; i++) await receiveIncomingInvoice(org, pngVariant(100 + i), opts("l.png"));

@@ -10,7 +10,7 @@
  * gegen PostgreSQL starten) laeuft in .github/workflows/docker.yml.
  */
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 const read = (f: string) => readFileSync(path.join(process.cwd(), f), "utf8");
@@ -81,6 +81,9 @@ describe("Dockerfile", () => {
     for (const f of ["LICENSE-validator-Apache-2.0.txt", "LICENSE-xrechnung-configuration-Apache-2.0.txt", "LICENSE-en16931-validation-EUPL-1.2.txt", "NOTICE-validator.txt"]) {
       expect(read(`assets/einvoice-validation/LICENSES/${f}`).length).toBeGreaterThan(1000);
     }
+    // Die CI-Pruefung des Images verbietet *.md unter /app; der Lizenzhinweis ist daher eine .txt-Datei.
+    expect(existsSync(path.resolve(__dirname, "../../assets/einvoice-validation/LICENSES/README.txt"))).toBe(true);
+    expect(existsSync(path.resolve(__dirname, "../../assets/einvoice-validation/LICENSES/README.md"))).toBe(false);
   });
 
   it("docker.yml fuehrt den Pruefer im Image als Nutzer node gegen Fixtures aus (accept und reject, unter 20 s)", () => {

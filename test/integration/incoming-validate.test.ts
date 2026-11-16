@@ -11,8 +11,10 @@ import { dbInternal } from "@/lib/db";
 import { resetRateLimits } from "@/lib/rate-limit";
 import { archiveRoot } from "@/lib/archive/storage";
 import { ArchiveTamperedError, NotFoundError } from "@/domain/errors";
+import { runExclusive } from "@/domain/incoming/exclusive";
+import { IncomingBusyError } from "@/domain/incoming/errors";
 import { receiveIncomingInvoice } from "@/domain/incoming/receive";
-import { queueIncomingValidation, validateIncomingInvoice } from "@/domain/incoming/validate";
+import { queueIncomingValidation, requestIncomingValidation, validateIncomingInvoice } from "@/domain/incoming/validate";
 import { selectEngine, type EngineOutcome, type ValidationEngine } from "@/domain/incoming/engine";
 import { pdfWithAttachments } from "../helpers/pdf-craft";
 import { realValidatorEngine } from "../helpers/real-validator";
@@ -264,5 +266,20 @@ describe.skipIf(real === null)("Rundlauf mit dem echten Validator", () => {
     const { row } = await check(Buffer.from(big, "utf8"), "gross.xml");
     expect(row.reason).toBeNull();
     expect(row.durationMs).toBeLessThan(60_000);
+  });
+});
+
+describe("manuelle Pruefung wartet nicht hinter einer langen Schlange", () => {
+  it("mehr als zwei wartende Pruefungen: sofort IncomingBusyError, danach wieder frei", async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const held = [runExclusive(() => gate), runExclusive(() => gate), runExclusive(() => gate)];
+    // drei in der Kette: die vierte (manuelle) Anfrage wird abgewiesen
+    expect(() => requestIncomingValidation(org, "gibt-es-nicht")).toThrow(IncomingBusyError);
+    release();
+    await Promise.all(held);
+    await expect(requestIncomingValidation(org, "gibt-es-nicht")).rejects.toBeInstanceOf(NotFoundError);
   });
 });

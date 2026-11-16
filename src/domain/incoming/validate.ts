@@ -9,8 +9,9 @@ import { rateLimit } from "@/lib/rate-limit";
 import { ArchiveTamperedError, NotFoundError } from "@/domain/errors";
 import { getIncomingFile } from "./files";
 import { selectEngine, type EngineOutcome, type NotCheckedReason, type ValidationEngine } from "./engine";
-import { runExclusive } from "./exclusive";
-import { INCOMING_VALIDATE_PER_MINUTE, VALIDATE_TIMEOUT_MS } from "./limits";
+import { IncomingBusyError } from "./errors";
+import { pendingExclusive, runExclusive } from "./exclusive";
+import { INCOMING_VALIDATE_PER_MINUTE, MAX_MANUAL_VALIDATION_WAITING, VALIDATE_TIMEOUT_MS } from "./limits";
 
 export type IncomingValidationResult = "VALID" | "WARNINGS" | "INVALID" | "NOT_CHECKED" | "NOT_APPLICABLE";
 
@@ -60,7 +61,7 @@ export async function validateIncomingInvoice(
     const engine = opts.engine ?? selectEngine();
     const started = Date.now();
     let outcome: EngineOutcome;
-    if (hasHint(row.hintsJson, "LINES_TRUNCATED")) {
+    if (hasHint(row.hintsJson, "LINES_TRUNCATED") || hasHint(row.hintsJson, "TOO_MANY_ELEMENTS")) {
       outcome = { notChecked: "TOO_MANY_LINES" };
     } else {
       // Hash-Pruefung der archivierten Datei vor der Pruefung (Abweichung -> Pflicht-Alarm, Fehler wird gereicht).
@@ -108,6 +109,8 @@ export async function validateIncomingInvoice(
 /** Manuelle Pruefung (REST, MCP, Oberflaeche): wie `validateIncomingInvoice`, aber je Firma auf wenige Laeufe je Minute begrenzt. */
 export function requestIncomingValidation(orgId: string, id: string, opts: ValidateOptions = {}): ReturnType<typeof validateIncomingInvoice> {
   rateLimit(`incoming-validate:${orgId}`, { limit: INCOMING_VALIDATE_PER_MINUTE, windowMs: 60_000 });
+  // Nicht hinter einer langen Schlange warten (Proxy-Zeitgrenze): lieber sofort "ausgelastet" melden.
+  if (pendingExclusive() > MAX_MANUAL_VALIDATION_WAITING) throw new IncomingBusyError();
   return validateIncomingInvoice(orgId, id, opts);
 }
 

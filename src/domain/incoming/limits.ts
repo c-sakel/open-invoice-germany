@@ -45,3 +45,6 @@ export const MAX_AMOUNT_CENTS = 2_147_483_647;
 export const MAX_MCP_LINES = 200;
 /** Manuelle Pruefungen je Minute und Firma (jede Pruefung startet einen eigenen Prozess). */
 export const INCOMING_VALIDATE_PER_MINUTE = 10;
+
+/** Hoechstens so viele Pruefungen duerfen laufen oder warten, damit eine manuelle Pruefung angenommen wird; sonst 503. */
+export const MAX_MANUAL_VALIDATION_WAITING = 2;

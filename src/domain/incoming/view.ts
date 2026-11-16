@@ -46,6 +46,7 @@ const HINT_TEXT: Record<string, string> = {
   CURRENCY_INVALID: "Der Währungscode in der Datei ist ungültig.",
   TEXT_TRUNCATED: "Ein langer Text aus der Datei wurde für die Anzeige gekürzt.",
   LINES_TRUNCATED: "Die Datei hat mehr als 5.000 Positionen; die Positionen werden nicht angezeigt und die Prüfung entfällt.",
+  TOO_MANY_ELEMENTS: "Die Datei hat zu viele Elemente, um sie zu lesen; sie ist unverändert abgelegt, Kopfdaten und Positionen werden nicht angezeigt und die Prüfung entfällt.",
   LIST_TRUNCATED: "Eine lange Liste aus der Datei wurde für die Anzeige gekürzt.",
   PROFILE_MISSING: "Die Datei nennt kein Profil (BT-24); sie gilt daher nicht als vollständige E-Rechnung.",
   ZUGFERD_1_LIMITED: "ZUGFeRD 1.0 wird nur mit wenigen Kopfdaten gelesen; es ist keine E-Rechnung nach EN 16931.",
@@ -79,6 +80,15 @@ export function sumMismatches(p: ParsedIncomingInvoice): string[] {
   if (t.netCents !== null && t.taxCents !== null && t.grossCents !== null && t.netCents + t.taxCents !== t.grossCents) out.push("BT-112");
   if (t.grossCents !== null && t.payableCents !== null && t.grossCents - (t.prepaidCents ?? 0) + (t.roundingCents ?? 0) !== t.payableCents) {
     out.push("BT-115");
+  }
+  // BR-CO-13: BT-109 = BT-106 - BT-107 + BT-108
+  if (t.lineNetCents !== null && t.netCents !== null && t.netCents !== t.lineNetCents - (t.allowanceCents ?? 0) + (t.chargeCents ?? 0)) {
+    out.push("BT-109");
+  }
+  // BR-CO-14: Summe der Steuerbetraege je Kategorie (BT-117) = BT-110
+  if (t.taxCents !== null && p.taxes.length > 0 && p.taxes.every((x) => x.taxCents !== null)) {
+    const sum = p.taxes.reduce((s, x) => s + (x.taxCents ?? 0), 0);
+    if (sum !== t.taxCents) out.push("BT-110");
   }
   return out;
 }

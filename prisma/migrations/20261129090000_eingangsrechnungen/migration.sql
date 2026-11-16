@@ -73,6 +73,12 @@ CREATE INDEX "IncomingInvoice_orgId_updatedAt_idx" ON "IncomingInvoice"("orgId",
 CREATE INDEX "IncomingInvoice_orgId_validationStatus_idx" ON "IncomingInvoice"("orgId", "validationStatus");
 
 -- CreateIndex
+CREATE INDEX "IncomingInvoice_orgId_number_idx" ON "IncomingInvoice"("orgId", "number");
+
+-- CreateIndex
+CREATE INDEX "IncomingInvoice_validationStatus_receivedAt_idx" ON "IncomingInvoice"("validationStatus", "receivedAt");
+
+-- CreateIndex
 CREATE INDEX "IncomingInvoice_duplicateOfId_idx" ON "IncomingInvoice"("duplicateOfId");
 
 -- CreateIndex

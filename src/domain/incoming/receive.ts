@@ -46,15 +46,24 @@ export interface ReceiveOptions {
 /** Timeouts je Datei (Organisation + Hash) im Prozess; ab MAX_PDF_TIMEOUTS wird die Datei abgelegt statt erneut versucht. */
 const MAX_PDF_TIMEOUTS = 3;
 const MAX_TIMEOUT_KEYS = 500;
-const timeoutCounts = new Map<string, number>();
+const TIMEOUTS_KEY = Symbol.for("oig.incomingReceive.timeouts");
+type WithTimeouts = { [TIMEOUTS_KEY]?: Map<string, number> };
+
+/** Zaehler am globalen Objekt: Next.js bundelt Routen getrennt, jedes Bundle haette sonst einen eigenen Zaehler. */
+function timeoutMap(): Map<string, number> {
+  const g = globalThis as WithTimeouts;
+  g[TIMEOUTS_KEY] ??= new Map<string, number>();
+  return g[TIMEOUTS_KEY];
+}
 
 function countTimeout(key: string): number {
-  const n = (timeoutCounts.get(key) ?? 0) + 1;
-  timeoutCounts.delete(key);
-  timeoutCounts.set(key, n);
-  if (timeoutCounts.size > MAX_TIMEOUT_KEYS) {
-    const oldest = timeoutCounts.keys().next();
-    if (!oldest.done) timeoutCounts.delete(oldest.value);
+  const m = timeoutMap();
+  const n = (m.get(key) ?? 0) + 1;
+  m.delete(key);
+  m.set(key, n);
+  if (m.size > MAX_TIMEOUT_KEYS) {
+    const oldest = m.keys().next();
+    if (!oldest.done) m.delete(oldest.value);
   }
   return n;
 }
@@ -106,13 +115,33 @@ interface Classified {
   parsed: ParsedIncomingInvoice | null;
   xmlBytes: Uint8Array | null;
   hints: string[];
+  /** Die XML hat mehr Elemente, als der Parser liest: Original wird abgelegt, Kopfdaten fehlen, Pruefung entfaellt. */
+  tooMany?: { syntax: "UBL" | "CII" | null };
+}
+
+/** Syntax einer zu grossen XML ohne DOM: nur der Wurzelname aus den ersten Zeichen (die Datei ist schon als sicher geprueft). */
+function guessSyntax(text: string): "UBL" | "CII" | null {
+  const head = text.slice(0, 8192);
+  if (/<(?:[\w.-]+:)?CrossIndustryInvoice[\s>]/.test(head)) return "CII";
+  if (/<(?:[\w.-]+:)?(?:Invoice|CreditNote)[\s>]/.test(head)) return "UBL";
+  return null;
+}
+
+function isTooManyElements(e: unknown): boolean {
+  return e instanceof IncomingFormatError && e.code === "TOO_MANY_ELEMENTS";
 }
 
 async function classify(bytes: Uint8Array, timeoutKey: string): Promise<Classified> {
   const container = detectContainer(bytes);
   if (container.type === "XML") {
-    const parsed = parseIncomingXml(container.text);
-    return { kind: parsed.syntax === "FERD1" ? "HYBRID" : "EINVOICE", mime: "application/xml", ext: "xml", parsed, xmlBytes: null, hints: [] };
+    try {
+      const parsed = parseIncomingXml(container.text);
+      return { kind: parsed.syntax === "FERD1" ? "HYBRID" : "EINVOICE", mime: "application/xml", ext: "xml", parsed, xmlBytes: null, hints: [] };
+    } catch (e) {
+      if (!isTooManyElements(e)) throw e;
+      const syntax = guessSyntax(container.text);
+      return { kind: syntax === null ? "OTHER" : "EINVOICE", mime: "application/xml", ext: "xml", parsed: null, xmlBytes: null, hints: ["TOO_MANY_ELEMENTS"], tooMany: syntax === null ? undefined : { syntax } };
+    }
   }
   if (container.type === "IMAGE") {
     return { kind: "OTHER", mime: container.mime, ext: container.mime === "image/png" ? "png" : "jpg", parsed: null, xmlBytes: null, hints: [] };
@@ -138,6 +167,10 @@ async function classify(bytes: Uint8Array, timeoutKey: string): Promise<Classifi
       return { ...base, kind: "HYBRID", parsed, xmlBytes: res.xml, hints: [] };
     } catch (e) {
       if (!(e instanceof IncomingFormatError)) throw e;
+      if (isTooManyElements(e)) {
+        const syntax = guessSyntax(text);
+        if (syntax !== null) return { ...base, kind: "HYBRID", parsed: null, xmlBytes: res.xml, hints: ["TOO_MANY_ELEMENTS"], tooMany: { syntax } };
+      }
     }
   }
   return { ...base, kind: "OTHER", parsed: null, xmlBytes: null, hints: ["EMBEDDED_XML_INVALID"] };
@@ -172,8 +205,10 @@ export async function receiveIncomingInvoice(orgId: string, bytes: Uint8Array, o
 
   const p = cls.parsed;
   const hints = [...new Set([...(p?.hints.map((h) => h.code) ?? []), ...cls.hints])];
-  const notApplicable = cls.kind === "OTHER" || p === null || !p.isEInvoice;
-  const validationStatus = notApplicable ? "NOT_APPLICABLE" : p.linesTruncated ? "NOT_CHECKED" : "PENDING";
+  const tooMany = cls.tooMany !== undefined;
+  const notApplicable = !tooMany && (cls.kind === "OTHER" || p === null || !p.isEInvoice);
+  const notChecked = tooMany || (p !== null && p.linesTruncated);
+  const validationStatus = notApplicable ? "NOT_APPLICABLE" : notChecked ? "NOT_CHECKED" : "PENDING";
   const fileName = sanitizeFileName(opts.fileName) ?? `rechnung.${cls.ext}`;
 
   let created: { id: string; duplicateOfId: string | null };
@@ -216,9 +251,9 @@ export async function receiveIncomingInvoice(orgId: string, bytes: Uint8Array, o
             xmlPath,
             xmlSha256,
             kind: cls.kind,
-            syntax: p?.syntax ?? null,
+            syntax: p?.syntax ?? cls.tooMany?.syntax ?? null,
             profile: p?.profile ?? null,
-            isEInvoice: p?.isEInvoice ?? false,
+            isEInvoice: p?.isEInvoice ?? tooMany,
             typeCode: p?.typeCode ?? null,
             number: p?.number ?? null,
             issueDate: isoToDate(p?.issueDate ?? null),
@@ -244,6 +279,13 @@ export async function receiveIncomingInvoice(orgId: string, bytes: Uint8Array, o
           },
           select: { id: true, duplicateOfId: true },
         });
+        if (validationStatus === "NOT_CHECKED") {
+          // Grund sofort sichtbar machen, nicht erst nach einer manuellen Pruefung.
+          await tx.incomingInvoiceValidation.create({
+            data: { incomingInvoiceId: row.id, at: receivedAt, engine: "none", artefactVersion: "-", result: "NOT_CHECKED", reason: "TOO_MANY_LINES" },
+            select: { id: true },
+          });
+        }
         await appendChangeLog(tx, {
           orgId,
           entity: "INCOMING_INVOICE",
@@ -267,7 +309,7 @@ export async function receiveIncomingInvoice(orgId: string, bytes: Uint8Array, o
     if (winner) throw new IncomingDuplicateError(winner.id);
     throw e;
   }
-  timeoutCounts.delete(`${orgId}:${sha256}`);
+  timeoutMap().delete(`${orgId}:${sha256}`);
 
   try {
     await logActivity(dbInternal, {
@@ -292,8 +334,8 @@ export async function receiveIncomingInvoice(orgId: string, bytes: Uint8Array, o
   return {
     id: created.id,
     kind: cls.kind,
-    isEInvoice: p?.isEInvoice ?? false,
-    syntax: p?.syntax ?? null,
+    isEInvoice: p?.isEInvoice ?? tooMany,
+    syntax: p?.syntax ?? cls.tooMany?.syntax ?? null,
     profile: p?.profile ?? null,
     number: p?.number ?? null,
     supplierName: p?.seller.name ?? null,

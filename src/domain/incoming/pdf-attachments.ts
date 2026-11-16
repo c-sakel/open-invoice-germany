@@ -4,8 +4,8 @@
  * src/workers/incoming-worker.mjs); hier wird die Rechnungs-XML ausgewaehlt.
  */
 import { runIsolated } from "@/lib/worker/isolated";
-import { runExclusive } from "@/lib/serial-queue";
 import { classifyXml } from "./detect";
+import { IncomingFormatError } from "./errors";
 import {
   MAX_INCOMING_BYTES,
   MAX_PDF_ATTACHMENT_BYTES,
@@ -62,25 +62,49 @@ function isClassifiable(bytes: Uint8Array): boolean {
   try {
     classifyXml(new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes));
     return true;
-  } catch {
-    return false;
+  } catch (e) {
+    // Zu viele Elemente: trotzdem eine Rechnungs-XML, die Annahme legt sie ab.
+    return e instanceof IncomingFormatError && e.code === "TOO_MANY_ELEMENTS";
   }
 }
 
 const UNREADABLE_CODES = new Set(["ENCRYPTED", "BROKEN", "TOO_MANY", "TOO_LARGE"]);
 
-let waiting = 0;
+/**
+ * Kette und Zaehler der wartenden Extraktionen am globalen Objekt (Symbol.for): Next.js bundelt
+ * REST, Upload-Route und MCP getrennt, sonst haette jedes Bundle eine eigene Kette.
+ */
+const PDF_STATE_KEY = Symbol.for("oig.incomingPdf.state");
+interface PdfState {
+  tail: Promise<unknown>;
+  waiting: number;
+}
+type WithPdfState = { [PDF_STATE_KEY]?: PdfState };
+
+function pdfState(): PdfState {
+  const g = globalThis as WithPdfState;
+  g[PDF_STATE_KEY] ??= { tail: Promise.resolve(), waiting: 0 };
+  return g[PDF_STATE_KEY];
+}
+
+function runPdfExclusive<T>(fn: () => Promise<T>): Promise<T> {
+  const st = pdfState();
+  const next = st.tail.then(fn, fn);
+  st.tail = next.catch(() => undefined);
+  return next;
+}
 
 export async function extractPdfInvoiceXml(bytes: Uint8Array): Promise<PdfExtract> {
   if (bytes.byteLength > MAX_INCOMING_BYTES) return { status: "UNREADABLE", reason: "TOO_LARGE" };
-  if (waiting >= MAX_PDF_QUEUE) return { status: "UNREADABLE", reason: "BUSY" };
+  const st = pdfState();
+  if (st.waiting >= MAX_PDF_QUEUE) return { status: "UNREADABLE", reason: "BUSY" };
   // Eigene Kopie: ein Pool-Buffer wuerde beim Klonen den ganzen Pool in den Worker kopieren.
   const own = Uint8Array.from(bytes);
-  waiting++;
+  st.waiting++;
   try {
-    return await runExclusive("incoming-pdf", () => extractOwned(own));
+    return await runPdfExclusive(() => extractOwned(own));
   } finally {
-    waiting--;
+    st.waiting--;
   }
 }
 

@@ -10,6 +10,7 @@ import { getActiveOrg } from "@/lib/org";
 import { RateLimitError } from "@/lib/rate-limit";
 import { describeError } from "@/lib/safe-error";
 import { ArchiveTamperedError, NotFoundError } from "@/domain/errors";
+import { IncomingBusyError } from "@/domain/incoming/errors";
 import { requestIncomingValidation } from "@/domain/incoming/validate";
 
 export type RevalidateIncomingResult =
@@ -31,6 +32,7 @@ export async function revalidateIncomingAction(id: unknown): Promise<RevalidateI
     if (e instanceof ZodError) return { ok: false, error: e.issues[0]?.message ?? "Ungültige Eingabe." };
     if (e instanceof NotFoundError) return { ok: false, error: "Eingangsrechnung nicht gefunden." };
     if (e instanceof RateLimitError) return { ok: false, error: "Zu viele Prüfungen — bitte kurz warten." };
+    if (e instanceof IncomingBusyError) return { ok: false, error: "Die Prüfung ist gerade ausgelastet — bitte in einigen Sekunden erneut versuchen." };
     if (e instanceof ArchiveTamperedError) return { ok: false, error: "Die archivierte Datei kann nicht geprüft werden." };
     console.error("Eingang erneut prüfen:", describeError(e));
     return { ok: false, error: "Die Prüfung konnte nicht ausgeführt werden." };

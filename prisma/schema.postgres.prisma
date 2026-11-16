@@ -2154,6 +2154,8 @@ model IncomingInvoice {
   @@index([orgId, supplierVatId, number])
   @@index([orgId, updatedAt])
   @@index([orgId, validationStatus])
+  @@index([orgId, number])
+  @@index([validationStatus, receivedAt])
   @@index([duplicateOfId])
 }
 
