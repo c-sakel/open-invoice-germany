@@ -86,6 +86,30 @@ describe("checkKuNotifications", () => {
     expect(notes[2]!.title).toBe("Kleinunternehmerregelung: Umsatz 2229 über 100.000 € (§ 19 Abs. 1 UStG)");
   });
 
+  it("nach Verlust des Folgejahres: einmalige Vorwarnung vor der Grenze des laufenden Jahres", async () => {
+    const c = await mk();
+    await setKuEnabled(c.orgId, false);
+    await paidInvoice(c, 3_000_000); // 30.000 vereinnahmt -> Folgejahr verloren
+    expect(await checkKuNotifications(c.orgId, NOW)).toBe(1);
+    // 80.000 berechnet, nicht bezahlt: 110.000 berechnet > 100.000
+    const d = await createDraftInvoice(
+      c.orgId,
+      createInvoiceSchema.parse({
+        customerId: c.customerId, type: "INVOICE", taxScheme: "KLEINUNTERNEHMER", currency: "EUR", issueDate: NOW, deliveryDate: NOW,
+        notes: "Kleinunternehmer gemäß § 19 UStG, kein Ausweis von Umsatzsteuer",
+        lines: [{ description: "Leistung", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 8_000_000, taxRate: 0, taxCategory: "Z", discountPermille: 0, discountCents: 0 }],
+      }),
+      { now: NOW },
+    );
+    await finalizeInvoice(d.id, { now: NOW });
+    expect(await checkKuNotifications(c.orgId, NOW)).toBe(1);
+    expect(await checkKuNotifications(c.orgId, NOW)).toBe(0);
+    const notes = await kuNotes(c.orgId);
+    expect(notes.map((n) => n.dedupeKey)).toEqual(["ku-2229-next", "ku-2229-limit-warn"]);
+    expect(notes[0]!.body).toContain("Vorjahresgrenze für 2230 überschritten (§ 19 Abs. 1 S. 1 UStG).");
+    expect(notes[1]!.title).toContain("100.000 €");
+  });
+
   it("Text enthaelt Paragraf, Hinweis und Betraege, aber keine Kundennamen", async () => {
     const c = await mk();
     await setKuEnabled(c.orgId, false);

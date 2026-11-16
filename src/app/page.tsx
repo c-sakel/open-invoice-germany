@@ -102,7 +102,7 @@ export default async function Home() {
     quoteOutcome(org.id),
     topCustomers(org.id, { currency }),
     ossThreshold(org.id, berlinYear(new Date())),
-    kuThreshold(org.id, berlinYear(new Date())),
+    kuThreshold(org.id, berlinYear(new Date()), { quickIfNotApplicable: true }),
   ]);
 
   return (

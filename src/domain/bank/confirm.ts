@@ -64,10 +64,16 @@ export interface ConfirmResult {
 }
 
 export async function confirmBankMatch(orgId: string, txId: string, raw: unknown, opts: BankActionOptions): Promise<ConfirmResult> {
+  const result = await confirmBankMatchWithoutKu(orgId, txId, raw, opts);
+  await onPaymentChangedKu(orgId, opts.now);
+  return result;
+}
+
+/** Wie `confirmBankMatch`, aber ohne Umsatzgrenzen-Pruefung; der Aufrufer ruft sie einmal selbst auf (Sammelbestaetigung). */
+async function confirmBankMatchWithoutKu(orgId: string, txId: string, raw: unknown, opts: BankActionOptions): Promise<ConfirmResult> {
   const result = await confirmBankMatchInTx(orgId, txId, raw, opts);
   // Nach dem Commit: faellige Regel-Laeufe anstossen (Fehler beruehren die Buchung nie).
   kickPaymentRules(orgId);
-  await onPaymentChangedKu(orgId, opts.now);
   for (const pay of result.payments) cancelOpenAttemptsAfterCommit(orgId, pay.invoiceId);
   return result;
 }
@@ -212,7 +218,7 @@ export async function confirmUnambiguous(
       continue;
     }
     try {
-      await confirmBankMatch(
+      await confirmBankMatchWithoutKu(
         orgId,
         row.id,
         {
@@ -226,6 +232,7 @@ export async function confirmUnambiguous(
       skipped.push({ transactionId: row.id, reason: skipReason(e) });
     }
   }
+  if (confirmed > 0) await onPaymentChangedKu(orgId, opts.now);
   return { confirmed, skipped, truncated, remaining };
 }
 

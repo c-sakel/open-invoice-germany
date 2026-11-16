@@ -3,7 +3,7 @@
  * (festgeschriebene Belege, Zahlungen, Gegenbuchung, Teilgutschrift mit Verrechnung). Testjahr 2228
  * (Invoice.number ist global eindeutig; jede Org bekommt ein eigenes Nummernpraefix).
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { dbInternal } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { createDraftInvoice } from "@/domain/invoice/create";
@@ -18,7 +18,7 @@ import { createInvoiceSchema, partialCreditSchema } from "@/schemas";
 
 const NOW = new Date("2228-05-10T10:00:00.000Z");
 const PREV = new Date("2227-05-10T10:00:00.000Z");
-// Die Einstellungen kennen nur Jahre bis 2100 (Aufnahmejahr) bzw. 20JJ (Fremdumsatz): dafuer ein eigenes Jahr.
+// Die Einstellungen kennen nur Jahre bis 2099 (Aufnahmejahr) bzw. 20JJ (Fremdumsatz): dafuer ein eigenes Jahr.
 const SET_NOW = new Date("2099-05-10T10:00:00.000Z");
 const SET_PREV = new Date("2098-05-10T10:00:00.000Z");
 let seq = 0;
@@ -159,6 +159,26 @@ describe("kuThreshold", () => {
 
     const small = await mk("KLEINUNTERNEHMER");
     expect((await kuThreshold(small.orgId, 2228)).applies).toBe(true);
+  });
+
+  it("Vorpruefung: Organisation ohne Kleinunternehmerregelung laedt weder Belege noch Zahlungen", async () => {
+    const reg = await mk("REGULAR");
+    const inv = await invoice(reg, { netCents: 900000 });
+    await pay(reg, inv.id, inv.grossTotalCents);
+    const findInvoices = vi.spyOn(dbInternal.invoice, "findMany");
+    const findPayments = vi.spyOn(dbInternal.payment, "findMany");
+    try {
+      const r = await kuThreshold(reg.orgId, 2228, { quickIfNotApplicable: true });
+      expect(r).toMatchObject({ applies: false, level: "OK", reasons: [] });
+      expect(findInvoices).not.toHaveBeenCalled();
+      expect(findPayments).not.toHaveBeenCalled();
+    } finally {
+      findInvoices.mockRestore();
+      findPayments.mockRestore();
+    }
+    const small = await mk("KLEINUNTERNEHMER");
+    const full = await kuThreshold(small.orgId, 2228, { quickIfNotApplicable: true });
+    expect(full).toEqual(await kuThreshold(small.orgId, 2228));
   });
 
   it("Fremdumsatz und Warnschwelle aus den Einstellungen", async () => {

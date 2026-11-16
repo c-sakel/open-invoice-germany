@@ -10,6 +10,7 @@ import { berlinYear, berlinYearStart } from "@/lib/berlin-time";
 import {
   aggregateKuYear,
   kuLevel,
+  KU_CURRENT_YEAR_LIMIT_CENTS,
   KU_PREVIOUS_YEAR_LIMIT_CENTS,
   type KuDoc,
   type KuLevel,
@@ -44,8 +45,41 @@ const docSelect = {
   payableCents: true,
 } as const;
 
-export async function kuThreshold(orgId: string, year: number): Promise<KuThreshold> {
+async function hasKuDocumentInYear(orgId: string, year: number): Promise<boolean> {
+  const n = await dbInternal.invoice.count({
+    where: { orgId, status: { not: "DRAFT" }, taxScheme: "KLEINUNTERNEHMER", issueDate: { gte: berlinYearStart(year), lt: berlinYearStart(year + 1) } },
+  });
+  return n > 0;
+}
+
+/**
+ * Mit `quickIfNotApplicable` kehrt die Auswertung fuer Organisationen ohne Kleinunternehmerregelung nach einer
+ * billigen Pruefung ohne Summen zurueck (Hooks, Job, Dashboard); REST und MCP liefern weiter die vollen Summen.
+ */
+export async function kuThreshold(orgId: string, year: number, opts: { quickIfNotApplicable?: boolean } = {}): Promise<KuThreshold> {
   const settings = await loadDocumentSettings(orgId);
+
+  // Billige Vorpruefung: ohne Standardschema Kleinunternehmer und ohne solchen Beleg im Jahr kommt die Regelung nicht in Frage.
+  const org = await dbInternal.organization.findUnique({ where: { id: orgId }, select: { defaultTaxScheme: true } });
+  const orgApplies = org?.defaultTaxScheme === "KLEINUNTERNEHMER";
+  if (opts.quickIfNotApplicable && !orgApplies && !(await hasKuDocumentInYear(orgId, year))) {
+    const external = settings.kuExternalRevenue;
+    return {
+      applies: false,
+      year,
+      warnPercent: settings.kuWarnPercent,
+      startYear: settings.kuBusinessStartYear,
+      currentLimitCents:
+        settings.kuBusinessStartYear === year ? KU_PREVIOUS_YEAR_LIMIT_CENTS : KU_CURRENT_YEAR_LIMIT_CENTS,
+      previousYearLimitCents: KU_PREVIOUS_YEAR_LIMIT_CENTS,
+      level: "OK",
+      reasons: [],
+      current: aggregateKuYear([], [], external, year),
+      previous: aggregateKuYear([], [], external, year - 1),
+      notice: KU_NOTICE,
+    };
+  }
+
   const range = { gte: berlinYearStart(year - 1), lt: berlinYearStart(year + 1) };
 
   const docRows = await dbInternal.invoice.findMany({
@@ -71,10 +105,7 @@ export async function kuThreshold(orgId: string, year: number): Promise<KuThresh
   const previous = aggregateKuYear(docs, payments, external, year - 1);
   const verdict = kuLevel({ current, previous, warnPercent: settings.kuWarnPercent, startYear: settings.kuBusinessStartYear });
 
-  const org = await dbInternal.organization.findUnique({ where: { id: orgId }, select: { defaultTaxScheme: true } });
-  const applies =
-    org?.defaultTaxScheme === "KLEINUNTERNEHMER" ||
-    docs.some((d) => d.taxScheme === "KLEINUNTERNEHMER" && berlinYear(d.issueDate) === year);
+  const applies = orgApplies || docs.some((d) => d.taxScheme === "KLEINUNTERNEHMER" && berlinYear(d.issueDate) === year);
 
   return {
     applies,

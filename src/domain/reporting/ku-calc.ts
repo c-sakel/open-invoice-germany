@@ -155,7 +155,12 @@ export function kuLevel(i: { current: KuYearSum; previous: KuYearSum; warnPercen
   if (reasons.length > 0) return { level: "EXCEEDED", reasons, currentLimitCents };
 
   if (i.current.totalReceivedCents > KU_PREVIOUS_YEAR_LIMIT_CENTS) {
-    return { level: "NEXT_YEAR_LOST", reasons: ["CURRENT_OVER_25000"], currentLimitCents };
+    // Die Vorwarnung vor dem Wegfall mitten im Jahr (Grenze des laufenden Jahres) bleibt auch danach sichtbar.
+    const lostReasons: KuReason[] = ["CURRENT_OVER_25000"];
+    const lostPeak = Math.max(i.current.totalReceivedCents, i.current.totalInvoicedCents);
+    if (lostPeak * 100 >= i.warnPercent * currentLimitCents) lostReasons.push("APPROACHING_LIMIT");
+    if (i.current.totalInvoicedCents > currentLimitCents) lostReasons.push("INVOICED_OVER_LIMIT");
+    return { level: "NEXT_YEAR_LOST", reasons: lostReasons, currentLimitCents };
   }
 
   const peak = Math.max(i.current.totalReceivedCents, i.current.totalInvoicedCents);

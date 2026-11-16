@@ -17,7 +17,7 @@ function wholeEuros(cents: number): string {
 /** Legt hoechstens eine neue Benachrichtigung je Jahr und Stufe an; liefert die Anzahl neu angelegter Eintraege. */
 export async function checkKuNotifications(orgId: string, now: Date): Promise<number> {
   const year = berlinYear(now);
-  const ku = await kuThreshold(orgId, year);
+  const ku = await kuThreshold(orgId, year, { quickIfNotApplicable: true });
   if (!ku.applies || ku.level === "OK") return 0;
 
   const amounts = `Vereinnahmt ${formatCents(ku.current.totalReceivedCents, "EUR")} netto, berechnet ${formatCents(ku.current.totalInvoicedCents, "EUR")} netto im Jahr ${year}`;
@@ -35,7 +35,7 @@ export async function checkKuNotifications(orgId: string, now: Date): Promise<nu
   } else if (ku.level === "NEXT_YEAR_LOST") {
     dedupeKey = `ku-${year}-next`;
     title = `Kleinunternehmerregelung: Umsatz ${year} über ${wholeEuros(ku.previousYearLimitCents)} (§ 19 Abs. 1 UStG)`;
-    body = `${amounts}. Die Regelung gilt für das Folgejahr nicht mehr. ${KU_NOTICE}`;
+    body = `${amounts}. Vorjahresgrenze für ${year + 1} überschritten (§ 19 Abs. 1 S. 1 UStG). ${KU_NOTICE}`;
   } else {
     dedupeKey = `ku-${year}-warn`;
     title = `Kleinunternehmerregelung: ${ku.warnPercent} % einer Umsatzgrenze erreicht (§ 19 Abs. 1 UStG)`;
@@ -43,5 +43,21 @@ export async function checkKuNotifications(orgId: string, now: Date): Promise<nu
   }
 
   const res = await createNotification({ orgId, type: "KU_THRESHOLD", title, body, link: "/", dedupeKey, at: now });
-  return res ? 1 : 0;
+  let created = res ? 1 : 0;
+
+  // Nach dem Ueberschreiten der 25.000-EUR-Grenze bleibt die Vorwarnung vor der Grenze des laufenden Jahres erhalten.
+  if (ku.level === "NEXT_YEAR_LOST" && (ku.reasons.includes("APPROACHING_LIMIT") || ku.reasons.includes("INVOICED_OVER_LIMIT"))) {
+    const limit = wholeEuros(ku.currentLimitCents);
+    const warn = await createNotification({
+      orgId,
+      type: "KU_THRESHOLD",
+      title: `Kleinunternehmerregelung: Umsatz ${year} nähert sich ${limit} (§ 19 Abs. 1 UStG)`,
+      body: `${amounts}. Bei Überschreiten von ${limit} entfällt die Regelung sofort. ${KU_NOTICE}`,
+      link: "/",
+      dedupeKey: `ku-${year}-limit-warn`,
+      at: now,
+    });
+    if (warn) created += 1;
+  }
+  return created;
 }

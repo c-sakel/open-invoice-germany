@@ -1,6 +1,6 @@
 /**
  * REST und MCP der Belegpruefungen: Umsatzgrenzen-Auswertung, Einstellungen (Teil-Update, Setzen),
- * Verzugshinweis am Beleg und Hinweise beim Festschreiben. Testjahr 2232 (Belegnummern-Praefix je Org).
+ * Verzugshinweis am Beleg und Hinweise beim Festschreiben. Testjahr 2096 (Belegnummern-Praefix je Org).
  */
 import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest";
 
@@ -49,7 +49,7 @@ async function callTool(name: string, args: Record<string, unknown> = {}): Promi
 }
 const text = (r: ToolResult): string => r.content.map((c) => c.text).join("\n");
 
-const NOW = new Date("2232-05-10T10:00:00.000Z");
+const NOW = new Date("2096-05-10T10:00:00.000Z");
 let orgId: string;
 let otherOrgId: string;
 let customerId: string;
@@ -66,7 +66,7 @@ function call<T>(handler: (r: Request, c: { params: Promise<{ id: string }> }) =
 
 async function mkOrg(name: string, tag: string, scheme: "REGULAR" | "KLEINUNTERNEHMER") {
   const org = await dbInternal.organization.create({
-    data: { legalName: name, addressLine1: "Teststr. 1", postalCode: "10115", city: "Berlin", vatId: `DE2232${tag}`, taxNumber: `22/232/0000${tag}`, defaultTaxScheme: scheme },
+    data: { legalName: name, addressLine1: "Teststr. 1", postalCode: "10115", city: "Berlin", vatId: `DE2096${tag}`, taxNumber: `22/232/0000${tag}`, defaultTaxScheme: scheme },
   });
   await ensureOrgMasterdata(dbInternal, org.id);
   await saveDocumentSettings(org.id, { viesCheckEnabled: false });
@@ -105,14 +105,14 @@ beforeEach(() => {
 
 describe("Umsatzgrenzen: REST und MCP", () => {
   it("read-Schluessel, Jahr-Parameter, fremde Org nie enthalten", async () => {
-    const res = await call(KuGet, "http://x/api/v1/Report/smallBusiness?year=2232", { token: readToken });
+    const res = await call(KuGet, "http://x/api/v1/Report/smallBusiness?year=2096", { token: readToken });
     expect(res.status).toBe(200);
     const data = (await res.json()).data;
-    expect(data.year).toBe(2232);
+    expect(data.year).toBe(2096);
     expect(data.applies).toBe(true);
     expect(data.current.invoicedCents).toBe(0);
     expect(data.current.documentCount).toBe(0);
-    expect(data).toEqual(JSON.parse(JSON.stringify(await kuThreshold(orgId, 2232))));
+    expect(data).toEqual(JSON.parse(JSON.stringify(await kuThreshold(orgId, 2096))));
   });
 
   it("400 bei ungueltigem Jahr, 401 ohne Schluessel", async () => {
@@ -122,8 +122,8 @@ describe("Umsatzgrenzen: REST und MCP", () => {
   });
 
   it("MCP liefert dasselbe Objekt wie REST", async () => {
-    const rest = (await (await call(KuGet, "http://x/api/v1/Report/smallBusiness?year=2232")).json()).data;
-    const r = await callTool("get_small_business_threshold", { year: 2232 });
+    const rest = (await (await call(KuGet, "http://x/api/v1/Report/smallBusiness?year=2096")).json()).data;
+    const r = await callTool("get_small_business_threshold", { year: 2096 });
     expect(r.isError).toBeFalsy();
     expect(JSON.parse(text(r))).toEqual(rest);
   });
@@ -180,7 +180,7 @@ describe("Verzugshinweis am Beleg", () => {
   });
 
   it("MCP: anlegen und aendern", async () => {
-    const created = await callTool("create_invoice", { customer: "Kunde AG", deliveryDate: "2232-05-01", consumerDefaultNotice: true, lines: [{ description: "Beratung", quantity: 1, unitPriceEuro: 100, taxRatePercent: 19 }] });
+    const created = await callTool("create_invoice", { customer: "Kunde AG", deliveryDate: "2096-05-01", consumerDefaultNotice: true, lines: [{ description: "Beratung", quantity: 1, unitPriceEuro: 100, taxRatePercent: 19 }] });
     expect(created.isError).toBeFalsy();
     const id = /ID: (\S+)/.exec(text(created))![1]!;
     expect((await dbInternal.invoice.findUniqueOrThrow({ where: { id }, select: { consumerDefaultNotice: true } })).consumerDefaultNotice).toBe(true);
@@ -196,7 +196,7 @@ describe("Hinweise beim Festschreiben per REST", () => {
     const d = await createDraftInvoice(
       orgId,
       createInvoiceSchema.parse({
-        customerId: euCustomerId, type: "INVOICE", taxScheme: "IG_LIEFERUNG", currency: "EUR", issueDate: NOW, deliveryDate: new Date("2232-02-03T10:00:00.000Z"),
+        customerId: euCustomerId, type: "INVOICE", taxScheme: "IG_LIEFERUNG", currency: "EUR", issueDate: NOW, deliveryDate: new Date("2096-02-03T10:00:00.000Z"),
         notes: "Steuerfreie innergemeinschaftliche Lieferung gemäß § 4 Nr. 1b i. V. m. § 6a UStG",
         lines: [{ description: "Ware", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 10000, taxRate: 0, taxCategory: "K", discountPermille: 0, discountCents: 0 }],
       }),
@@ -206,7 +206,7 @@ describe("Hinweise beim Festschreiben per REST", () => {
     expect(res.status).toBe(200);
     const json = (await res.json()) as { data: { status: string; issueDeadline: string | null }; warnings: string[] };
     expect(json.data.status).toBe("FINALIZED");
-    expect(json.data.issueDeadline).toBe("2232-03-15");
+    expect(json.data.issueDeadline).toBe("2096-03-15");
     expect(json.warnings.some((w) => w.includes("Ausstellfrist überschritten") && w.includes("§ 14a Abs. 1, 3 UStG"))).toBe(true);
   });
 

@@ -98,7 +98,7 @@ export const documentSettingsInputSchema = z.object({
   /** § 19 UStG: Warnschwelle in Prozent der jeweiligen Umsatzgrenze. */
   kuWarnPercent: z.number().int().min(1).max(99).default(80),
   /** § 19 UStG: Jahr der Aufnahme der Taetigkeit; im selben Jahr gilt die Grenze von 25.000 EUR. */
-  kuBusinessStartYear: z.number().int().min(2000).max(2100).nullable().default(null),
+  kuBusinessStartYear: z.number().int().min(2000).max(2099).nullable().default(null),
   /** § 19 UStG: Umsatz ausserhalb des Programms je Kalenderjahr in Cent. */
   kuExternalRevenue: kuExternalRevenueSchema.default({}),
   /** § 286 Abs. 3 BGB: Verzugshinweis auf Rechnungen an Verbraucher (Voreinstellung fuer neue Belege). */

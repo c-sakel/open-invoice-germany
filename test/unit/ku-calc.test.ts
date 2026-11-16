@@ -38,6 +38,13 @@ describe("kuLevel", () => {
     expect(r.level).toBe("NEXT_YEAR_LOST");
     expect(r.reasons).toEqual(["CURRENT_OVER_25000"]);
   });
+  it("NEXT_YEAR_LOST behaelt die Vorwarnung vor der Grenze des laufenden Jahres", () => {
+    const r = level(withReceived(2200, 3_000_000, 11_000_000));
+    expect(r.level).toBe("NEXT_YEAR_LOST");
+    expect(r.reasons).toEqual(["CURRENT_OVER_25000", "APPROACHING_LIMIT", "INVOICED_OVER_LIMIT"]);
+    const near = level(withReceived(2200, 3_000_000, 8_000_000));
+    expect(near.reasons).toEqual(["CURRENT_OVER_25000", "APPROACHING_LIMIT"]);
+  });
   it("100.000,00 EUR ist nicht EXCEEDED, 100.000,01 EUR schon", () => {
     expect(level(withReceived(2200, 10_000_000)).level).toBe("NEXT_YEAR_LOST");
     const r = level(withReceived(2200, 10_000_001));

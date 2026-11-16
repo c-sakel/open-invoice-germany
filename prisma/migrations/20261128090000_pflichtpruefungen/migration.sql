@@ -12,4 +12,4 @@ SET "enabledTypesJson" = CASE
   WHEN "enabledTypesJson" = '[]' THEN '["KU_THRESHOLD"]'
   ELSE SUBSTR("enabledTypesJson", 1, LENGTH("enabledTypesJson") - 1) || ',"KU_THRESHOLD"]'
 END
-WHERE "enabledTypesJson" LIKE '[%]' AND "enabledTypesJson" NOT LIKE '%KU_THRESHOLD%';
+WHERE "enabledTypesJson" LIKE '[%]' AND "enabledTypesJson" NOT LIKE '%"KU_THRESHOLD"%';

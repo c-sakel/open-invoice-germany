@@ -54,7 +54,7 @@ export function finalizeWarningMessage(code: FinalizeWarningCode, vatId = "", de
     case "ausstellfrist":
       return "Ausstellfrist überschritten: bei innergemeinschaftlichen Lieferungen und Leistungen ist die Rechnung bis zum 15. Tag des Folgemonats auszustellen (§ 14a Abs. 1, 3 UStG).";
     case "ku-grenze":
-      return `Kleinunternehmerregelung: Der Gesamtumsatz des Jahres liegt laut Programm über der Grenze des § 19 Abs. 1 UStG. ${KU_NOTICE}`;
+      return `Kleinunternehmerregelung: Laut Programm ist eine Umsatzgrenze des § 19 Abs. 1 UStG überschritten. ${KU_NOTICE}`;
   }
 }
 

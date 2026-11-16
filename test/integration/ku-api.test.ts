@@ -1,5 +1,5 @@
 /**
- * REST GET /api/v1/Report/smallBusiness und MCP get_small_business_threshold. Testjahr 2228
+ * REST GET /api/v1/Report/smallBusiness und MCP get_small_business_threshold. Testjahr 2097
  * (Invoice.number ist global eindeutig, eigenes Nummernpraefix).
  */
 import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest";
@@ -47,7 +47,7 @@ async function callTool(name: string, args: Record<string, unknown> = {}): Promi
   return tool.handler(args);
 }
 
-const NOW = new Date("2228-04-10T10:00:00.000Z");
+const NOW = new Date("2097-04-10T10:00:00.000Z");
 let orgId: string;
 let token: string;
 
@@ -59,14 +59,14 @@ function req(url: string, withToken = true) {
 
 beforeAll(async () => {
   const org = await dbInternal.organization.create({
-    data: { legalName: "KU-API GmbH", addressLine1: "Teststr. 1", postalCode: "10115", city: "Berlin", vatId: "DE222800228", taxNumber: "22/228/00001", defaultTaxScheme: "KLEINUNTERNEHMER" },
+    data: { legalName: "KU-API GmbH", addressLine1: "Teststr. 1", postalCode: "10115", city: "Berlin", vatId: "DE209700228", taxNumber: "22/228/00001", defaultTaxScheme: "KLEINUNTERNEHMER" },
   });
   orgId = org.id;
   orgStore.id = orgId;
   await ensureOrgMasterdata(dbInternal, orgId);
   await dbInternal.numberRange.upsert({
-    where: { orgId_docType_year: { orgId, docType: "INVOICE", year: 2228 } },
-    create: { orgId, docType: "INVOICE", year: 2228, currentValue: 0, prefix: "KAR-", pattern: "{PREFIX}{YYYY}-{SEQ}", seqPadding: 4, isActive: true },
+    where: { orgId_docType_year: { orgId, docType: "INVOICE", year: 2097 } },
+    create: { orgId, docType: "INVOICE", year: 2097, currentValue: 0, prefix: "KAR-", pattern: "{PREFIX}{YYYY}-{SEQ}", seqPadding: 4, isActive: true },
     update: {},
   });
   const customer = await dbInternal.customer.create({
@@ -91,7 +91,7 @@ beforeEach(() => {
 
 describe("GET /api/v1/Report/smallBusiness", () => {
   it("401 ohne Schluessel", async () => {
-    expect((await KuGet(req("http://x/api/v1/Report/smallBusiness?year=2228", false))).status).toBe(401);
+    expect((await KuGet(req("http://x/api/v1/Report/smallBusiness?year=2097", false))).status).toBe(401);
   });
 
   it("400 bei ungueltigem Jahr", async () => {
@@ -99,10 +99,10 @@ describe("GET /api/v1/Report/smallBusiness", () => {
   });
 
   it("liefert dieselben Zahlen wie kuThreshold, inkl. Hinweistext", async () => {
-    const res = await KuGet(req("http://x/api/v1/Report/smallBusiness?year=2228"));
+    const res = await KuGet(req("http://x/api/v1/Report/smallBusiness?year=2097"));
     expect(res.status).toBe(200);
     const data = (await res.json()).data;
-    expect(data).toEqual(JSON.parse(JSON.stringify(await kuThreshold(orgId, 2228))));
+    expect(data).toEqual(JSON.parse(JSON.stringify(await kuThreshold(orgId, 2097))));
     expect(data.notice).toBe(KU_NOTICE);
     expect(data.applies).toBe(true);
     expect(data.current.invoicedCents).toBe(2_100_000);
@@ -118,8 +118,8 @@ describe("MCP get_small_business_threshold", () => {
   });
 
   it("liefert dasselbe JSON wie REST", async () => {
-    const rest = (await (await KuGet(req("http://x/api/v1/Report/smallBusiness?year=2228"))).json()).data;
-    const r = await callTool("get_small_business_threshold", { year: 2228 });
+    const rest = (await (await KuGet(req("http://x/api/v1/Report/smallBusiness?year=2097"))).json()).data;
+    const r = await callTool("get_small_business_threshold", { year: 2097 });
     expect(r.isError).toBeFalsy();
     expect(JSON.parse(r.content.map((c) => c.text).join("\n"))).toEqual(rest);
   });
