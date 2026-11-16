@@ -95,9 +95,11 @@ export function originalExtension(r: { originalFileName: string; originalMime: s
   return MIME_EXT[r.originalMime] ?? "bin";
 }
 
+const MAX_STEM_NUMBER = 80;
+
 /** Eindeutiger Dateiname ohne Endung: `<Eingangstag>_<Nummer|Kurz-ID>`. */
 export function incomingStem(r: IncomingExportRow, head: EffectiveHeader, used: Set<string>): string {
-  const base = `${berlinDateKey(r.receivedAt)}_${(head.number ?? r.id.slice(0, 8)).replace(/[^A-Za-z0-9._-]/g, "_")}`;
+  const base = `${berlinDateKey(r.receivedAt)}_${(head.number ?? r.id.slice(0, 8)).replace(/[^A-Za-z0-9._-]/g, "_").slice(0, MAX_STEM_NUMBER)}`;
   let stem = base;
   if (used.has(stem.toLowerCase())) stem = `${base}-${r.id.slice(0, 8)}`;
   while (used.has(stem.toLowerCase())) stem += "_";

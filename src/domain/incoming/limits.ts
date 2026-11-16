@@ -65,3 +65,6 @@ export const MAX_HANDOVER_BYTES = 500 * MB;
 export const INCOMING_EXPORT_PER_MINUTE = 10;
 /** Pruefer-Export: Eingangsrechnungen je Export. */
 export const AUDIT_EXPORT_MAX_INCOMING = 20_000;
+/** Pruefer-Export: Summe der Originalgroessen der Eingangsrechnungen und Aufrufe je Minute und Firma. */
+export const AUDIT_EXPORT_MAX_INCOMING_BYTES = 2_048 * MB;
+export const AUDIT_EXPORT_PER_MINUTE = 10;

@@ -23,6 +23,8 @@ import { effectiveHeader, hasSeparateXml, incomingStem, INCOMING_EXPORT_SELECT, 
 import { INCOMING_EXPORT_PER_MINUTE, MAX_HANDOVER_BYTES, MAX_HANDOVER_FILES } from "./limits";
 
 const PAGE = 200;
+/** Reserve fuer die ausgelesene Hybrid-XML, die in der Planung nicht mitgezaehlt wird. */
+const XML_RESERVE = 0.05;
 
 export class IncomingHandoverTooLargeError extends Error {
   readonly status = 413;
@@ -101,7 +103,8 @@ const README = [
   "",
   "Die Originaldateien liegen unveraendert im Ordner belege/. Massgeblich ist die Originaldatei;",
   "die Tabelle eingangsrechnungen.csv nennt Eingangsdatum, Lieferant und die gelesenen Kopfdaten.",
-  "Sie enthaelt keine Buchungsdaten. Bei Hybrid-Rechnungen liegt die ausgelesene XML daneben.",
+  "Sie enthaelt keine Buchungsdaten. Bei Hybrid-Rechnungen liegt die ausgelesene XML daneben",
+  "(gleicher Name wie die Originaldatei, Endung .xml).",
   "Die Tabelle nicht blind in einer Tabellenkalkulation mit Formelauswertung oeffnen.",
   "",
 ].join("\r\n");
@@ -115,6 +118,12 @@ export async function buildIncomingHandoverFile(
   const where = whereOf(orgId, q);
   rateLimit(`incoming-export:${orgId}`, { limit: INCOMING_EXPORT_PER_MINUTE, windowMs: 60_000 });
   const { count } = await planIncomingHandover(orgId, q, opts);
+  // Plan und Aufbau laufen ohne gemeinsame Transaktion und die Hybrid-XML kommt zur Originalgroesse dazu:
+  // die Laufsumme wird im Aufbau gegen die Grenze plus Reserve geprueft.
+  const byteCeiling = Math.ceil((opts.maxBytes ?? MAX_HANDOVER_BYTES) * (1 + XML_RESERVE));
+  const fileCeiling = opts.maxFiles ?? MAX_HANDOVER_FILES;
+  let seenFiles = 0;
+  let seenBytes = 0;
 
   const dir = await mkdtemp(path.join(os.tmpdir(), "oig-incoming-handover-"));
   const file = path.join(dir, "uebergabe.zip");
@@ -145,8 +154,16 @@ export async function buildIncomingHandoverFile(
           const stem = incomingStem(r, head, used);
           const ext = originalExtension(r);
           const original = await getIncomingFile(orgId, r.id, "original");
+          seenFiles += 1;
+          seenBytes += original.bytes.length;
+          if (seenFiles > fileCeiling || seenBytes > byteCeiling) throw new IncomingHandoverTooLargeError(seenFiles, seenBytes);
           await zip.addFile(`belege/${stem}.${ext}`, original.bytes);
-          if (hasSeparateXml(r)) await zip.addFile(`belege/${stem}.xml`, (await getIncomingFile(orgId, r.id, "xml")).bytes);
+          if (hasSeparateXml(r)) {
+            const xml = await getIncomingFile(orgId, r.id, "xml");
+            seenBytes += xml.bytes.length;
+            if (seenBytes > byteCeiling) throw new IncomingHandoverTooLargeError(seenFiles, seenBytes);
+            await zip.addFile(`belege/${stem}.xml`, xml.bytes);
+          }
           const c = r.supplierContactId ? contacts.get(r.supplierContactId) : undefined;
           items.push({ row: r, head, stem, ext, contact: c ? { customerNumber: c.customerNumber, name: c.name } : null });
         }

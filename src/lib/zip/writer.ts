@@ -2,7 +2,7 @@
  * Minimaler ZIP-Schreiber (Phase 16a, Pruefer-Export) ohne Fremdabhaengigkeit: Deflate ueber
  * `node:zlib`, CRC-32 ueber `zlib.crc32`, Dateinamen als UTF-8 (General-Purpose-Bit 11).
  *
- * - `Buffer`: komprimiert in einem Schritt, Groessen/CRC stehen im lokalen Header.
+ * - `Buffer` (bis 1 MB): komprimiert in einem Schritt, Groessen/CRC stehen im lokalen Header.
  * - `Readable`: wird gestreamt (Deflate-Strom, CRC inkrementell) und mit Data-Descriptor
  *   (Bit 3) abgeschlossen — die Datei muss nicht im Speicher liegen.
  *
@@ -10,12 +10,14 @@
  * Schreiber einen Fehler statt ein kaputtes Archiv zu erzeugen.
  */
 import { createDeflateRaw, crc32, deflateRawSync } from "node:zlib";
-import type { Readable, Writable } from "node:stream";
+import { Readable, type Writable } from "node:stream";
 
 const LIMIT = 0xffffffff;
 const MAX_ENTRIES = 0xffff;
 const FLAG_DATA_DESCRIPTOR = 0x0008;
 const FLAG_UTF8 = 0x0800;
+/** Groessere Puffer werden nicht synchron komprimiert (Event-Loop), sondern als Strom. */
+const SYNC_DEFLATE_MAX = 1024 * 1024;
 
 interface CentralEntry {
   name: Buffer;
@@ -91,7 +93,8 @@ export class ZipWriter {
     return h;
   }
 
-  async addFile(name: string, data: Buffer | Readable): Promise<void> {
+  async addFile(name: string, input: Buffer | Readable): Promise<void> {
+    const data = Buffer.isBuffer(input) && input.length > SYNC_DEFLATE_MAX ? Readable.from([input]) : input;
     if (this.finished) throw new Error("ZIP ist bereits abgeschlossen.");
     if (this.entries.length >= MAX_ENTRIES) throw new Error("ZIP64 wird nicht unterstuetzt: mehr als 65535 Dateien.");
     const nameBuf = Buffer.from(name, "utf8");

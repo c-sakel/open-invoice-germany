@@ -230,6 +230,87 @@ describe("Pruefer-Export", () => {
   });
 });
 
+describe("Dateinamen und Hybrid-XML", () => {
+  const DAY_C = new Date("2242-05-05T10:00:00.000Z");
+  const q = { from: "2242-05-04", to: "2242-05-06" };
+  const range = { from: new Date("2242-05-05T00:00:00.000Z"), to: new Date("2242-05-05T23:59:59.999Z") };
+  let orgC = "";
+  const manual = (number: string) => ({ supplierName: "Namens KG", number, issueDate: "2242-05-01", grossCents: 100, currency: "EUR" });
+  const mkManual = async (i: number, number: string): Promise<string> => {
+    const id = await rcv(orgC, png(100 + i), `n${i}.png`, DAY_C);
+    await updateIncomingInvoice(orgC, id, { manual: manual(number) }, actor, DAY_C);
+    return id;
+  };
+
+  beforeAll(async () => {
+    orgC = await mkOrg("C");
+  });
+
+  it("gefaehrliche Nummern ergeben sichere, eindeutige und gekuerzte Namen", async () => {
+    await mkManual(1, "../../etc/passwd");
+    await mkManual(2, "A\\B\u0001\nC");
+    await mkManual(3, "RE/1");
+    await mkManual(4, "RE_1");
+    await mkManual(5, "re/1");
+    await mkManual(6, "X".repeat(100));
+    const z = await handover(orgC, q);
+    const belege = z.names.filter((n) => n.startsWith("belege/"));
+    expect(belege).toHaveLength(6);
+    for (const n of belege) {
+      expect(n).toMatch(/^belege\/[A-Za-z0-9._-]+\.png$/);
+      expect(n.slice("belege/".length)).not.toContain("/");
+    }
+    expect(new Set(belege.map((n) => n.toLowerCase())).size).toBe(6);
+    expect(belege.some((n) => n.includes("X".repeat(81)))).toBe(false);
+    expect(belege.some((n) => n.includes("X".repeat(80)))).toBe(true);
+    const { path: file } = await buildAuditExportFile(orgC, range);
+    try {
+      const names = unzip(file).names.filter((n) => n.startsWith("eingang/"));
+      expect(names).toHaveLength(6);
+      expect(new Set(names.map((n) => n.toLowerCase())).size).toBe(6);
+      for (const n of names) expect(n).toMatch(/^eingang\/[A-Za-z0-9._-]+\.png$/);
+    } finally {
+      await removeAuditExportFile(file);
+    }
+  });
+
+  it("veraenderte Hybrid-XML bricht beide Exporte ab wie das Original", async () => {
+    const id = await rcv(orgC, await pdfWithAttachments([{ name: "factur-x.xml", bytes: fx("gen-base-cii.xml") }]), "hybrid-c.pdf", DAY_C);
+    const row = await dbInternal.incomingInvoice.findUniqueOrThrow({ where: { id }, select: { xmlPath: true } });
+    expect(row.xmlPath).not.toBeNull();
+    const ok = await handover(orgC, q);
+    expect(ok.names.some((n) => n.endsWith(".xml"))).toBe(true);
+    await fsp.appendFile(path.join(archiveRoot(), row.xmlPath as string), "manipuliert");
+    await expect(buildIncomingHandoverFile(orgC, q)).rejects.toBeInstanceOf(ArchiveTamperedError);
+    await expect(buildAuditExportFile(orgC, range)).rejects.toBeInstanceOf(ArchiveTamperedError);
+  });
+
+  it("Laufsumme im Aufbau: Grenze greift auch, wenn der Plan sie noch einhielt", async () => {
+    const orgD = await mkOrg("D");
+    const id = await rcv(orgD, await pdfWithAttachments([{ name: "factur-x.xml", bytes: fx("gen-base-cii.xml") }]), "hybrid-d.pdf", DAY_C);
+    const { originalSize } = await dbInternal.incomingInvoice.findUniqueOrThrow({ where: { id }, select: { originalSize: true } });
+    // Plan zaehlt nur das Original (haelt die Grenze ein), die ausgelesene XML sprengt im Aufbau die Reserve.
+    await expect(planIncomingHandover(orgD, q, { maxBytes: originalSize })).resolves.toMatchObject({ count: 1 });
+    const before = handoverTmpDirs().length;
+    await expect(buildIncomingHandoverFile(orgD, q, { maxBytes: originalSize })).rejects.toBeInstanceOf(IncomingHandoverTooLargeError);
+    expect(handoverTmpDirs().length).toBe(before);
+  });
+
+  it("Pruefer-Export: Byte-Grenze fuer Eingangsrechnungen -> 413", async () => {
+    const err = await buildAuditExportFile(orgC, range, { maxIncomingBytes: 10 }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AuditExportTooLargeError);
+    expect((err as Error).message).toContain("Eingangsrechnungen");
+  });
+
+  it("Pruefer-Export: Aufrufe je Minute sind begrenzt", async () => {
+    let failed = false;
+    for (let i = 0; i < 12 && !failed; i++) {
+      failed = await buildAuditExportFile(orgB, range, { maxIncomingBytes: 10 }).then(() => false, (e: unknown) => !(e instanceof AuditExportTooLargeError));
+    }
+    expect(failed).toBe(true);
+  });
+});
+
 describe("Manipulation", () => {
   it("veraenderte Archivdatei bricht beide Exporte ab und hinterlaesst keine Temp-Datei", async () => {
     const row = await dbInternal.incomingInvoice.findUniqueOrThrow({ where: { id: ids.other }, select: { originalPath: true } });
