@@ -30,7 +30,7 @@ const { IncomingHistory } = await import("@/components/incoming/IncomingHistory"
 const { IncomingHandoverForm } = await import("@/components/incoming/IncomingHandoverForm");
 const { actionNeedsReason, reasonProblem, historyText, isOverdue, tabCount, tabFilter } = await import("@/components/incoming/incoming-ui");
 const { RevalidateButton } = await import("@/components/incoming/RevalidateButton");
-const { classifyUploadReply, planUploads, formatIncomingMoney } = await import("@/components/incoming/incoming-ui");
+const { classifyUploadReply, planUploads, formatIncomingMoney, handoverErrorText } = await import("@/components/incoming/incoming-ui");
 
 const fx = (n: string) => fs.readFileSync(path.resolve(__dirname, "../fixtures/incoming", n), "utf8");
 
@@ -222,6 +222,14 @@ describe("Ablauf", () => {
     expect(frei).not.toContain("Als geprüft markieren");
   });
 
+  it("bezahlt: Zahlungsvermerk wird angezeigt (nicht in der Druckansicht), escaped", () => {
+    const html = renderToStaticMarkup(<IncomingWorkflow id="i1" workflow={wf("PAID")} allowedActions={["REVERT"]} paidNote="Überwiesen <b>x</b>" today="2026-11-16" />);
+    expect(html).toContain("Zahlungsvermerk: Überwiesen &lt;b&gt;x&lt;/b&gt;");
+    expect(html).toContain("print:hidden");
+    const ohne = renderToStaticMarkup(<IncomingWorkflow id="i1" workflow={wf("PAID")} allowedActions={["REVERT"]} today="2026-11-16" />);
+    expect(ohne).not.toContain("Zahlungsvermerk");
+  });
+
   it("Ablehnen und Zurücksetzen verlangen einen Grund, bezahlt hat Datum und Merker-Hinweis", () => {
     const html = renderToStaticMarkup(<IncomingWorkflow id="i1" workflow={wf("CHECKED")} allowedActions={["MARK_PAID", "REJECT", "REVERT"]} today="2026-11-16" />);
     expect(html).toMatch(/<textarea[^>]*required=""[^>]*minLength="3"/);
@@ -344,5 +352,13 @@ describe("Lieferant, Kopfdaten, Notiz, Übergabe", () => {
     expect(html).toContain("Abgelehnte einschließen");
     expect(html).toContain("2026-11-01");
     expect(html).not.toMatch(/löschen|entfernen|delete/i);
+  });
+
+  it("Übergabe: Fehlertext aus beiden Antwortformen, sonst feste Meldung", () => {
+    const fb = "Die Übergabe konnte nicht erstellt werden.";
+    expect(handoverErrorText({ error: { code: "PAYLOAD_TOO_LARGE", message: "Zeitraum verkleinern (2.000 Dateien/500 MB)" } }, fb)).toBe("Zeitraum verkleinern (2.000 Dateien/500 MB)");
+    expect(handoverErrorText({ error: "Validierung fehlgeschlagen" }, fb)).toBe("Validierung fehlgeschlagen");
+    expect(handoverErrorText({ error: { code: "X" } }, fb)).toBe(fb);
+    expect(handoverErrorText(null, fb)).toBe(fb);
   });
 });

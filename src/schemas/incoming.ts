@@ -157,9 +157,15 @@ export const INCOMING_KINDS = ["EINVOICE", "HYBRID", "OTHER"] as const;
 export const INCOMING_VALIDATION_STATUSES = ["PENDING", "VALID", "WARNINGS", "INVALID", "NOT_CHECKED", "NOT_APPLICABLE"] as const;
 export const INCOMING_STATUSES = ["NEW", "CHECKED", "APPROVED", "PAID", "REJECTED"] as const;
 
-const day = z
-  .string()
-  .refine((v) => /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00.000Z`)), "Datum als YYYY-MM-DD.");
+/** Kalendertag `YYYY-MM-DD` per Round-Trip geprueft (kein Umrechnen von 2026-02-31 auf den 03.03.). */
+export function isValidIsoDay(v: string): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+  if (!m) return false;
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  return d.getUTCFullYear() === Number(m[1]) && d.getUTCMonth() === Number(m[2]) - 1 && d.getUTCDate() === Number(m[3]);
+}
+
+const day = z.string().refine(isValidIsoDay, "Datum als YYYY-MM-DD.");
 
 export const INCOMING_DUE_FILTERS = ["DUE_SOON", "OVERDUE"] as const;
 

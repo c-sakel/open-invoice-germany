@@ -167,6 +167,8 @@ describe("REST: Bearbeitung", () => {
   it("PATCH leer -> 400; unbekanntes Feld -> 400; read-Schluessel -> 403 auf PATCH, status und contact", async () => {
     expect((await patch(ublId, writeToken, {})).status).toBe(400);
     expect((await patch(ublId, writeToken, { foo: 1 })).status).toBe(400);
+    // ungueltiger Kalendertag (kein Umrechnen auf den 03.03.)
+    expect((await patch(ublId, writeToken, { manual: { issueDate: "2026-02-31", number: "X", supplierName: "Y", grossCents: 100 } })).status).toBe(400);
     expect((await patch(ublId, readToken, { internalNote: "x" })).status).toBe(403);
     expect((await status(ublId, readToken, { action: "CHECK" })).status).toBe(403);
     expect((await contact(ublId, readToken, {})).status).toBe(403);

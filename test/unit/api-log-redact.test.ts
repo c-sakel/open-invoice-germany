@@ -25,6 +25,11 @@ describe("redactJson", () => {
       cardHolderName: REDACTED, sepaDebitAccountName: REDACTED, name: "x",
     });
   });
+  it("schwaerzt interne Notizen und Zahlungsvermerke", () => {
+    expect(redactJson({ internalNote: "geheim", internalNotes: "auch", paidNote: "bar bezahlt", note: "ok" })).toEqual({
+      internalNote: REDACTED, internalNotes: REDACTED, paidNote: REDACTED, note: "ok",
+    });
+  });
   it("schwaerzt den Import-Body-Schluessel csv (Phase 18b)", () => {
     expect(redactJson({ csv: "Name;Straße\r\nGeheim AG;Weg 1", dryRun: true })).toEqual({ csv: REDACTED, dryRun: true });
   });

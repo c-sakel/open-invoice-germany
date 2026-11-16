@@ -5,7 +5,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { execFileSync, spawnSync } from "node:child_process";
 import { Writable } from "node:stream";
-import { createWriteStream, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { createWriteStream, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -231,10 +231,15 @@ describe.skipIf(!hasUnzip)("Pruefer-Export", () => {
   it("MCP create_audit_export schreibt das ZIP ins Zielverzeichnis", async () => {
     const tools = (server as unknown as { _registeredTools: Record<string, { handler: (a: Record<string, unknown>) => Promise<{ content: { text: string }[]; isError?: boolean }> }> })._registeredTools;
     const outDir = path.join(workDir, "mcp-out");
+    mkdirSync(outDir, { recursive: true });
     const res = await tools["create_audit_export"].handler({ from: "2013-01-01", to: "2013-12-31", outputDir: outDir });
     expect(res.isError).toBeUndefined();
-    const file = path.join(outDir, "pruefer-export-2013-01-01-2013-12-31.zip");
+    const names = readdirSync(outDir).filter((n) => /^pruefer-export-2013-01-01-2013-12-31-\d{8}T\d{6}\.zip$/.test(n));
+    expect(names).toHaveLength(1);
+    const file = path.join(realpathSync(outDir), names[0]);
     expect(res.content[0].text).toContain(file);
+    const missing = await tools["create_audit_export"].handler({ from: "2013-01-01", to: "2013-12-31", outputDir: path.join(workDir, "gibt-es-nicht") });
+    expect(missing.isError).toBe(true);
     execFileSync("unzip", ["-t", file]);
     const bad = await tools["create_audit_export"].handler({ from: "2013-01-01", to: "2020-01-01", outputDir: outDir });
     expect(bad.isError).toBe(true);

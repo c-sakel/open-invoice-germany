@@ -87,7 +87,7 @@ export default async function EingangDetailPage({ params }: { params: Promise<{ 
         </p>
       ) : null}
 
-      <IncomingWorkflow id={detail.id} workflow={detail.workflow} allowedActions={detail.allowedActions} today={berlinDateKey(new Date())} />
+      <IncomingWorkflow id={detail.id} workflow={detail.workflow} allowedActions={detail.allowedActions} paidNote={detail.paidNote} today={berlinDateKey(new Date())} />
       <IncomingSupplier id={detail.id} editable={editable} contact={detail.supplierContact} suggestions={detail.suggestions} customers={customers} />
       <IncomingPayment payment={detail.payment} images={images} skonto={detail.skonto} ibanWarning={detail.ibanWarning} />
       {manualShown ? <IncomingManualHeader id={detail.id} manual={detail.manual} editable={editable} /> : null}

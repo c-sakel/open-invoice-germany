@@ -3,15 +3,11 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { inputCls } from "@/components/forms/fields";
+import { handoverErrorText } from "./incoming-ui";
 
 interface Props {
   defaultFrom: string;
   defaultTo: string;
-}
-
-function fileNameOf(disposition: string | null): string {
-  const m = disposition ? /filename="?([^";]+)"?/.exec(disposition) : null;
-  return m ? m[1].replace(/[^\w.-]/g, "_") : "uebergabe.zip";
 }
 
 /** Übergabe an die Buchhaltung: Zeitraum wählen, ZIP mit Originalen und Tabelle laden. Ohne Notizen. */
@@ -27,26 +23,25 @@ export function IncomingHandoverForm({ defaultFrom, defaultTo }: Props) {
     setError(null);
     try {
       const qs = new URLSearchParams({ from, to, includeRejected: includeRejected ? "true" : "false" });
-      const res = await fetch(`/api/incoming-invoices/export?${qs.toString()}`, { credentials: "same-origin" });
-      if (!res.ok) {
-        let text = "Die Übergabe konnte nicht erstellt werden.";
+      // Fehler (Zeitraum zu gross, Eingabe) vorab pruefen; das ZIP selbst laedt der Browser per Direktlink,
+      // ohne es im Arbeitsspeicher der Seite zu halten.
+      const check = await fetch(`/api/incoming-invoices/export?${qs.toString()}&dryRun=1`, { credentials: "same-origin" });
+      if (!check.ok) {
+        let body: unknown = null;
         try {
-          const body: unknown = await res.json();
-          if (typeof body === "object" && body !== null && "error" in body && typeof body.error === "string") text = body.error;
+          body = await check.json();
         } catch {
           /* feste Meldung */
         }
-        setError(text);
+        setError(handoverErrorText(body, "Die Übergabe konnte nicht erstellt werden."));
         return;
       }
-      const url = URL.createObjectURL(await res.blob());
       const a = document.createElement("a");
-      a.href = url;
-      a.download = fileNameOf(res.headers.get("content-disposition"));
+      a.href = `/api/incoming-invoices/export?${qs.toString()}`;
+      a.download = "";
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(url);
     } catch {
       setError("Die Übergabe konnte nicht erstellt werden.");
     } finally {

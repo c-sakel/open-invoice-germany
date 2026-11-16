@@ -243,3 +243,12 @@ export function classifyUploadReply(status: number, body: unknown): UploadOutcom
   const text = str(b.error);
   return { kind: "rejected", text: text ?? "Die Datei wurde nicht angenommen." };
 }
+
+/** Fehlertext einer Antwort der Uebergabe-Route: `{ error: "..." }` oder `{ error: { message } }`. */
+export function handoverErrorText(body: unknown, fallback: string): string {
+  if (typeof body !== "object" || body === null || !("error" in body)) return fallback;
+  const e = body.error;
+  if (typeof e === "string" && e !== "") return e;
+  if (typeof e === "object" && e !== null && "message" in e && typeof e.message === "string" && e.message !== "") return e.message;
+  return fallback;
+}

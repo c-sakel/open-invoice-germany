@@ -23,8 +23,9 @@ export const MAX_INPUT_BYTES = 256 * 1024;
 export const REDACTED = "[redaktiert]";
 // Fix-Welle (m7): nicht mehr `export` — wird ausserhalb dieses Moduls nirgends importiert
 // (weder von redactJson noch von der neuen redactQuery, beide bleiben innerhalb der Datei).
+// `internalNote(s)`/`paidNote`: interne Notizen und Zahlungsvermerke nie im Klartext im Protokoll.
 // `csv`: Import-Bodies (`{ csv }`) enthalten ganze Kunden-/Produktlisten und sind personenbezogen; `contentbase64`: Kontoauszug-Upload.
-const SECRET_KEY_PATTERN = /(secret|token|password|passwort|api[_-]?key|authorization|iban|bic|cardpan|cardholdername|sepadebitaccountname|mandate|^csv$|^contentbase64$|(^|[_-])key$|[a-z]Key$)/i;
+const SECRET_KEY_PATTERN = /(secret|token|password|passwort|api[_-]?key|authorization|iban|bic|cardpan|cardholdername|sepadebitaccountname|mandate|^csv$|^contentbase64$|^internalnotes?$|^paidnote$|(^|[_-])key$|[a-z]Key$)/i;
 /** Ausnahmen (vor dem Muster geprueft): bekannte Namen ohne Geheimnis; alles andere auf `…Key` wird geschwaerzt. */
 const HARMLESS_KEY_NAMES = new Set(["idempotencykey", "dedupekey", "periodkey", "sortkey"]);
 function isSecretKey(key: string): boolean {

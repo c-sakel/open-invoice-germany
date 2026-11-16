@@ -30,6 +30,7 @@ export interface WorkflowView {
 }
 
 interface Props {
+  paidNote?: string | null;
   id: string;
   workflow: WorkflowView;
   allowedActions: IncomingActionName[];
@@ -40,7 +41,7 @@ interface Props {
 const DIALOG_ACTIONS: readonly IncomingActionName[] = ["REJECT", "REVERT", "MARK_PAID"];
 
 /** Aktionsknöpfe aus den erlaubten Aktionen; Ablehnen und Zurücksetzen verlangen einen Grund, "bezahlt" ein Datum und einen Vermerk. */
-export function IncomingWorkflow({ id, workflow, allowedActions, today }: Props) {
+export function IncomingWorkflow({ id, workflow, allowedActions, today, paidNote: savedPaidNote = null }: Props) {
   const router = useRouter();
   const rejectRef = useRef<HTMLDialogElement>(null);
   const revertRef = useRef<HTMLDialogElement>(null);
@@ -119,6 +120,9 @@ export function IncomingWorkflow({ id, workflow, allowedActions, today }: Props)
         )}
         {workflow.paidMarkedAt ? <li>Als bezahlt vermerkt: {formatIsoDay(workflow.paidMarkedAt)}</li> : null}
       </ul>
+      {workflow.status === "PAID" && savedPaidNote ? (
+        <p className="break-words text-ink-soft print:hidden">Zahlungsvermerk: {savedPaidNote}</p>
+      ) : null}
       {workflow.rejectReason ? <p className="break-words text-ink-soft">Grund: {workflow.rejectReason}</p> : null}
       {workflow.status === "PAID" ? <p className="text-xs text-ink-muted">{PAID_HINT}</p> : null}
 

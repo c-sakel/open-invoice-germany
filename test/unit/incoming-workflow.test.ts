@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { incomingManualSchema, incomingStatusInputSchema, isValidIsoDay } from "@/schemas/incoming";
 import { allowedActions, planTransition, type IncomingAction, type IncomingStatus } from "@/domain/incoming/workflow";
 
 const ctx = { actor: "user-1", now: new Date("2034-06-10T10:00:00Z"), todayBerlin: "2034-06-10" };
@@ -70,5 +71,17 @@ describe("allowedActions", () => {
     expect(allowedActions("APPROVED")).toEqual(["MARK_PAID", "REJECT", "REVERT"]);
     expect(allowedActions("PAID")).toEqual(["REVERT"]);
     expect(allowedActions("REJECTED")).toEqual(["REVERT"]);
+  });
+});
+
+describe("Kalendertag-Pruefung", () => {
+  it("lehnt 2026-02-31 ab und akzeptiert Schaltjahr", () => {
+    expect(isValidIsoDay("2026-02-31")).toBe(false);
+    expect(isValidIsoDay("2026-13-01")).toBe(false);
+    expect(isValidIsoDay("2026-2-1")).toBe(false);
+    expect(isValidIsoDay("2028-02-29")).toBe(true);
+    expect(isValidIsoDay("2027-02-29")).toBe(false);
+    expect(incomingStatusInputSchema.safeParse({ action: "MARK_PAID", paidOn: "2026-02-31" }).success).toBe(false);
+    expect(incomingManualSchema.safeParse({ issueDate: "2026-02-31" }).success).toBe(false);
   });
 });
