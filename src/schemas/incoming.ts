@@ -297,3 +297,22 @@ export const incomingContactInputSchema = z
   })
   .strict();
 export type IncomingContactInput = z.infer<typeof incomingContactInputSchema>;
+
+/** Zeitraum der Uebergabe an die Buchhaltung (Eingangsdatum, Berliner Kalendertage). */
+export const INCOMING_HANDOVER_MAX_DAYS = 366;
+export const incomingHandoverQuerySchema = z
+  .object({
+    from: day.describe("Eingang ab (Berliner Kalendertag, YYYY-MM-DD)"),
+    to: day.describe("Eingang bis einschliesslich (Berliner Kalendertag, YYYY-MM-DD)"),
+    includeRejected: z
+      .union([z.boolean(), z.enum(["true", "false", "1", "0"])])
+      .default(false)
+      .transform((v) => v === true || v === "true" || v === "1")
+      .describe("Abgelehnte Eingangsrechnungen einbeziehen (Standard: nein)"),
+  })
+  .refine((v) => v.to >= v.from, { message: "Das Enddatum darf nicht vor dem Startdatum liegen.", path: ["to"] })
+  .refine((v) => (Date.parse(`${v.to}T00:00:00.000Z`) - Date.parse(`${v.from}T00:00:00.000Z`)) / 86_400_000 < INCOMING_HANDOVER_MAX_DAYS, {
+    message: `Der Zeitraum darf höchstens ${INCOMING_HANDOVER_MAX_DAYS} Tage umfassen.`,
+    path: ["to"],
+  });
+export type IncomingHandoverQuery = z.infer<typeof incomingHandoverQuerySchema>;

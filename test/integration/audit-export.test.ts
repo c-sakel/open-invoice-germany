@@ -42,7 +42,7 @@ const hasXmllint = have("xmllint", "--version");
 const FIX_DATE = new Date("2013-03-01T10:00:00.000Z");
 const FILES = [
   "index.xml", "gdpdu-01-09-2004.dtd", "rechnungen.csv", "positionen.csv", "zahlungen.csv", "mahnungen.csv", "kunden.csv",
-  "aenderungsprotokoll.csv", "archiv.csv", "kettenpruefung.txt",
+  "aenderungsprotokoll.csv", "archiv.csv", "eingangsrechnungen.csv", "kettenpruefung.txt",
 ];
 
 let orgId: string;
@@ -161,7 +161,7 @@ describe.skipIf(!hasUnzip)("Pruefer-Export", () => {
     const xml = z.read("index.xml").toString("utf8");
     expect(xml).toContain('<!DOCTYPE DataSet SYSTEM "gdpdu-01-09-2004.dtd">');
     for (const f of FILES.filter((n) => n.endsWith(".csv"))) expect(xml).toContain(`<URL>${f}</URL>`);
-    expect((xml.match(/<Table>/g) ?? []).length).toBe(7);
+    expect((xml.match(/<Table>/g) ?? []).length).toBe(8);
     const dir = mkdtempSync(path.join(workDir, "idx-"));
     writeFileSync(path.join(dir, "index.xml"), xml);
     // Die amtliche DTD (unveraendert ausgeliefert) hat ein nicht deterministisches Media-Modell;

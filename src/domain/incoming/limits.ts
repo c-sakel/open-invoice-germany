@@ -58,3 +58,10 @@ export const MAX_EPC_REMITTANCE_LENGTH = 140;
 /** Skonto: Stufen je Rechnung und groesste Frist in Tagen. */
 export const MAX_SKONTO_TERMS = 3;
 export const MAX_SKONTO_DAYS = 365;
+
+/** Uebergabe an die Buchhaltung: Belege je ZIP, Summe der Originalgroessen, Aufrufe je Minute und Firma. */
+export const MAX_HANDOVER_FILES = 2_000;
+export const MAX_HANDOVER_BYTES = 500 * MB;
+export const INCOMING_EXPORT_PER_MINUTE = 10;
+/** Pruefer-Export: Eingangsrechnungen je Export. */
+export const AUDIT_EXPORT_MAX_INCOMING = 20_000;
