@@ -38,6 +38,7 @@ function dosDateTime(d: Date): { time: number; date: number } {
 
 export class ZipWriter {
   private readonly entries: CentralEntry[] = [];
+  private readonly names = new Set<string>();
   private offset = 0;
   private finished = false;
   private readonly stamp: { time: number; date: number };
@@ -99,6 +100,9 @@ export class ZipWriter {
     if (this.entries.length >= MAX_ENTRIES) throw new Error("ZIP64 wird nicht unterstuetzt: mehr als 65535 Dateien.");
     const nameBuf = Buffer.from(name, "utf8");
     if (nameBuf.length > 0xffff) throw new Error("Dateiname zu lang.");
+    const key = name.toLowerCase();
+    if (this.names.has(key)) throw new Error(`Doppelter Eintragsname im ZIP: ${name}`);
+    this.names.add(key);
     const offset = this.offset;
 
     if (Buffer.isBuffer(data)) {

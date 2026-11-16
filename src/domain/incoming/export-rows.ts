@@ -97,13 +97,20 @@ export function originalExtension(r: { originalFileName: string; originalMime: s
 
 const MAX_STEM_NUMBER = 80;
 
-/** Eindeutiger Dateiname ohne Endung: `<Eingangstag>_<Nummer|Kurz-ID>`. */
+/**
+ * Eindeutiger Dateiname ohne Endung: `<Eingangstag>_<Nummer|Kurz-ID>`. Die Eindeutigkeit gilt fuer die
+ * VOLLEN Dateinamen (klein geschrieben) inkl. der abgeleiteten XML-Datei; `used` haelt diese Namen.
+ */
 export function incomingStem(r: IncomingExportRow, head: EffectiveHeader, used: Set<string>): string {
   const base = `${berlinDateKey(r.receivedAt)}_${(head.number ?? r.id.slice(0, 8)).replace(/[^A-Za-z0-9._-]/g, "_").slice(0, MAX_STEM_NUMBER)}`;
+  const ext = originalExtension(r);
+  const separate = hasSeparateXml(r);
+  const namesOf = (stem: string): string[] => [`${stem}.${ext}`, ...(separate ? [separateXmlFileName(stem, ext)] : [])].map((n) => n.toLowerCase());
+  const taken = (stem: string): boolean => namesOf(stem).some((n) => used.has(n));
   let stem = base;
-  if (used.has(stem.toLowerCase())) stem = `${base}-${r.id.slice(0, 8)}`;
-  while (used.has(stem.toLowerCase())) stem += "_";
-  used.add(stem.toLowerCase());
+  if (taken(stem)) stem = `${base}-${r.id.slice(0, 8)}`;
+  while (taken(stem)) stem += "_";
+  for (const n of namesOf(stem)) used.add(n);
   return stem;
 }
 
