@@ -161,6 +161,15 @@ export function createImapClient(opts: { connector?: TestConnector } = {}): Mail
               fromDomain: envelopeDomain(m.envelope?.from?.[0]?.address),
             };
           }),
+        senders: (uids) =>
+          run(async () => {
+            const out = new Map<string, string | null>();
+            if (uids.length === 0) return out;
+            for await (const m of client.fetch(uids.join(","), { uid: true, envelope: true }, { uid: true })) {
+              out.set(String(m.uid), envelopeDomain(m.envelope?.from?.[0]?.address));
+            }
+            return out;
+          }),
         fetchRaw: (uid, maxBytes) =>
           run(async () => {
             const dl = await client.download(uid, undefined, { uid: true, maxBytes: maxBytes + 1 });

@@ -69,50 +69,48 @@ function countAttempt(key: string): number {
 }
 
 /**
- * Zurueckgestellte Mails (Tageslimit je Absender): je Firma eine eigene Teil-Map (Schluessel nur die orgId, nichts, was ein
- * Server variieren koennte), Position -> Ende des Fensters. Die Zahl der Teil-Maps ist durch die Zahl der eingerichteten
- * Postfaecher begrenzt, eine Gesamtobergrenze ist daher nicht noetig; leere oder abgelaufene Teil-Maps werden entfernt.
+ * Zurueckgestellte Absenderdomains (Tageslimit): je Firma eine eigene Teil-Map Domain -> Ende des Fensters. Ein Eintrag
+ * gilt fuer alle Mails dieser Domain, nicht je Mail; die Zahl der Eintraege bleibt so unabhaengig von der Zahl
+ * ungelesener Mails. Die Zahl der Teil-Maps ist durch die Zahl der eingerichteten Postfaecher begrenzt; leere oder
+ * abgelaufene Teil-Maps werden entfernt.
  */
-const DEFERRED_KEY = Symbol.for("oig.mailboxFetch.deferred");
-export const MAX_DEFERRED_PER_ACCOUNT = 2000;
-/** Hoechstens so viele Mails je Lauf werden nur ueber ihre Kopfdaten (ohne Download) zurueckgestellt. */
+const DEFERRED_KEY = Symbol.for("oig.mailboxFetch.deferredDomains");
+export const MAX_DEFERRED_DOMAINS_PER_ACCOUNT = 1000;
+/** Hoechstens so viele Mails je Lauf werden fuer eine Datenbankpruefung des Tageslimits herangezogen. */
 const MAX_DEFER_SCANS_PER_RUN = 500;
-type DeferredEntry = { until: number; domain: string };
-function deferredStore(): Map<string, Map<string, DeferredEntry>> {
-  const g = globalThis as { [DEFERRED_KEY]?: Map<string, Map<string, DeferredEntry>> };
+function deferredStore(): Map<string, Map<string, number>> {
+  const g = globalThis as { [DEFERRED_KEY]?: Map<string, Map<string, number>> };
   g[DEFERRED_KEY] ??= new Map();
   return g[DEFERRED_KEY];
 }
-export function getDeferred(account: string, key: string, nowMs: number = Date.now()): DeferredEntry | undefined {
+/** Ende des Fensters, wenn die Domain der Firma zurueckgestellt ist und das Fenster noch laeuft. */
+export function getDeferredDomain(orgId: string, domain: string, nowMs: number = Date.now()): number | undefined {
   const store = deferredStore();
-  const m = store.get(account);
+  const m = store.get(orgId);
   if (!m) return undefined;
-  const e = m.get(key);
-  if (e && e.until <= nowMs) {
-    m.delete(key);
-    if (m.size === 0) store.delete(account);
+  const until = m.get(domain);
+  if (until !== undefined && until <= nowMs) {
+    m.delete(domain);
+    if (m.size === 0) store.delete(orgId);
     return undefined;
   }
-  return e;
+  return until;
 }
-/** Merkt eine Mail vor. Bei Ueberlauf verliert nur dieses Konto Eintraege: zuerst abgelaufene, dann die aeltesten. */
-export function parkDeferred(account: string, key: string, entry: DeferredEntry, nowMs: number, max: number = MAX_DEFERRED_PER_ACCOUNT): void {
+/** Merkt eine Domain vor. Bei Ueberlauf verliert nur diese Firma Eintraege: zuerst abgelaufene, dann die aeltesten. */
+export function parkDeferredDomain(orgId: string, domain: string, until: number, nowMs: number, max: number = MAX_DEFERRED_DOMAINS_PER_ACCOUNT): void {
   const store = deferredStore();
-  let m = store.get(account);
+  let m = store.get(orgId);
   if (!m) {
     m = new Map();
-    store.set(account, m);
+    store.set(orgId, m);
   }
-  for (const [k, v] of m) if (v.until <= nowMs) m.delete(k);
-  m.delete(key); // erneutes Vormerken zaehlt als juengster Eintrag
-  if (m.size >= max) {
-    for (const [k, v] of m) if (v.until <= nowMs) m.delete(k);
-    for (const k of m.keys()) {
-      if (m.size < max) break;
-      m.delete(k);
-    }
+  for (const [k, v] of m) if (v <= nowMs) m.delete(k);
+  m.delete(domain); // erneutes Vormerken zaehlt als juengster Eintrag
+  for (const k of m.keys()) {
+    if (m.size < max) break;
+    m.delete(k);
   }
-  m.set(key, entry);
+  m.set(domain, until);
 }
 
 export function senderAllowed(senderDomain: string | null, allowed: string[]): boolean {
@@ -240,9 +238,8 @@ export async function fetchMailboxForOrg(
   /** Absenderdomains, deren Tageslimit erreicht ist; ihre Mails bleiben ungelesen und werden spaeter erneut versucht. */
   const limitedDomains = new Set<string>();
   let downloads = 0;
-  const deferKey = (uid: string): string => `${orgId}:${accountKey}:${uidValidity}:${uid}`;
-  /** Merkt die Mail bis zum Fensterende des Absender-Tageslimits vor; liefert true, wenn das Limit erreicht ist. */
-  const deferIfLimited = async (uid: string, domain: string): Promise<boolean> => {
+  /** Prueft das Tageslimit der Domain gegen die Datenbank und merkt sie bis zum Fensterende vor; true, wenn erreicht. */
+  const deferIfLimited = async (domain: string): Promise<boolean> => {
     const since = new Date(now.getTime() - DAY_MS);
     const times = await dbInternal.inboundMailMessage.findMany({
       where: { orgId, senderDomain: domain, result: "STAGED", fetchedAt: { gt: since } },
@@ -252,7 +249,7 @@ export async function fetchMailboxForOrg(
     if (times.length < MAX_STAGED_PER_DOMAIN_PER_DAY) return false;
     // Das Limit unterschreitet der Zaehler, sobald die aelteste noetige Zeile aus dem 24-Stunden-Fenster faellt.
     const freeing = times[times.length - MAX_STAGED_PER_DOMAIN_PER_DAY];
-    parkDeferred(orgId, deferKey(uid), { until: (freeing?.fetchedAt.getTime() ?? now.getTime()) + DAY_MS, domain }, now.getTime());
+    parkDeferredDomain(orgId, domain, (freeing?.fetchedAt.getTime() ?? now.getTime()) + DAY_MS, now.getTime());
     limitedDomains.add(domain);
     return true;
   };
@@ -271,17 +268,21 @@ export async function fetchMailboxForOrg(
       await op((s) => s.markSeen(uid)).catch(() => undefined);
     }
     const fresh = uids.filter((u) => !known.has(u));
-    // Zurueckgestellte Mails (Tageslimit) zaehlen nicht gegen die Grenze je Lauf, damit sie andere Absender nicht
-    // verdraengen; die Zahl der geprueften Mails bleibt trotzdem begrenzt.
+    // Absender aller ungelesenen Mails mit einem einzigen Kommando holen (nur Kopfdaten, kein Inhalt). Mails gesperrter
+    // Domains werden ohne weiteren Aufruf und ohne Anrechnung auf die Grenzen uebersprungen.
+    const senders = fresh.length > 0 ? await op((s) => s.senders(fresh)).catch(() => new Map<string, string | null>()) : new Map<string, string | null>();
     let handled = 0;
     let deferScans = 0;
     for (const uid of fresh) {
       if (handled >= MAX_MAILS_PER_RUN || downloads >= MAX_MAILS_PER_RUN * 3 || deferScans >= MAX_DEFER_SCANS_PER_RUN) break;
-      // Bereits zurueckgestellt und das Fenster laeuft noch: weder Abruf noch Anrechnung auf die Grenzen.
-      const parked = getDeferred(orgId, deferKey(uid), now.getTime());
-      if (parked && parked.until > now.getTime()) {
-        limitedDomains.add(parked.domain);
-        continue;
+      const domain = senders.get(uid) ?? null;
+      if (domain !== null) {
+        if (getDeferredDomain(orgId, domain, now.getTime()) !== undefined) {
+          limitedDomains.add(domain);
+          continue;
+        }
+        deferScans += 1;
+        if (await deferIfLimited(domain)) continue;
       }
       if (timedOut) throw new MailboxError("TIMEOUT");
       // Kontingent je Mail pruefen: ein Lauf darf die Sichtung nicht ueber die Grenze fuellen.
@@ -304,10 +305,7 @@ export async function fetchMailboxForOrg(
         if (!poison) throw e;
         r = await commit(uid, { orgId, accountKey, uidValidity, uid, internalDate: null, fetchedAt: now, size: 0, result: "FETCH_FAILED", messageIdHash: null, senderDomain: null, subject: null }, []);
       }
-      if (r === null) {
-        if (getDeferred(orgId, deferKey(uid), now.getTime()) !== undefined) deferScans += 1;
-        continue;
-      }
+      if (r === null) continue;
       handled += 1;
       messages += 1;
       staged += r;
@@ -331,7 +329,7 @@ export async function fetchMailboxForOrg(
     const meta = await op((s) => s.meta(uid));
     if (meta === null) return null;
     // Vorabpruefung ueber den Envelope (ohne Download): Mails eines Absenders ueber dem Tageslimit gar nicht erst laden.
-    if (meta.fromDomain && (await deferIfLimited(uid, meta.fromDomain))) return null;
+    if (meta.fromDomain && (await deferIfLimited(meta.fromDomain))) return null;
     const base = { orgId, accountKey, uidValidity, uid, internalDate: meta.internalDate, fetchedAt: now, size: meta.size };
     let raw: Uint8Array | null = null;
     let tooLarge = meta.size > MAX_MAIL_BYTES;
@@ -363,7 +361,7 @@ export async function fetchMailboxForOrg(
     // Die Message-Id stammt vom Absender und dient nur als Hinweis im Protokoll, nie zum Verwerfen:
     // Doppelte Abrufe erkennt die Position (Konto, UIDVALIDITY, UID), doppelte Belege der Datei-Hash.
     if (!senderAllowed(mail.senderDomain, allowed)) return commit(uid, { ...head, result: "SENDER_NOT_ALLOWED" }, []);
-    if (mail.senderDomain !== null && (await deferIfLimited(uid, mail.senderDomain))) {
+    if (mail.senderDomain !== null && (await deferIfLimited(mail.senderDomain))) {
       // Weder protokollieren noch als gelesen markieren: die Mail wird nach Ablauf des Fensters erneut versucht.
       return null;
     }

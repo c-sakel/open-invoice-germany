@@ -57,6 +57,8 @@ export interface MailboxSession {
   searchUnseen(since: Date | null): Promise<string[]>;
   /** `fromDomain` stammt aus dem Envelope (ohne Mailinhalt, vom Absender frei waehlbar) und dient nur der Vorabpruefung. */
   meta(uid: string): Promise<{ size: number; internalDate: Date | null; fromDomain?: string | null } | null>;
+  /** Absenderdomains (aus dem Envelope, ohne Inhalt) mehrerer Mails in EINEM Kommando; fehlende oder ungueltige Absender als null. */
+  senders(uids: string[]): Promise<Map<string, string | null>>;
   /** Wirft TOO_LARGE bei Ueberschreitung von maxBytes. */
   fetchRaw(uid: string, maxBytes: number): Promise<Uint8Array>;
   markSeen(uid: string): Promise<void>;

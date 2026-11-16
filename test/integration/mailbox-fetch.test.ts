@@ -11,7 +11,7 @@ import { dbInternal } from "@/lib/db";
 import { resetRateLimits } from "@/lib/rate-limit";
 import { SecretsUnavailableError } from "@/lib/crypto/secrets";
 import { loadMailboxSettings, saveMailboxSettings, setMailboxEnabled, testMailboxConnection } from "@/domain/mailbox/settings";
-import { fetchMailboxForOrg, getDeferred, parkDeferred } from "@/domain/mailbox/fetch";
+import { fetchMailboxForOrg, getDeferredDomain, parkDeferredDomain } from "@/domain/mailbox/fetch";
 import { runScheduledJobs } from "@/domain/scheduler/runner";
 import { runMailboxJob } from "@/domain/mailbox/job";
 import { purgeMailboxStaging } from "@/domain/mailbox/purge";
@@ -383,16 +383,38 @@ describe("Abruf", () => {
     expect(c2.fetched).toEqual(["62"]);
   });
 
-  it("Ueberlauf der Zurueckstell-Liste eines Kontos laesst die Eintraege anderer Konten unberuehrt", () => {
-    const e = (until: number) => ({ until, domain: "lieferant.example.org" });
-    parkDeferred("konto-b", "b1", e(10_000), 0, 3);
-    parkDeferred("konto-b", "b2", e(10_000), 0, 3);
-    for (let i = 0; i < 10; i++) parkDeferred("konto-a", `a${i}`, e(i < 2 ? 5 : 10_000), 100, 3);
-    // In Konto A: abgelaufene zuerst entfernt, danach die aeltesten; hoechstens 3 Eintraege.
-    expect(["a0", "a1", "a2", "a3", "a4", "a5", "a6"].map((k) => getDeferred("konto-a", k, 0) !== undefined)).toEqual([false, false, false, false, false, false, false]);
-    expect(["a7", "a8", "a9"].every((k) => getDeferred("konto-a", k, 0) !== undefined)).toBe(true);
-    expect(getDeferred("konto-b", "b1", 0)).toBeDefined();
-    expect(getDeferred("konto-b", "b2", 0)).toBeDefined();
+  it("Ueberlauf der Zurueckstell-Liste einer Firma laesst die Eintraege anderer Firmen unberuehrt", () => {
+    parkDeferredDomain("org-b", "b1.example.org", 10_000, 0, 3);
+    parkDeferredDomain("org-b", "b2.example.org", 10_000, 0, 3);
+    for (let i = 0; i < 10; i++) parkDeferredDomain("org-a", `a${i}.example.org`, i < 2 ? 5 : 10_000, 100, 3);
+    // In Firma A: abgelaufene zuerst entfernt, danach die aeltesten; hoechstens 3 Eintraege.
+    expect([0, 1, 2, 3, 4, 5, 6].map((i) => getDeferredDomain("org-a", `a${i}.example.org`, 0) !== undefined)).toEqual([false, false, false, false, false, false, false]);
+    expect([7, 8, 9].every((i) => getDeferredDomain("org-a", `a${i}.example.org`, 0) !== undefined)).toBe(true);
+    expect(getDeferredDomain("org-b", "b1.example.org", 0)).toBeDefined();
+    expect(getDeferredDomain("org-b", "b2.example.org", 0)).toBeDefined();
+  });
+
+  it("3000 zurueckgestellte Mails einer Domain verdraengen eine echte Mail im selben Lauf nicht; Absender in einem Kommando", async () => {
+    const orgId = await mkActiveOrg("Tageslimit Masse");
+    await dbInternal.inboundMailMessage.createMany({
+      data: Array.from({ length: 50 }, (_, i) => ({ orgId, accountKey: "m".repeat(32), uidValidity: "1", uid: `s${i}`, fetchedAt: new Date(NOW.getTime() - 3600_000), size: 1, result: "STAGED", senderDomain: "lieferant.example.org" })),
+    });
+    const spamRaw = buildMail({ messageId: "<spam@lieferant.example.org>" });
+    const limited: FakeMail[] = Array.from({ length: 3000 }, (_, i) => ({ uid: String(i + 1), raw: spamRaw }));
+    const real = mail("3001", { from: "Z <z@anders.example.org>" });
+    const c = client([...limited, real]);
+    const t0 = Date.now();
+    await fetchMailboxForOrg(orgId, NOW, c);
+    expect(Date.now() - t0).toBeLessThan(5000);
+    expect((await dbInternal.inboundMailMessage.findFirstOrThrow({ where: { orgId, uid: "3001" } })).result).toBe("STAGED");
+    expect(c.senderCalls).toBe(1);
+    expect(c.fetched).toEqual(["3001"]);
+    expect(limited.every((m) => !m.seen)).toBe(true);
+    // Zweiter Lauf: Domain bereits vorgemerkt, weder Abruf noch Datenbankpruefung je Mail.
+    const next = mail("3002", { from: "Z <z@anders.example.org>" });
+    const c2 = client([...limited, next]);
+    await fetchMailboxForOrg(orgId, new Date(NOW.getTime() + 60_000), c2);
+    expect(c2.fetched).toEqual(["3002"]);
   });
 
   it("gleiche Anlage in zwei Mails und bereits hochgeladene Datei sind Dubletten", async () => {

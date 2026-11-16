@@ -27,6 +27,7 @@ export class FakeMailboxClient implements MailboxClient {
   searchedSince: (Date | null)[] = [];
   markedSeen: string[] = [];
   fetched: string[] = [];
+  senderCalls = 0;
   closed = 0;
   constructor(public opts: FakeMailboxOptions) {}
 
@@ -56,6 +57,19 @@ export class FakeMailboxClient implements MailboxClient {
         if (!m) return null;
         const from = /^From:[^\r\n]*@([A-Za-z0-9.-]+)/im.exec(Buffer.from(m.raw.subarray(0, 4096)).toString("latin1"));
         return { size: m.size ?? m.raw.byteLength, internalDate: m.internalDate ?? new Date("2026-11-10T10:00:00.000Z"), fromDomain: from?.[1]?.toLowerCase() ?? null };
+      },
+      senders: async (uids) => {
+        alive();
+        this.senderCalls += 1;
+        const out = new Map<string, string | null>();
+        const byUid = new Map(this.opts.mails.map((m) => [m.uid, m]));
+        for (const uid of uids) {
+          const m = byUid.get(uid);
+          if (!m) continue;
+          const from = /^From:[^\r\n]*@([A-Za-z0-9.-]+)/im.exec(Buffer.from(m.raw.subarray(0, 4096)).toString("latin1"));
+          out.set(uid, from?.[1]?.toLowerCase() ?? null);
+        }
+        return out;
       },
       fetchRaw: async (uid, maxBytes) => {
         alive();
