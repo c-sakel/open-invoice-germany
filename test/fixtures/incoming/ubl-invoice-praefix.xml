@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<inv:Invoice xmlns:inv="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2" xmlns:agg="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0</CustomizationID>
+  <ProfileID>urn:fdc:peppol.eu:2017:poacc:billing:01:1.0</ProfileID>
+  <ID>RE-2034-0003</ID>
+  <IssueDate>2034-06-09</IssueDate>
+  <DueDate>2034-07-09</DueDate>
+  <InvoiceTypeCode>380</InvoiceTypeCode>
+  <Note>Vielen Dank für Ihren Auftrag.</Note>
+  <DocumentCurrencyCode>EUR</DocumentCurrencyCode>
+  <BuyerReference>04011000-12345-86</BuyerReference>
+  <agg:AccountingSupplierParty>
+    <agg:Party>
+      <EndpointID schemeID="EM">info@muster-handwerk.de</EndpointID>
+      <agg:PostalAddress>
+        <StreetName>Lindenstr. 5</StreetName>
+        <CityName>Lüneburg</CityName>
+        <PostalZone>21337</PostalZone>
+        <agg:Country>
+          <IdentificationCode>DE</IdentificationCode>
+        </agg:Country>
+      </agg:PostalAddress>
+      <agg:PartyTaxScheme>
+        <CompanyID>DE123456789</CompanyID>
+        <agg:TaxScheme>
+          <ID>VAT</ID>
+        </agg:TaxScheme>
+      </agg:PartyTaxScheme>
+      <agg:PartyLegalEntity>
+        <RegistrationName>Muster Handwerk GmbH</RegistrationName>
+      </agg:PartyLegalEntity>
+      <agg:Contact>
+        <Name>Muster Handwerk GmbH</Name>
+        <Telephone>+49 4131 999000</Telephone>
+        <ElectronicMail>info@muster-handwerk.de</ElectronicMail>
+      </agg:Contact>
+    </agg:Party>
+  </agg:AccountingSupplierParty>
+  <agg:AccountingCustomerParty>
+    <agg:Party>
+      <EndpointID schemeID="EM">buchhaltung@beispiel.de</EndpointID>
+      <agg:PostalAddress>
+        <StreetName>Hafenstr. 12</StreetName>
+        <CityName>Hamburg</CityName>
+        <PostalZone>20457</PostalZone>
+        <agg:Country>
+          <IdentificationCode>DE</IdentificationCode>
+        </agg:Country>
+      </agg:PostalAddress>
+      <agg:PartyTaxScheme>
+        <CompanyID>DE987654321</CompanyID>
+        <agg:TaxScheme>
+          <ID>VAT</ID>
+        </agg:TaxScheme>
+      </agg:PartyTaxScheme>
+      <agg:PartyLegalEntity>
+        <RegistrationName>Beispiel AG</RegistrationName>
+      </agg:PartyLegalEntity>
+    </agg:Party>
+  </agg:AccountingCustomerParty>
+  <agg:Delivery>
+    <ActualDeliveryDate>2034-06-01</ActualDeliveryDate>
+    <agg:DeliveryLocation>
+      <agg:Address>
+        <CityName>Hamburg</CityName>
+        <PostalZone>20457</PostalZone>
+        <agg:Country>
+          <IdentificationCode>DE</IdentificationCode>
+        </agg:Country>
+      </agg:Address>
+    </agg:DeliveryLocation>
+  </agg:Delivery>
+  <agg:PaymentMeans>
+    <PaymentMeansCode>58</PaymentMeansCode>
+    <agg:PayeeFinancialAccount>
+      <ID>DE02120300000000202051</ID>
+      <Name>Muster Handwerk GmbH</Name>
+    </agg:PayeeFinancialAccount>
+  </agg:PaymentMeans>
+  <agg:PaymentTerms>
+    <Note>Zahlbar innerhalb von 30 Tagen ohne Abzug.</Note>
+  </agg:PaymentTerms>
+  <agg:AllowanceCharge>
+    <ChargeIndicator>false</ChargeIndicator>
+    <AllowanceChargeReasonCode>95</AllowanceChargeReasonCode>
+    <AllowanceChargeReason>Rabatt</AllowanceChargeReason>
+    <MultiplierFactorNumeric>10.00</MultiplierFactorNumeric>
+    <Amount currencyID="EUR">8.00</Amount>
+    <BaseAmount currencyID="EUR">80.00</BaseAmount>
+    <agg:TaxCategory>
+      <ID>S</ID>
+      <Percent>7</Percent>
+      <agg:TaxScheme>
+        <ID>VAT</ID>
+      </agg:TaxScheme>
+    </agg:TaxCategory>
+  </agg:AllowanceCharge>
+  <agg:AllowanceCharge>
+    <ChargeIndicator>false</ChargeIndicator>
+    <AllowanceChargeReasonCode>95</AllowanceChargeReasonCode>
+    <AllowanceChargeReason>Rabatt</AllowanceChargeReason>
+    <MultiplierFactorNumeric>10.00</MultiplierFactorNumeric>
+    <Amount currencyID="EUR">28.50</Amount>
+    <BaseAmount currencyID="EUR">285.00</BaseAmount>
+    <agg:TaxCategory>
+      <ID>S</ID>
+      <Percent>19</Percent>
+      <agg:TaxScheme>
+        <ID>VAT</ID>
+      </agg:TaxScheme>
+    </agg:TaxCategory>
+  </agg:AllowanceCharge>
+  <agg:InvoiceLine>
+    <ID>1</ID>
+    <InvoicedQuantity unitCode="HUR">3</InvoicedQuantity>
+    <LineExtensionAmount currencyID="EUR">285.00</LineExtensionAmount>
+    <agg:Item>
+      <Name>Beratung vor Ort</Name>
+      <agg:ClassifiedTaxCategory>
+        <ID>S</ID>
+        <Percent>19</Percent>
+        <agg:TaxScheme>
+          <ID>VAT</ID>
+        </agg:TaxScheme>
+      </agg:ClassifiedTaxCategory>
+    </agg:Item>
+    <agg:Price>
+      <PriceAmount currencyID="EUR">95.00</PriceAmount>
+    </agg:Price>
+  </agg:InvoiceLine>
+  <agg:InvoiceLine>
+    <ID>2</ID>
+    <InvoicedQuantity unitCode="C62">1</InvoicedQuantity>
+    <LineExtensionAmount currencyID="EUR">80.00</LineExtensionAmount>
+    <agg:Item>
+      <Name>Fachliteratur</Name>
+      <agg:ClassifiedTaxCategory>
+        <ID>S</ID>
+        <Percent>7</Percent>
+        <agg:TaxScheme>
+          <ID>VAT</ID>
+        </agg:TaxScheme>
+      </agg:ClassifiedTaxCategory>
+    </agg:Item>
+    <agg:Price>
+      <PriceAmount currencyID="EUR">80.00</PriceAmount>
+    </agg:Price>
+  </agg:InvoiceLine>
+  <agg:TaxTotal>
+    <TaxAmount currencyID="EUR">53.78</TaxAmount>
+    <agg:TaxSubtotal>
+      <TaxableAmount currencyID="EUR">72.00</TaxableAmount>
+      <TaxAmount currencyID="EUR">5.04</TaxAmount>
+      <agg:TaxCategory>
+        <ID>S</ID>
+        <Percent>7</Percent>
+        <agg:TaxScheme>
+          <ID>VAT</ID>
+        </agg:TaxScheme>
+      </agg:TaxCategory>
+    </agg:TaxSubtotal>
+    <agg:TaxSubtotal>
+      <TaxableAmount currencyID="EUR">256.50</TaxableAmount>
+      <TaxAmount currencyID="EUR">48.74</TaxAmount>
+      <agg:TaxCategory>
+        <ID>S</ID>
+        <Percent>19</Percent>
+        <agg:TaxScheme>
+          <ID>VAT</ID>
+        </agg:TaxScheme>
+      </agg:TaxCategory>
+    </agg:TaxSubtotal>
+  </agg:TaxTotal>
+  <agg:LegalMonetaryTotal>
+    <LineExtensionAmount currencyID="EUR">365.00</LineExtensionAmount>
+    <TaxExclusiveAmount currencyID="EUR">328.50</TaxExclusiveAmount>
+    <TaxInclusiveAmount currencyID="EUR">382.28</TaxInclusiveAmount>
+    <AllowanceTotalAmount currencyID="EUR">36.50</AllowanceTotalAmount>
+    <PayableAmount currencyID="EUR">382.28</PayableAmount>
+  </agg:LegalMonetaryTotal>
+</inv:Invoice>

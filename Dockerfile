@@ -44,6 +44,9 @@ RUN set -eu; cd .next/standalone; \
              assets/fonts/Inter-Regular.ttf \
              assets/fonts/SourceSerif4-Regular.ttf \
              src/app/favicon.ico \
+             src/workers/incoming-worker.mjs \
+             assets/einvoice-validation/pins.env \
+             assets/einvoice-validation/LICENSES/LICENSE-en16931-validation-EUPL-1.2.txt \
              node_modules/swagger-ui-dist/swagger-ui-bundle.js \
              node_modules/pdfkit/js/data/Helvetica.afm; do \
       [ -e "$f" ] || { echo "FEHLER: $f fehlt im Standalone-Output" >&2; exit 1; }; \
@@ -89,6 +92,35 @@ RUN --mount=type=cache,target=/root/.npm,sharing=locked \
  && find node_modules -name '*.map' -delete \
  && npx prisma --version
 
+# ── Pruefartefakte fuer eingehende E-Rechnungen ────────────────────────────────
+# KoSIT-Validator + XRechnung-Konfiguration (Pins und SHA-256 in assets/einvoice-validation/pins.env,
+# dieselben Staende wie der CI-Job xrechnung-kosit). Nie zur Laufzeit geladen.
+FROM base AS einvoice-validator
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates curl unzip
+COPY scripts/fetch-einvoice-validator.sh /build/scripts/fetch-einvoice-validator.sh
+COPY assets/einvoice-validation /build/assets/einvoice-validation
+RUN sh /build/scripts/fetch-einvoice-validator.sh /opt/validator \
+ && test -s /opt/validator/validator.jar && test -f /opt/validator/config/scenarios.xml \
+ && test -f /opt/validator/LICENSES/LICENSE-en16931-validation-EUPL-1.2.txt
+
+# ── Zugeschnittene Java-Laufzeit (nur die Module, die der Validator braucht) ───
+FROM base AS jre
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends binutils openjdk-21-jdk-headless
+# Module fuer den Pruefer: java.base (Kern), java.xml (Schema/XSLT/XPath, explizit statt nur ueber java.desktop),
+# java.desktop (Bildlaufzeit, die der Validator mitzieht), java.compiler/java.logging (Abhaengigkeiten der Bibliotheken),
+# jdk.httpserver (Dienstmodus des Validators), jdk.crypto.ec (TLS-/Signaturalgorithmen).
+RUN jlink --add-modules java.base,java.xml,java.compiler,java.desktop,java.logging,jdk.httpserver,jdk.crypto.ec \
+          --strip-debug --no-header-files --no-man-pages --compress=zip-9 --output /opt/jre \
+ && /opt/jre/bin/java -version
+
 # ── Laufzeit ───────────────────────────────────────────────────────────────────
 FROM base AS runner
 
@@ -106,7 +138,9 @@ ENV NODE_ENV=production \
     HOSTNAME=0.0.0.0 \
     PORT=3000 \
     ATTACHMENTS_DIR=/app/data/attachments \
-    ARCHIVE_DIR=/app/data/archive
+    ARCHIVE_DIR=/app/data/archive \
+    EINVOICE_VALIDATOR_DIR=/opt/validator \
+    EINVOICE_JAVA=/opt/jre/bin/java
 
 # Programmdateien gehoeren root und sind fuer den Laufzeitbenutzer nur lesbar.
 # Reihenfolge: zuerst die Prisma-CLI, darueber der Standalone-Server (die beiden
@@ -124,6 +158,12 @@ COPY --from=build \
      /app/scripts/disable-2fa.sh \
      ./scripts/
 COPY --from=build /app/LICENSE ./LICENSE
+# Pruefung eingehender E-Rechnungen: Validator samt Konfiguration und Lizenztexten sowie die Java-Laufzeit
+# (root-eigen, nur lesbar). Die Anwendung ruft sie als eigenen Prozess auf.
+COPY --from=einvoice-validator /opt/validator /opt/validator
+COPY --from=jre /opt/jre /opt/jre
+RUN /opt/jre/bin/java -version \
+ && test -s /opt/validator/validator.jar && test -f /app/src/workers/incoming-worker.mjs
 
 # Beschreibbar fuer "node" sind nur die Datenverzeichnisse (Volumes oig-attachments /
 # oig-archive; neue benannte Volumes uebernehmen Eigentuemer und Rechte, 750 = Belege

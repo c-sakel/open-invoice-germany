@@ -1351,6 +1351,7 @@ export * from "./portal";
 
 // ── Bankabgleich ─────────────────────────────────────────────────────────────
 export * from "./bank";
+export * from "./incoming";
 
 // ── Regeln nach Zahlungseingang ──────────────────────────────────────────────
 export * from "./payment-rule";
@@ -1360,3 +1361,6 @@ export * from "./online-payment";
 
 // ── DATEV-Export ─────────────────────────────────────────────────────────────
 export * from "./datev";
+
+// ── Eingangsrechnungen ───────────────────────────────────────────────────────
+export * from "./incoming";

@@ -15,6 +15,7 @@
 !src/
 !public/
 !assets/fonts/
+!assets/einvoice-validation/
 !openapi/openapi.json
 
 # PostgreSQL-Schema und -Migrationen (der SQLite-Pfad ist im Container nicht im Einsatz)
@@ -26,6 +27,7 @@
 !scripts/db-prepare.sh
 !scripts/check-baseline.sql
 !scripts/disable-2fa.sh
+!scripts/fetch-einvoice-validator.sh
 !docker/prisma-cli/package.json
 !docker/prisma-cli/package-lock.json
 

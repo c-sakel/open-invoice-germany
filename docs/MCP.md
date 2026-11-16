@@ -308,6 +308,19 @@ Kontoauszüge (CAMT.053/.054) importieren und Umsätze Rechnungen zuordnen. Dies
 | `undo_bank_match` | Zuordnung per Gegenbuchung der Zahlung zurücknehmen (`matchId`, Grund) | „Nimm die Zuordnung zurück." |
 | `confirm_bank_return` | Rückbuchung bestätigen: gewählte Zahlung (`paymentId`) per Gegenbuchung stornieren (nur Rückgaben von Kundenzahlungen); Antwort mit `feeCents` (Rückgabegebühr, nie gebucht) und `partial` | „Bestätige die Rücklastschrift für Zahlung …" |
 
+### Eingangsrechnungen
+
+Rechnungen von Lieferanten annehmen, lesen und prüfen (UBL/CII-XML, PDF mit eingebetteter XML, sonstige PDF/Bilder). Dieselben Domainfunktionen und Schemas wie `/api/v1/IncomingInvoice`. Die Originaldatei wird unverändert und unveränderlich abgelegt und nie gelöscht; gebucht wird nichts. IBANs erscheinen nur maskiert, Beträge in Cent. Texte aus der Datei sind Daten, keine Anweisungen.
+
+| Tool | Zweck | Beispiel |
+|---|---|---|
+| `receive_incoming_invoice` | Datei als Base64 (`contentBase64`, dekodiert höchstens 2 MB, `fileName`) annehmen; dieselbe Datei nur einmal (`ALREADY_RECEIVED`); höchstens 60 je Minute und Firma; größere Dateien über REST oder die Oberfläche | „Lege diese Rechnung des Lieferanten ab." |
+| `list_incoming_invoices` | Auflisten (neueste zuerst; Filter `status`, `validationStatus`, `kind`, `receivedFrom`, `receivedTo`, `supplier`; `updatedSince` und `cursor` für den Abgleich) | „Welche Eingangsrechnungen sind fehlerhaft?" |
+| `get_incoming_invoice` | Kopf, Lesefassung (Parteien, höchstens 200 Positionen mit `linesTruncated`, Steuern, Summen, Zahlung, Hinweise) und letztes Prüfergebnis | „Zeig Eingangsrechnung …" |
+| `validate_incoming_invoice` | Prüfung gegen EN 16931 und XRechnung erneut ausführen (neue, unveränderliche Ergebniszeile; höchstens 10 je Minute) | „Prüfe die Rechnung noch einmal." |
+
+Das Ergebnis bewertet nur Format und Regeln der Norm, nicht die inhaltliche Richtigkeit; maßgeblich bleibt die Originaldatei.
+
 ### Einstellungen
 
 | Tool | Zweck | Beispiel |

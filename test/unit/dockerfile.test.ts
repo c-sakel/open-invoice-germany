@@ -10,7 +10,7 @@
  * gegen PostgreSQL starten) laeuft in .github/workflows/docker.yml.
  */
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 const read = (f: string) => readFileSync(path.join(process.cwd(), f), "utf8");
@@ -31,6 +31,9 @@ describe("Dockerfile", () => {
     "assets/fonts/Inter-Regular.ttf",
     "assets/fonts/SourceSerif4-Regular.ttf",
     "src/app/favicon.ico",
+    "src/workers/incoming-worker.mjs",
+    "assets/einvoice-validation/pins.env",
+    "assets/einvoice-validation/LICENSES/LICENSE-en16931-validation-EUPL-1.2.txt",
     "node_modules/swagger-ui-dist/swagger-ui-bundle.js",
     "node_modules/pdfkit/js/data/Helvetica.afm",
   ])("build-Stage prueft, dass %s im Standalone-Output liegt", (file) => {
@@ -56,6 +59,51 @@ describe("Dockerfile", () => {
     expect(runnerStage).toMatch(/\/app\/scripts\/disable-2fa\.sh/);
   });
 
+  it("Pruefung eingehender E-Rechnungen: Validator und Java-Laufzeit kommen aus eigenen Stages, nichts wird zur Laufzeit geladen", () => {
+    expect(dockerfile).toMatch(/^FROM base AS einvoice-validator$/m);
+    expect(dockerfile).toMatch(/^FROM base AS jre$/m);
+    expect(dockerfile).toMatch(/fetch-einvoice-validator\.sh \/opt\/validator/);
+    expect(dockerfile).toMatch(/jlink --add-modules java\.base,java\.xml,/);
+    expect(runnerStage).toMatch(/COPY --from=einvoice-validator \/opt\/validator \/opt\/validator/);
+    expect(runnerStage).toMatch(/COPY --from=jre \/opt\/jre \/opt\/jre/);
+    expect(runnerStage).toMatch(/EINVOICE_VALIDATOR_DIR=\/opt\/validator/);
+    expect(runnerStage).toMatch(/EINVOICE_JAVA=\/opt\/jre\/bin\/java/);
+    // Die Laufzeit-Stage bricht ab, wenn Java oder Validator fehlen.
+    expect(runnerStage).toMatch(/\/opt\/jre\/bin\/java -version/);
+  });
+
+  it("Pruefartefakte: feste Pruefsummen, Lizenztexte liegen im Repository", () => {
+    const pins = read("assets/einvoice-validation/pins.env");
+    expect(pins).toMatch(/^VALIDATOR_SHA256=[0-9a-f]{64}$/m);
+    expect(pins).toMatch(/^CONFIG_SHA256=[0-9a-f]{64}$/m);
+    const script = read("scripts/fetch-einvoice-validator.sh");
+    expect(script).toMatch(/Pruefsumme von .* weicht ab/);
+    for (const f of ["LICENSE-validator-Apache-2.0.txt", "LICENSE-xrechnung-configuration-Apache-2.0.txt", "LICENSE-en16931-validation-EUPL-1.2.txt", "NOTICE-validator.txt"]) {
+      expect(read(`assets/einvoice-validation/LICENSES/${f}`).length).toBeGreaterThan(1000);
+    }
+    // Die CI-Pruefung des Images verbietet *.md unter /app; der Lizenzhinweis ist daher eine .txt-Datei.
+    expect(existsSync(path.resolve(__dirname, "../../assets/einvoice-validation/LICENSES/README.txt"))).toBe(true);
+    expect(existsSync(path.resolve(__dirname, "../../assets/einvoice-validation/LICENSES/README.md"))).toBe(false);
+  });
+
+  it("docker.yml fuehrt den Pruefer im Image als Nutzer node gegen Fixtures aus (accept und reject, unter 20 s)", () => {
+    const wf = read(".github/workflows/docker.yml");
+    expect(wf).toMatch(/--user 1000:1000/);
+    expect(wf).toMatch(/--entrypoint \/opt\/jre\/bin\/java/);
+    expect(wf).toMatch(/probe gen-base-cii\.xml 0/);
+    expect(wf).toMatch(/probe cii-summen-falsch\.xml 1/);
+    expect(wf).toMatch(/-lt 20/);
+    // Die Fixtures, gegen die der Schritt prueft, existieren.
+    for (const f of ["gen-base-cii.xml", "cii-summen-falsch.xml"]) expect(read(`test/fixtures/incoming/${f}`).length).toBeGreaterThan(100);
+  });
+
+  it("next.config.ts nimmt Worker-Skript und Pruefartefakte ins Tracing auf", () => {
+    const cfg = read("next.config.ts");
+    expect(cfg).toContain("outputFileTracingIncludes");
+    expect(cfg).toContain("./src/workers/**/*");
+    expect(cfg).toContain("./assets/einvoice-validation/**/*");
+  });
+
   it("Basis-Image steht als literale FROM-Zeile mit Digest (Dependabot)", () => {
     expect(dockerfile).toMatch(/^FROM node:\d+\.\d+\.\d+-[a-z]+-slim@sha256:[0-9a-f]{64} AS base$/m);
   });
@@ -78,7 +126,7 @@ describe(".dockerignore", () => {
     expect(ignoreLines[0]).toBe("*");
   });
 
-  it.each(["!openapi/openapi.json", "!assets/fonts/", "!src/", "!public/", "!prisma/migrations-postgres/", "!scripts/disable-2fa.sh"])(
+  it.each(["!openapi/openapi.json", "!assets/fonts/", "!src/", "!public/", "!prisma/migrations-postgres/", "!scripts/disable-2fa.sh", "!assets/einvoice-validation/", "!scripts/fetch-einvoice-validator.sh"])(
     "gibt %s frei",
     (entry) => {
       expect(ignoreLines).toContain(entry);

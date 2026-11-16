@@ -79,6 +79,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       { href: "/abos", label: "Wiederkehrend", icon: "recurring" },
       { href: "/mahnwesen", label: "Mahnwesen", icon: "dunning" },
       { href: "/bankabgleich", label: "Bankabgleich", icon: "credit" },
+      { href: "/eingang", label: "Eingang", icon: "mail" },
       // Phase 13d, Task 4: Belegvorlagen (src/domain/template/*) — eigene Seite, kein
       // Einstellungen-Unterpunkt (analog Kunden/Produkte: Nutzdaten, keine Konfiguration).
       { href: "/vorlagen", label: "Vorlagen", icon: "invoice" },

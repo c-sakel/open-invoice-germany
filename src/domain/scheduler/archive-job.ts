@@ -9,6 +9,7 @@
 import { dbInternal } from "@/lib/db";
 import { ensureInvoiceArchive } from "@/domain/invoice/archive";
 import { ensureDunningArchive } from "@/domain/dunning/archive";
+import { runIncomingValidationBacklog } from "@/domain/incoming/validate";
 
 export const ARCHIVE_BATCH = 50;
 export const ARCHIVE_MAX_ATTEMPTS = 200;
@@ -66,5 +67,14 @@ export async function runArchiveJob(now: Date, opts: { batch?: number; maxAttemp
     }
   }
   archived += ok;
+
+  // Eingangsrechnungen, deren Pruefung nach der Annahme nicht lief (Neustart, Fehler): hoechstens 5 je Lauf.
+  try {
+    const backlog = await runIncomingValidationBacklog(now, { max: 5 });
+    failed += backlog.failed;
+  } catch (e) {
+    failed++;
+    console.error("archive-job: Nachpruefung der Eingangsrechnungen fehlgeschlagen", e instanceof Error ? e.name : "unbekannt");
+  }
   return { archived, failed };
 }

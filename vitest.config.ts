@@ -23,6 +23,8 @@ export default defineConfig({
       PAYMENT_RULES_AFTER_COMMIT: "0",
       // Anbieter-APIs fuer Online-Zahlung nie aus der Testsuite heraus ins Netz (Transport ist injizierbar).
       PAYMENT_NETWORK: "0",
+      // Eingangsrechnungen: keine automatische Pruefung nach der Annahme (Tests rufen sie explizit auf).
+      INCOMING_VALIDATION_AFTER_RECEIVE: "0",
       ARCHIVE_DIR: path.join(os.tmpdir(), "oig-test-archive"),
     },
     // SQLite verträgt keine parallelen Writer -> Test-Files seriell

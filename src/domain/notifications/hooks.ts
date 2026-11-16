@@ -123,6 +123,30 @@ export async function onArchiveTampered(orgId: string, input: { invoiceId: strin
   );
 }
 
+/**
+ * Eine archivierte Datei einer Eingangsrechnung fehlt oder weicht vom gespeicherten SHA-256 ab.
+ * Dedupliziert je Eingangsrechnung, Dateiart und Tag.
+ */
+export async function onIncomingArchiveTampered(
+  orgId: string,
+  input: { incomingInvoiceId: string; kind: string; at?: Date },
+): Promise<void> {
+  const at = input.at ?? new Date();
+  await safeNotify(orgId, "ARCHIVE_TAMPERED", () =>
+    createNotification({
+      orgId,
+      type: "ARCHIVE_TAMPERED",
+      title: "Archivierte Eingangsrechnung fehlt oder wurde veraendert",
+      body: `Die archivierte Datei (${input.kind}) einer Eingangsrechnung ist nicht mehr unveraendert vorhanden. Sie wird nicht ausgegeben; bitte aus der Sicherung wiederherstellen.`,
+      link: `/eingang/${input.incomingInvoiceId}`,
+      entityType: "INCOMING_INVOICE",
+      entityId: input.incomingInvoiceId,
+      dedupeKey: `ARCHIVE_TAMPERED:incoming:${input.incomingInvoiceId}:${input.kind}:${at.toISOString().slice(0, 10)}`,
+      at,
+    }),
+  );
+}
+
 /** Phase 16a (Belegarchiv): Erzeugen oder Ablegen der Archivdateien ist fehlgeschlagen. */
 export async function onArchiveFailed(orgId: string, input: { invoiceId: string; message: string; at: Date }): Promise<void> {
   await safeNotify(orgId, "ARCHIVE_FAILED", () =>

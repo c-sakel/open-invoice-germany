@@ -400,7 +400,8 @@ export function buildOpenApiDocument(routes: DiscoveredRoute[]): Record<string, 
     const resource = pathResource ?? structuralRef?.name;
     const resourceSchema = resource ? registeredResources[resource] : undefined;
     const isList = pathResource ? key === "list" : (structuralRef?.isList ?? false);
-    const binaryKind = binaryKindForPath(spec.path);
+    const binaryKind = binaryKindForPath(spec.path) ?? (spec.binary ? "custom" : undefined);
+    const binaryType = spec.binary?.contentType ?? (binaryKind ? BINARY_CONTENT_TYPE[binaryKind] : undefined);
 
     let responseSchema: z.ZodTypeAny | undefined;
     let exampleRef: string | undefined;
@@ -430,8 +431,8 @@ export function buildOpenApiDocument(routes: DiscoveredRoute[]): Record<string, 
     const responses: RouteConfig["responses"] = {};
     if (binaryKind) {
       responses["200"] = {
-        description: `Datei (${BINARY_CONTENT_TYPE[binaryKind]}).`,
-        content: { [BINARY_CONTENT_TYPE[binaryKind]]: { schema: { type: "string", format: "binary" } } },
+        description: spec.binary ? spec.binary.description : `Datei (${binaryType}).`,
+        content: { [binaryType ?? "application/octet-stream"]: { schema: { type: "string", format: "binary" } } },
       };
     } else {
       const successStatus = spec.method === "POST" && key !== "list" ? (key === "create" ? "201" : "200") : "200";

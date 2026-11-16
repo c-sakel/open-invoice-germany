@@ -9,6 +9,7 @@
 import { dbInternal } from "@/lib/db";
 import { computeEntryHash, type ChangeLogPayload } from "@/domain/changelog";
 import { onChainBroken } from "@/domain/notifications/hooks";
+import { verifyIncomingFiles } from "@/domain/incoming/verify";
 
 export const CHAIN_VERIFY_BLOCK = 1000;
 export const AUDIT_JOB_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -138,6 +139,11 @@ export async function runAuditJob(now: Date, db: Db = dbInternal): Promise<{ che
       checked++;
     } catch (e) {
       console.error("audit-job: Kettenpruefung fehlgeschlagen", org.id, e instanceof Error ? e.message : e);
+    }
+    try {
+      await verifyIncomingFiles(org.id);
+    } catch (e) {
+      console.error("audit-job: Pruefung der Eingangsdateien fehlgeschlagen", org.id, e instanceof Error ? e.message : e);
     }
   }
   return { checked };

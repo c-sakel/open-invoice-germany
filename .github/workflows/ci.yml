@@ -25,6 +25,13 @@ jobs:
             echo "apt-Versuch $i fehlgeschlagen"; sleep 15
           done
           command -v xmllint || echo "::warning::xmllint nicht installiert - DTD-Test wird uebersprungen"
+      # Pruefung eingehender E-Rechnungen: Validator + Konfiguration (feste Pruefsummen) und Java fuer die
+      # Rundlauf-Tests (in CI ist ein fehlender Validator ein Fehler). Java 21 wie im ausgelieferten Image.
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      - run: scripts/fetch-einvoice-validator.sh validation/.cache/einvoice-validator
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
