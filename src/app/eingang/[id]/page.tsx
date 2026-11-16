@@ -9,7 +9,17 @@ import { IncomingInvoiceView } from "@/components/incoming/IncomingInvoiceView";
 import { ValidationResult } from "@/components/incoming/ValidationResult";
 import { RevalidateButton } from "@/components/incoming/RevalidateButton";
 import { AutoRefresh } from "@/components/incoming/AutoRefresh";
-import { formatLabel, formatReceivedAt, sizeLabel } from "@/components/incoming/incoming-ui";
+import { IncomingWorkflow } from "@/components/incoming/IncomingWorkflow";
+import { IncomingSupplier } from "@/components/incoming/IncomingSupplier";
+import { IncomingPayment } from "@/components/incoming/IncomingPayment";
+import { IncomingManualHeader } from "@/components/incoming/IncomingManualHeader";
+import { IncomingNote } from "@/components/incoming/IncomingNote";
+import { IncomingHistory } from "@/components/incoming/IncomingHistory";
+import { girocodeImages } from "@/components/incoming/girocode-image";
+import { formatLabel, formatReceivedAt, sizeLabel, statusLabel } from "@/components/incoming/incoming-ui";
+import { dbInternal } from "@/lib/db";
+import { berlinDateKey } from "@/lib/berlin-time";
+import { EDITABLE_STATUSES, manualAllowed } from "@/domain/incoming/update";
 
 export const dynamic = "force-dynamic";
 
@@ -34,11 +44,26 @@ export default async function EingangDetailPage({ params }: { params: Promise<{ 
     throw e;
   }
 
+  const editable = EDITABLE_STATUSES.includes(detail.status);
+  const manualShown = manualAllowed(detail);
+  const [customers, images] = await Promise.all([
+    editable && detail.supplierContactId === null
+      ? dbInternal.customer.findMany({
+          where: { orgId: org.id, isArchived: false },
+          select: { id: true, name: true, customerNumber: true, email: true },
+          orderBy: { name: "asc" },
+          take: 1000,
+        })
+      : Promise.resolve([]),
+    detail.payment ? girocodeImages(detail.payment.girocodes) : Promise.resolve([]),
+  ]);
+  const title = detail.supplierName ?? detail.manual?.supplierName ?? detail.supplierContact?.name ?? "Eingangsrechnung";
+
   return (
     <div className="space-y-6">
       <PageHeader
-        title={detail.supplierName ?? "Eingangsrechnung"}
-        subtitle={`Nummer ${detail.number ?? "–"} · Eingang ${formatReceivedAt(detail.receivedAt)} · ${formatLabel(detail)}`}
+        title={title}
+        subtitle={`${statusLabel(detail.status)} · Nummer ${detail.number ?? detail.manual?.number ?? "–"} · Eingang ${formatReceivedAt(detail.receivedAt)} · ${formatLabel(detail)}`}
         backHref="/eingang"
         backLabel="Eingang"
         actions={
@@ -57,6 +82,12 @@ export default async function EingangDetailPage({ params }: { params: Promise<{ 
           </Link>
         </p>
       ) : null}
+
+      <IncomingWorkflow id={detail.id} workflow={detail.workflow} allowedActions={detail.allowedActions} today={berlinDateKey(new Date())} />
+      <IncomingSupplier id={detail.id} editable={editable} contact={detail.supplierContact} suggestions={detail.suggestions} customers={customers} />
+      <IncomingPayment payment={detail.payment} images={images} skonto={detail.skonto} ibanWarning={detail.ibanWarning} />
+      {manualShown ? <IncomingManualHeader id={detail.id} manual={detail.manual} editable={editable} /> : null}
+      <IncomingNote id={detail.id} initial={detail.internalNote} />
 
       <ValidationResult status={detail.validationStatus} validation={detail.validation} />
       <RevalidateButton id={detail.id} />
@@ -87,6 +118,8 @@ export default async function EingangDetailPage({ params }: { params: Promise<{ 
         <p className="text-xs text-ink-muted">Maßgeblich ist die Originaldatei.</p>
         <IncomingInvoiceView view={detail.view} downloadId={detail.id} />
       </section>
+
+      <IncomingHistory history={detail.history} />
     </div>
   );
 }
