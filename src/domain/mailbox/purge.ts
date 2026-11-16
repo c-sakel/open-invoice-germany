@@ -21,8 +21,8 @@ export async function purgeMailboxStaging(orgId: string, now: Date): Promise<{ p
     // Dieselbe Datei kann von einer weiteren offenen Anlage genutzt werden (gleicher Hash): dann bleibt sie liegen.
     const shared = await dbInternal.inboundMailAttachment.count({ where: { orgId, stagingPath: a.stagingPath, id: { not: a.id }, status: { in: ["INBOX", "DISCARDED"] } } });
     if (shared === 0) await removeStagingFile(a.stagingPath);
-    await dbInternal.inboundMailAttachment.update({ where: { id: a.id }, data: { stagingPath: null, purgedAt: now }, select: { id: true } });
-    purged += 1;
+    const upd = await dbInternal.inboundMailAttachment.updateMany({ where: { id: a.id, orgId, status: "DISCARDED", purgedAt: null }, data: { stagingPath: null, purgedAt: now } });
+    purged += upd.count;
   }
   const cleared = await dbInternal.inboundMailMessage.updateMany({
     where: { orgId, subject: { not: null }, fetchedAt: { lt: new Date(now.getTime() - SUBJECT_RETENTION_DAYS * DAY_MS) } },

@@ -7,6 +7,7 @@
 import { dbInternal } from "@/lib/db";
 import { hashArchiveFile } from "@/lib/archive/storage";
 import { NotFoundError } from "@/domain/errors";
+import { createNotification } from "@/domain/notifications/create";
 import { logActivity } from "@/domain/activity/log";
 import { IncomingBusyError, IncomingDuplicateError, IncomingFormatError } from "@/domain/incoming/errors";
 import { receiveIncomingInvoice, type ReceiveResult } from "@/domain/incoming/receive";
@@ -64,7 +65,7 @@ export async function acceptInboundAttachment(
       withinTx: async (tx, incomingInvoiceId) => {
         const upd = await tx.inboundMailAttachment.updateMany({
           where: { id: row.id, orgId, status: "INBOX" },
-          data: { status: "ACCEPTED", incomingInvoiceId, decidedAt: now, decidedBy: actor, stagingPath: null },
+          data: { status: "ACCEPTED", incomingInvoiceId, decidedAt: now, decidedBy: actor },
         });
         if (upd.count !== 1) throw new InboundMailError("CONFLICT");
       },
@@ -82,18 +83,36 @@ export async function acceptInboundAttachment(
     throw e;
   }
 
-  // Zwischenablage erst entfernen, wenn die archivierte Datei nachweislich dieselben Bytes hat.
+  // Die Kopie bleibt in der Zeile referenziert, bis die archivierte Datei nachweislich dieselben Bytes hat;
+  // sonst bleibt sie als einzige Kopie liegen (der Aufraeum-Lauf entfernt nur nicht referenzierte Dateien).
+  let confirmed = false;
   try {
     const inc = await dbInternal.incomingInvoice.findFirst({ where: { id: result.id, orgId }, select: { originalPath: true, originalSha256: true } });
-    if (inc && (await hashArchiveFile(inc.originalPath)) === inc.originalSha256 && inc.originalSha256 === row.sha256) {
-      await releaseStaging(orgId, stagingPath);
-    } else {
-      console.error("Postfach: Archivdatei nicht bestaetigt, Kopie in der Zwischenablage bleibt liegen");
-    }
+    confirmed = inc !== null && (await hashArchiveFile(inc.originalPath)) === inc.originalSha256 && inc.originalSha256 === row.sha256;
   } catch {
-    console.error("Postfach: Zwischenablage konnte nicht aufgeraeumt werden");
+    confirmed = false;
   }
-  await activity(orgId, row.id, "INBOUND_MAIL_ACCEPTED", actor, now, { incomingInvoiceId: result.id });
+  if (confirmed) {
+    try {
+      await dbInternal.inboundMailAttachment.updateMany({ where: { id: row.id, orgId, status: "ACCEPTED", stagingPath }, data: { stagingPath: null } });
+      await releaseStaging(orgId, stagingPath);
+    } catch {
+      console.error("Postfach: Zwischenablage konnte nicht aufgeraeumt werden");
+    }
+  } else {
+    console.error("Postfach: Archivdatei nicht bestaetigt, Kopie in der Zwischenablage bleibt liegen");
+    await createNotification({
+      orgId,
+      type: "INBOUND_MAIL_ERROR",
+      title: "Postfach: Die archivierte Datei konnte nicht bestaetigt werden. Die Kopie in der Zwischenablage bleibt erhalten.",
+      link: "/eingang?quelle=postfach",
+      entityType: "INBOUND_MAIL",
+      dedupeKey: `ARCHIVE_UNCONFIRMED:${row.id}`,
+      at: now,
+    }).catch(() => undefined);
+  }
+  // Der Beleg ist angelegt: ein Fehler im Protokoll darf die Uebernahme nicht als gescheitert melden.
+  await activity(orgId, row.id, "INBOUND_MAIL_ACCEPTED", actor, now, { incomingInvoiceId: result.id }).catch(() => console.error("Postfach: Aktivitaetsprotokoll nicht geschrieben"));
   return { incomingInvoiceId: result.id, result };
 }
 
