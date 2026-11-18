@@ -57,6 +57,9 @@ export const FINTS_PIN_PURPOSE = "oig-fints-pin-v1";
 /** Eigener HKDF-Info-String fuer die Pruefsumme einer abgelehnten PIN (verhindert erneutes Senden derselben PIN). */
 export const FINTS_PIN_REJECT_PURPOSE = "oig-fints-pin-reject-v1";
 
+/** Eigener HKDF-Info-String fuer den zwischengespeicherten Bankdatensatz (BPD/UPD mit Kontoinhaber und IBAN). */
+export const FINTS_BANKINFO_PURPOSE = "oig-fints-bankinfo-v1";
+
 function key(purpose: string): Buffer {
   const secret = process.env.AUTH_SECRET;
   if (!secret || secret.length < 16) throw new SecretsUnavailableError();
