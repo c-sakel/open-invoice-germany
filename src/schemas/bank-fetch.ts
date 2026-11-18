@@ -4,6 +4,7 @@
 import { z } from "zod";
 import { FintsError } from "@/lib/fints/client";
 import { parseFintsUrl } from "@/lib/fints/url-guard";
+import { syncFilterShape } from "@/domain/sync/updated-since";
 
 const printable = (v: string) => !/[\u0000-\u001f\u007f]/.test(v);
 
@@ -108,3 +109,12 @@ export const manualFetchInputSchema = z
     bankUnlockConfirmed: z.boolean().optional(),
   })
   .strict();
+
+/** Liste der Abrufprotokolle (nur lesend); `updatedSince` bezieht sich auf den Anlagezeitpunkt (append-only). */
+export const bankFetchRunListQuerySchema = z.object({
+  connectionId: z.string().min(1).max(64).optional(),
+  ...syncFilterShape,
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  offset: z.coerce.number().int().min(0).max(100000).default(0),
+});
+export type BankFetchRunListQuery = z.infer<typeof bankFetchRunListQuerySchema>;

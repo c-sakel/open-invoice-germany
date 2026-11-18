@@ -367,7 +367,7 @@ async function executeStart(p: StartParams): Promise<StartResult> {
       await dbInternal.bankConnection.updateMany({ where: { id: connectionId, orgId }, data: { rejectedPinHmac: null } });
     }
     const queue = [...accounts.keys()];
-    session = getFintsClient().open(
+    session = (await getFintsClient()).open(
       {
         productId,
         productVersion: FINTS_PRODUCT_VERSION,

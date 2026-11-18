@@ -156,7 +156,7 @@ export async function connectBankConnection(orgId: string, id: string, raw: unkn
     if ((input.unlockConfirmed === true || input.bankUnlockConfirmed === true) && conn.rejectedPinHmac != null) {
       await dbInternal.bankConnection.updateMany({ where: { id, orgId }, data: { rejectedPinHmac: null } });
     }
-    session = getFintsClient().open(
+    session = (await getFintsClient()).open(
       {
         productId,
         productVersion: FINTS_PRODUCT_VERSION,
