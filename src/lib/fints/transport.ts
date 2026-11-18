@@ -84,6 +84,22 @@ function freshState(): DialogState {
   return { messages: 0, bytes: 0, dialogId: "0", lastMsgNr: 0, initAccepted: false, open: false, ended: false, lastCodes: [], scaSeen: false };
 }
 
+/** Obergrenzen der Probe: auch eine grosse, rechtmaessige Antwort darf sie nie ueberschreiten. */
+const PROBE_MAX_TIMEOUT_MS = 20_000;
+const PROBE_MAX_HEAP_MB = 768;
+
+/**
+ * Zeit- und Speichergrenze der Probe-Dekodierung, linear mit der Antwortgroesse: Grundwert fuer kleine Antworten,
+ * bis zur Groessengrenze der Antwort wachsend, aber mit fester Obergrenze (eine Endlosschleife scheitert weiter).
+ */
+export function probeLimits(bytes: number): { timeoutMs: number; maxHeapMb: number } {
+  const share = Math.min(1, Math.max(0, bytes / FINTS_MAX_RESPONSE_BYTES));
+  return {
+    timeoutMs: Math.round(FINTS_PROBE_TIMEOUT_MS + share * (PROBE_MAX_TIMEOUT_MS - FINTS_PROBE_TIMEOUT_MS)),
+    maxHeapMb: Math.round(FINTS_PROBE_HEAP_MB + share * (PROBE_MAX_HEAP_MB - FINTS_PROBE_HEAP_MB)),
+  };
+}
+
 const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
 
 function segIdsOf(message: { segments: Segment[] }): string[] {
@@ -270,12 +286,13 @@ export class FintsTransport {
       : null;
 
     // Probe im Worker (Zeit- und Heap-Grenze): nur wenn sie gelingt, dekodiert der Hauptprozess.
+    const limits = probeLimits(bytes.length);
     const probe = await runIsolated<{ text: string; parted: string | null }, boolean>({
       job: "probe-decode",
       script: "fints",
       input: { text, parted },
-      timeoutMs: FINTS_PROBE_TIMEOUT_MS,
-      maxHeapMb: FINTS_PROBE_HEAP_MB,
+      timeoutMs: limits.timeoutMs,
+      maxHeapMb: limits.maxHeapMb,
     });
     if (!probe.ok) throw new FintsError("DECODE_FAILED");
     let response: Message;
@@ -303,6 +320,7 @@ export class FintsTransport {
       if (cls === "LOCKED" || cls === "AUTH" || unknownInInit) state.open = false;
       if (cls === "LOCKED") throw new FintsError("ACCESS_LOCKED", codes);
       if (cls === "AUTH") throw new FintsError("PIN_REJECTED", codes);
+      if (cls === "TAN_REJECTED") throw new FintsError("SCA_REJECTED", codes);
       if (cls === "OTHER") throw new FintsError(unknownInInit ? "AUTH_UNCLEAR" : "BANK_ERROR", codes);
       if (cls === "SCA") state.scaSeen = true;
       if (kind.isInit) {

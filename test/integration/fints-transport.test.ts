@@ -3,7 +3,8 @@ import { Dialog, FinTSConfig } from "lib-fints";
 import { FintsError } from "@/lib/fints/client";
 import type { FintsErrorCode, FintsSession, FintsStep, FintsSyncResult, FintsCamtResult } from "@/lib/fints/client";
 import { createFintsClient } from "@/lib/fints/lib-fints-adapter";
-import { ALLOWED_SEGMENTS } from "@/lib/fints/transport";
+import { ALLOWED_SEGMENTS, probeLimits } from "@/lib/fints/transport";
+import { FINTS_MAX_RESPONSE_BYTES, FINTS_PROBE_TIMEOUT_MS } from "@/domain/bank-fetch/limits";
 import { runIsolated } from "@/lib/worker/isolated";
 import {
   camtDocument,
@@ -190,7 +191,7 @@ tlsDescribe("FinTS-Transport gegen den Testserver", () => {
     const session = openWith(info, 910);
     await session.fetchCamt(FINTS_IBAN, "2026-10-01", "2026-11-01");
     const err = await session.continueSca("000000").catch((e: unknown) => e);
-    expect(err instanceof FintsError && err.code).toBe("BANK_ERROR");
+    expect(err instanceof FintsError && err.code).toBe("SCA_REJECTED");
     expect(err instanceof FintsError && err.bankCodes).toContain("9941");
     expect(server.ended).toBe(1);
   });
@@ -390,6 +391,37 @@ describe("FinTS-Transport ohne Testserver", () => {
     const config = FinTSConfig.forFirstTimeUse("TESTPRODUKT0000000001", "1.0", "https://fints.example.org/", "37040044", "kunde4711", "x");
     expect(() => new Dialog(config)).toThrowError(expect.objectContaining({ code: "PROTOCOL_ERROR" }));
   });
+
+  it("Probe-Grenzen wachsen mit der Antwortgroesse bis zu einer festen Obergrenze", () => {
+    const small = probeLimits(1024);
+    const big = probeLimits(FINTS_MAX_RESPONSE_BYTES);
+    expect(small.timeoutMs).toBeGreaterThanOrEqual(FINTS_PROBE_TIMEOUT_MS);
+    expect(small.timeoutMs).toBeLessThan(FINTS_PROBE_TIMEOUT_MS + 50);
+    expect(big.timeoutMs).toBeGreaterThan(small.timeoutMs);
+    expect(big.maxHeapMb).toBeGreaterThan(small.maxHeapMb);
+    expect(probeLimits(FINTS_MAX_RESPONSE_BYTES * 10)).toEqual(big);
+  });
+
+  it("grosse rechtmaessige Antwort nahe der Grenze wird mit den skalierten Grenzen angenommen, ein Hang bleibt DECODE_FAILED", async () => {
+    const n = 12 * 1024 * 1024;
+    const text = `HNHBK:1:3+000000000041+300+D1+1+D1:1'HIRMG:3:2+0010::ok'HICAZ:4:1:3+DE89370400440532013000:X:280:37040044+urn:iso:std:iso:20022:tech:xsd:camt.052.001.02+@${n}@${"x".repeat(n)}'HNHBS:5:1+1'`;
+    const limits = probeLimits(text.length);
+    const big = await runIsolated<{ text: string; parted: string | null }, boolean>({
+      job: "probe-decode",
+      script: "fints",
+      input: { text, parted: null },
+      ...limits,
+    });
+    expect(big).toEqual({ ok: true, value: true });
+    const hang = await runIsolated<{ text: string; parted: string | null }, boolean>({
+      job: "probe-decode",
+      script: "fints",
+      input: { text: "HIRMS:4:2+0010::a@5:4+x'", parted: null },
+      timeoutMs: 2000,
+      maxHeapMb: 256,
+    });
+    expect(hang).toEqual({ ok: false, reason: "TIMEOUT" });
+  }, 30_000);
 
   it("Probe-Dekodierung im Worker: gueltig, ungueltig und Endlosschleife (Zeitlimit)", async () => {
     const run = (text: string) =>
