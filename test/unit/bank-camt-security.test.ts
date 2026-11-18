@@ -67,8 +67,8 @@ describe("CAMT-Sicherheit", () => {
   });
 
   it("lehnt andere Formate und Versionen ab", () => {
-    const camt052 = valid().replace("camt.053.001.02", "camt.052.001.02");
-    expect(codeOf(() => parseCamt(camt052))).toBe("UNSUPPORTED_VERSION");
+    const camt055 = valid().replace("camt.053.001.02", "camt.055.001.02");
+    expect(codeOf(() => parseCamt(camt055))).toBe("UNSUPPORTED_VERSION");
     expect(codeOf(() => parseCamt(valid().replace("camt.053.001.02", "camt.053.001.14")))).toBe("UNSUPPORTED_VERSION");
     const pain = `<?xml version="1.0"?><Document xmlns="urn:iso:std:iso:20022:tech:xsd:pain.001.001.03"><CstmrCdtTrfInitn/></Document>`;
     expect(codeOf(() => parseCamt(pain))).toBe("UNSUPPORTED_VERSION");

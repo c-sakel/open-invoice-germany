@@ -26,7 +26,7 @@ export interface CamtBuilderEntry {
 }
 
 export interface CamtBuilderOptions {
-  format: "053" | "054";
+  format: "052" | "053" | "054";
   /** Schemaversion, z. B. 2 oder 8. */
   version: number;
   iban: string;
@@ -81,8 +81,9 @@ export function buildCamt(o: CamtBuilderOptions): string {
     );
   });
 
-  const stmtName = o.format === "053" ? "Stmt" : "Ntfctn";
-  const containerName = o.format === "053" ? "BkToCstmrStmt" : "BkToCstmrDbtCdtNtfctn";
+  const stmtName = o.format === "052" ? "Rpt" : o.format === "053" ? "Stmt" : "Ntfctn";
+  const containerName =
+    o.format === "052" ? "BkToCstmrAcctRpt" : o.format === "053" ? "BkToCstmrStmt" : "BkToCstmrDbtCdtNtfctn";
   const stmt = t(stmtName, t("Id", "TEST-STMT") + t("Acct", t("Id", t("IBAN", esc(o.iban)))) + entries.join(""));
   return `<?xml version="1.0" encoding="UTF-8"?>\n<${p}Document${nsAttr}>${t(containerName, stmt)}</${p}Document>`;
 }

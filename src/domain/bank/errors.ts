@@ -13,6 +13,8 @@ export type CamtErrorCode =
   | "BAD_AMOUNT"
   | "BAD_DATE"
   | "TOO_MANY_ENTRIES"
+  | "ACCOUNT_MISMATCH"
+  | "TOO_MANY_DOCUMENTS"
   | "MALFORMED";
 
 export class CamtFormatError extends Error {
