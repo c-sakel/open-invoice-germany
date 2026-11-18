@@ -32,6 +32,8 @@ export function parseFintsUrl(raw: string): { host: string; path: string } {
   if (url.search !== "" || url.hash !== "") throw new FintsError("URL_INVALID");
   const host = url.hostname.toLowerCase();
   if (host === "" || host.length > MAX_HOST || host.includes("[") || host.includes(":")) throw new FintsError("URL_INVALID");
+  // IP-Literale (auch dezimal/hex/oktal, die URL zu a.b.c.d normalisiert) sind kein Bankname.
+  if (net.isIP(host) !== 0) throw new FintsError("URL_INVALID");
   const path = url.pathname === "" ? "/" : url.pathname;
   if (path.length > MAX_PATH) throw new FintsError("URL_INVALID");
   return { host, path };
@@ -60,6 +62,7 @@ function lookupWithTimeout(lookup: LookupFn, host: string, timeoutMs: number): P
   });
 }
 
+/** FINTS_HOSTS leer oder nicht gesetzt: alle oeffentlichen Hosts sind erlaubt (die Sperrliste gilt immer); gesetzt: nur die genannten. */
 function allowlist(env: Env): Set<string> | null {
   const raw = env.FINTS_HOSTS?.trim();
   if (!raw) return null;
