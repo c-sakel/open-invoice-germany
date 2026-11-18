@@ -46,6 +46,9 @@ RUN set -eu; cd .next/standalone; \
              src/app/favicon.ico \
              src/workers/incoming-worker.mjs \
              src/workers/mail-worker.mjs \
+             src/workers/fints-worker.mjs \
+             node_modules/lib-fints/package.json \
+             node_modules/lib-fints/dist/index.js \
              node_modules/postal-mime/package.json \
              node_modules/postal-mime/dist/esm/postal-mime.js \
              node_modules/imapflow/package.json \

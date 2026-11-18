@@ -33,6 +33,8 @@ describe("Dockerfile", () => {
     "src/app/favicon.ico",
     "src/workers/incoming-worker.mjs",
     "src/workers/mail-worker.mjs",
+    "src/workers/fints-worker.mjs",
+    "node_modules/lib-fints/dist/index.js",
     "node_modules/postal-mime/dist/esm/postal-mime.js",
     "node_modules/imapflow/dist/esm/imap-flow.js",
     "node_modules/pino/package.json",
@@ -114,6 +116,7 @@ describe("Dockerfile", () => {
     expect(cfg).toContain("outputFileTracingIncludes");
     expect(cfg).toContain("./src/workers/**/*");
     expect(cfg).toContain("./node_modules/postal-mime/**/*");
+    expect(cfg).toContain("./node_modules/lib-fints/**/*");
     expect(cfg).toContain("imapflow");
     expect(cfg).toContain("./assets/einvoice-validation/**/*");
   });

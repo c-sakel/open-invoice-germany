@@ -15,7 +15,21 @@ const nextConfig: NextConfig = {
   // Hinweise/Lizenztexte der Pruefartefakte): das Tracing erkennt sie nicht, auch nicht deren relative Importe.
   // Das Worker-Skript fuer fremde Mails importiert die MIME-Bibliothek selbst (kein Tracing ueber new Worker).
   outputFileTracingIncludes: {
-    "/*": ["./src/workers/**/*", "./assets/einvoice-validation/**/*", "./node_modules/postal-mime/**/*"],
+    "/*": [
+      "./src/workers/**/*",
+      "./assets/einvoice-validation/**/*",
+      "./node_modules/postal-mime/**/*",
+      // Der Worker fuer Bank-Antworten importiert die FinTS-Bibliothek selbst (samt Abhaengigkeiten).
+      "./node_modules/lib-fints/**/*",
+      "./node_modules/fast-xml-parser/**/*",
+      "./node_modules/fast-xml-builder/**/*",
+      "./node_modules/@nodable/entities/**/*",
+      "./node_modules/anynum/**/*",
+      "./node_modules/is-unsafe/**/*",
+      "./node_modules/path-expression-matcher/**/*",
+      "./node_modules/strnum/**/*",
+      "./node_modules/xml-naming/**/*",
+    ],
   },
   // Eindeutige Workspace-Wurzel (verhindert Fehl-Inferenz bei mehreren Lockfiles).
   turbopack: { root: import.meta.dirname },

@@ -20,7 +20,7 @@ export interface IsolatedJob<I> {
   scriptPath?: string;
 }
 
-export type WorkerScript = "incoming" | "mail";
+export type WorkerScript = "incoming" | "mail" | "fints";
 
 export type IsolatedResult<O> =
   | { ok: true; value: O }
@@ -28,7 +28,7 @@ export type IsolatedResult<O> =
 
 /** Pfad des Worker-Skripts, relativ zum Arbeitsverzeichnis (auch im Standalone-Output aufloesbar). */
 export function workerScriptPath(script: WorkerScript = "incoming"): string {
-  const file = script === "mail" ? "mail-worker.mjs" : "incoming-worker.mjs";
+  const file = script === "mail" ? "mail-worker.mjs" : script === "fints" ? "fints-worker.mjs" : "incoming-worker.mjs";
   return path.resolve(/*turbopackIgnore: true*/ process.cwd(), "src", "workers", file);
 }
 
