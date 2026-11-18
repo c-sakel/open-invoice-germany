@@ -14,7 +14,7 @@ import { sanitizeFileName } from "@/domain/import/types";
 import { decodeCamtBytes } from "./camt-xml";
 import { parseCamt, type ParsedCamt, type ParsedTransaction } from "./camt-parse";
 import { transactionFingerprints } from "./fingerprint";
-import { CamtFormatError, MAX_STORED_TX } from "./errors";
+import { CamtFormatError, MAX_CAMT_TOTAL_BYTES, MAX_STORED_TX } from "./errors";
 
 export const MAX_IMPORT_DOCUMENTS = 400;
 
@@ -156,6 +156,11 @@ export async function importBankDocuments(
   if (docs.length > MAX_IMPORT_DOCUMENTS) {
     throw new CamtFormatError("Zu viele Dokumente in einem Abruf.", "TOO_MANY_DOCUMENTS");
   }
+  let totalBytes = 0;
+  for (const d of docs) totalBytes += d.length;
+  if (totalBytes > MAX_CAMT_TOTAL_BYTES) {
+    throw new CamtFormatError("Die Dokumente eines Abrufs sind zusammen zu gross.", "DOCUMENTS_TOO_LARGE");
+  }
   if (docs.length === 0) {
     return {
       status: "imported",
@@ -214,6 +219,7 @@ async function importParsed(
 ): Promise<BankImportResult> {
   const firstDoc = parsedList[0]!;
   const parsed = {
+    // Format und Schemaversion des Importprotokolls stammen vom ersten Dokument (gemischte 052/053 werden als erstes gefuehrt).
     format: firstDoc.format,
     schemaVersion: firstDoc.schemaVersion,
     statements: parsedList.flatMap((p) => p.statements),

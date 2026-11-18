@@ -5,7 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { dbInternal } from "@/lib/db";
 import { resetRateLimits } from "@/lib/rate-limit";
 import { BankImportDuplicateError, importBankDocuments, importBankStatement } from "@/domain/bank/import";
-import { CamtFormatError } from "@/domain/bank/errors";
+import { CamtFormatError, MAX_CAMT_BYTES } from "@/domain/bank/errors";
 import { suggestionsFor } from "@/domain/bank/suggest";
 import { buildCamt } from "../helpers/camt-builder";
 
@@ -82,6 +82,14 @@ describe("Import mehrerer Dokumente", () => {
     expect(code).toBe("ACCOUNT_MISMATCH");
     expect(await dbInternal.bankStatementImport.count({ where: { orgId } })).toBe(imports);
     expect(await dbInternal.bankTransaction.count({ where: { orgId } })).toBe(txs);
+  });
+
+  it("Summe der Bytes ueber der Grenze: DOCUMENTS_TOO_LARGE vor jedem Parsen", async () => {
+    const chunk = new Uint8Array(MAX_CAMT_BYTES);
+    const docs = Array.from({ length: 6 }, () => chunk);
+    const imports = await dbInternal.bankStatementImport.count({ where: { orgId } });
+    await expect(importBankDocuments(orgId, docs, opts)).rejects.toMatchObject({ code: "DOCUMENTS_TOO_LARGE" });
+    expect(await dbInternal.bankStatementImport.count({ where: { orgId } })).toBe(imports);
   });
 
   it("401 Dokumente: TOO_MANY_DOCUMENTS; 0 Dokumente: NOTHING_NEW ohne Importzeile", async () => {
