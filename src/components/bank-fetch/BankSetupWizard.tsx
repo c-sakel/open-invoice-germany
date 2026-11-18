@@ -79,6 +79,7 @@ export function BankSetupWizard({ connection, onClose }: { connection: BankConne
   const [confirmBank, setConfirmBank] = useState(false);
   const [methods, setMethods] = useState<TanMethodOption[]>([]);
   const [methodId, setMethodId] = useState<number | null>(null);
+  const [mediaName, setMediaName] = useState<string | null>(null);
   const [sca, setSca] = useState<{ token: string; challenge: PublicChallenge } | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
@@ -113,12 +114,15 @@ export function BankSetupWizard({ connection, onClose }: { connection: BankConne
     };
   }
 
+  const chosenMethod = methods.find((x) => x.id === methodId);
+
   async function connect(tanMethod?: TanMethodOption) {
+    const media = tanMethod ? (mediaName !== null && tanMethod.media.includes(mediaName) ? mediaName : tanMethod.media[0]) : undefined;
     setBusy(true);
     setError(null);
     const r = await connectBankAction(conn.id, {
       ...(stored ? {} : { pin }),
-      ...(tanMethod ? { tanMethodId: tanMethod.id, ...(tanMethod.media[0] ? { tanMediaName: tanMethod.media[0] } : {}) } : {}),
+      ...(tanMethod ? { tanMethodId: tanMethod.id, ...(media ? { tanMediaName: media } : {}) } : {}),
       ...flags(),
     });
     setBusy(false);
@@ -213,7 +217,27 @@ export function BankSetupWizard({ connection, onClose }: { connection: BankConne
       ) : null}
       {step === "method" ? (
         <div className="space-y-3">
-          <TanMethodChooser methods={methods} selected={methodId} onSelect={setMethodId} disabled={busy} />
+          <TanMethodChooser
+            methods={methods}
+            selected={methodId}
+            onSelect={(id) => {
+              setMethodId(id);
+              setMediaName(null);
+            }}
+            disabled={busy}
+          />
+          {chosenMethod && chosenMethod.media.length > 1 ? (
+            <label className="block space-y-1">
+              <span className="font-medium text-ink-soft">TAN-Medium</span>
+              <select className="w-full rounded-md border border-rule-strong bg-paper px-2 py-1 text-sm" value={mediaName ?? chosenMethod.media[0] ?? ""} disabled={busy} onChange={(e) => setMediaName(e.target.value)}>
+                {chosenMethod.media.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           <Button
             variant="primary"
             disabled={busy || methodId === null}
