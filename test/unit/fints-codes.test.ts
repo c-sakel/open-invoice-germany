@@ -15,6 +15,8 @@ describe("Rueckmeldecodes", () => {
     [["3957"], "ORDER", "SCA"],
     [["9931"], "INIT", "AUTH"],
     [["9942"], "ORDER", "AUTH"],
+    [["9941"], "ORDER", "TAN_REJECTED"],
+    [["0010", "9941"], "ORDER", "TAN_REJECTED"],
     [["0010", "9931"], "INIT", "AUTH"],
     [["3938"], "INIT", "LOCKED"],
     [["3938", "9931"], "INIT", "LOCKED"],
@@ -29,6 +31,10 @@ describe("Rueckmeldecodes", () => {
     expect(classifyCodes([code], "INIT")).toEqual({ cls: "OTHER", unknownInInit: true });
     expect(classifyCodes(["0010", code], "INIT")).toEqual({ cls: "OTHER", unknownInInit: true });
     expect(classifyCodes([code], "ORDER")).toEqual({ cls: "OTHER", unknownInInit: false });
+  });
+
+  it("9941 in der Anmeldephase bleibt ein unklarer Fehler (nie erneut mit derselben PIN)", () => {
+    expect(classifyCodes(["9941"], "INIT")).toEqual({ cls: "OTHER", unknownInInit: true });
   });
 
   it("die Ablehnung der Anmeldung geht anderen Fehlern vor", () => {

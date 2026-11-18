@@ -8,11 +8,13 @@
  * Nicht belegt, daher vor erfolgreicher Anmeldung als unklar behandelt (kein erneuter Versuch mit derselben PIN):
  * 9930, 9340, 9010, 9050, 9800 und jeder andere 9xxx-Code.
  */
-export type CodeClass = "OK" | "OK_NO_SCA" | "SCA" | "AUTH" | "LOCKED" | "TRANSIENT" | "OTHER";
+export type CodeClass = "OK" | "OK_NO_SCA" | "SCA" | "AUTH" | "TAN_REJECTED" | "LOCKED" | "TRANSIENT" | "OTHER";
 export type CodePhase = "INIT" | "ORDER";
 
 const LOCKED_CODES = new Set(["3938"]);
 const AUTH_CODES = new Set(["9931", "9942"]);
+/** Code 9941 (TAN falsch): im Auftrag eine Ablehnung der Freigabe; in der Anmeldephase bleibt er ein unklarer Fehler. */
+const TAN_REJECTED_CODES = new Set(["9941"]);
 const SCA_CODES = new Set(["0030", "3955", "3956", "3957"]);
 /** Code 9040 (Verfahren nicht unterstuetzt) ist ein Einrichtungsfehler, keine Anmeldeablehnung. */
 const KNOWN_OTHER_CODES = new Set(["9040"]);
@@ -29,6 +31,7 @@ export function classifyCodes(
   const list = sanitizeCodes(codes);
   if (list.some((c) => LOCKED_CODES.has(c))) return { cls: "LOCKED", unknownInInit: false };
   if (list.some((c) => AUTH_CODES.has(c))) return { cls: "AUTH", unknownInInit: false };
+  if (phase === "ORDER" && list.some((c) => TAN_REJECTED_CODES.has(c))) return { cls: "TAN_REJECTED", unknownInInit: false };
   const failures = list.filter((c) => c >= "9000" && c !== "9000");
   if (failures.length > 0) {
     const unclear = phase === "INIT" && failures.some((c) => !KNOWN_OTHER_CODES.has(c));
