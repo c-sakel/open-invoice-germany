@@ -6,6 +6,10 @@ import { suggestionsForPage } from "@/domain/bank/suggest";
 import { BankTransactionTable } from "@/components/bank/BankTransactionTable";
 import { BankUploadForm } from "@/components/bank/BankUploadForm";
 import { toBankRowView } from "@/components/bank/bank-view";
+import { dbInternal } from "@/lib/db";
+import { loadBankFetchSettings } from "@/domain/bank-fetch/settings";
+import { loadClientConnections } from "@/components/bank-fetch/bank-fetch-core";
+import { BankFetchSection } from "@/components/bank-fetch/BankFetchSection";
 
 export const dynamic = "force-dynamic";
 
@@ -20,9 +24,17 @@ export default async function BankabgleichPage({ searchParams }: { searchParams:
   for (const r of data.rows) {
     if (r.status === "RETURN" && r.direction === "DBIT") returnsById.set(r.id, await returnSuggestions(org.id, r.id));
   }
-  const rows = data.rows.map((r) =>
-    toBankRowView(r, data.matches.filter((m) => m.transactionId === r.id), suggestions.get(r.id) ?? [], returnsById.get(r.id) ?? []),
-  );
+  const imports = await dbInternal.bankStatementImport.findMany({
+    where: { orgId: org.id, id: { in: [...new Set(data.rows.map((r) => r.importId))] } },
+    select: { id: true, origin: true },
+  });
+  const originById = new Map(imports.map((i) => [i.id, i.origin === "FINTS" ? ("FINTS" as const) : ("UPLOAD" as const)]));
+  const rows = data.rows.map((r) => ({
+    ...toBankRowView(r, data.matches.filter((m) => m.transactionId === r.id), suggestions.get(r.id) ?? [], returnsById.get(r.id) ?? []),
+    origin: originById.get(r.importId),
+  }));
+  const fetchSettings = await loadBankFetchSettings(org.id);
+  const connections = fetchSettings.productIdConfigured ? await loadClientConnections(org.id) : [];
 
   return (
     <div className="space-y-6">
@@ -30,6 +42,7 @@ export default async function BankabgleichPage({ searchParams }: { searchParams:
         title="Bankabgleich"
         subtitle="Kontoauszug (CAMT) importieren und Zahlungseingänge den Rechnungen zuordnen. Es wird nie automatisch gebucht."
       />
+      <BankFetchSection connections={connections} />
       <BankUploadForm />
       <BankTransactionTable rows={rows} tab={tab} counts={data.counts} page={data.page} pageCount={data.pageCount} />
     </div>

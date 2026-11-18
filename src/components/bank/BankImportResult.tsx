@@ -4,12 +4,13 @@ import { IMPORT_WARNING_LABELS, skippedReasonLabel } from "./bank-view";
 export type BankImportResultView = ReturnType<typeof serializeBankImportResult>;
 
 /** Ergebnis bzw. Vorschau eines Kontoauszug-Imports: neu, Duplikate, verworfen, Warnungen und Verwerfungsgruende. */
-export function BankImportResult({ result }: { result: BankImportResultView }) {
+export function BankImportResult({ result, origin = "UPLOAD" }: { result: BankImportResultView; origin?: "UPLOAD" | "FINTS" }) {
   const imported = result.status === "imported";
   return (
     <section aria-label="Importergebnis" className="space-y-3 rounded-md border border-rule bg-paper p-4 text-sm">
       <p className="font-medium text-ink">
         {imported ? "Importiert" : "Vorschau"} · {result.format} {result.schemaVersion} · Konto {result.accountIban}
+        {origin === "FINTS" ? " · Herkunft: Kontoabruf" : ""}
       </p>
       <ul className="flex flex-wrap gap-x-6 gap-y-1 text-ink-soft">
         <li>

@@ -272,3 +272,14 @@ export async function continueSetup(orgId: string, token: string, raw: unknown, 
     await endLive(live);
   }
 }
+
+/** Bricht eine offene Freigabe der Einrichtung ab: Dialog beenden und die Sperre des Bankzugangs freigeben. */
+export async function cancelSetup(orgId: string, token: string, actor: SetupActor, now: Date = new Date()): Promise<void> {
+  const live = takeSession(token, orgId, actor.userId, now.getTime());
+  if (!live) throw new NotFoundError("Sitzung nicht gefunden.");
+  if (live.purpose !== "SETUP") {
+    returnSession(live);
+    throw new NotFoundError("Sitzung nicht gefunden.");
+  }
+  await endLive(live);
+}
