@@ -111,6 +111,14 @@ describe("Dockerfile", () => {
     expect(probe).toContain("mail-worker.mjs");
   });
 
+  it("docker.yml laedt lib-fints und den Bank-Worker im Image wie in der Anwendung", () => {
+    const wf = read(".github/workflows/docker.yml");
+    expect(wf).toMatch(/--user 1000:1000 --entrypoint node oig:ci --input-type=module - < scripts\/probe-fints-runtime\.mjs/);
+    const probe = read("scripts/probe-fints-runtime.mjs");
+    expect(probe).toContain('import("lib-fints")');
+    expect(probe).toContain("fints-worker.mjs");
+  });
+
   it("next.config.ts nimmt Worker-Skript und Pruefartefakte ins Tracing auf", () => {
     const cfg = read("next.config.ts");
     expect(cfg).toContain("outputFileTracingIncludes");

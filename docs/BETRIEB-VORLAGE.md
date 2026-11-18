@@ -125,3 +125,13 @@ Der Abruf eines Rechnungs-Postfachs ist ab Werk **aus** (Einstellungen → Rechn
 5. **Speicher:** Die Zerlegung einer Mail läuft in einem eigenen Prozess mit höchstens 256 MB Heap (15 Sekunden Frist).
 6. **Scheduler:** Der Job `mailbox` läuft im Takt des Schedulers (`SCHEDULER_INTERVAL_MINUTES`, Standard 15) nach `archive`.
 7. **Passwort:** Es liegt nur verschlüsselt in der Datenbank (Schlüssel aus `AUTH_SECRET`); wird `AUTH_SECRET` geändert, muss es neu eingegeben werden.
+
+## Kontoabruf (FinTS)
+
+Der Abruf von Bankumsätzen ist ab Werk **aus** (Einstellungen → Kontoabruf). Wer ihn einschaltet, beachtet:
+
+1. **Produkt-ID:** Der Abruf braucht eine für diese Installation bei der Deutschen Kreditwirtschaft registrierte FinTS-Produkt-ID (fints.org, kostenlos). Sie wird nur in der Oberfläche eingetragen und steht nie im Repository oder Image.
+2. **Ausgehende Verbindung (Egress):** `https` (Port 443) zur FinTS-Adresse der Bank. `FINTS_HOSTS` (Komma-Liste) beschränkt die erlaubten Server; leer erlaubt alle öffentlichen Hosts (private und lokale Adressbereiche bleiben gesperrt). `FINTS_NETWORK=0` sperrt jeden Verbindungsaufbau. Ein Server mit privater Zertifizierungsstelle braucht `NODE_EXTRA_CA_CERTS`.
+3. **Ein Prozess:** Die Freigabe-Sitzung lebt im Arbeitsspeicher; der Container läuft als einzelne Instanz. Ein Neustart während einer Freigabe bricht sie ab.
+4. **Scheduler:** Der Job `bank-fetch` läuft im Takt des Schedulers nach `mailbox`.
+5. **PIN:** Sie liegt, wenn gespeichert, nur verschlüsselt in der Datenbank (Schlüssel aus `AUTH_SECRET`); wird `AUTH_SECRET` geändert, muss sie neu eingegeben werden. Die Sicherung bleibt unverändert (Datenbank).
