@@ -12,7 +12,10 @@ export type BankFetchErrorCode =
   | "ACCOUNT_NOT_SUPPORTED"
   | "BUSY"
   | "SCA_TIMEOUT"
-  | "TAN_FORMAT";
+  | "TAN_FORMAT"
+  | "NOT_SET_UP"
+  | "RATE_LIMITED"
+  | "NOT_ELIGIBLE";
 
 const MESSAGES: Record<BankFetchErrorCode, string> = {
   PRODUCT_ID_MISSING: "Die Produkt-ID fuer den Kontoabruf ist noch nicht hinterlegt.",
@@ -29,6 +32,9 @@ const MESSAGES: Record<BankFetchErrorCode, string> = {
   BUSY: "Fuer diesen Bankzugang laeuft gerade ein Vorgang.",
   SCA_TIMEOUT: "Die Freigabe wurde nicht rechtzeitig erteilt.",
   TAN_FORMAT: "Die TAN hat ein ungueltiges Format.",
+  NOT_SET_UP: "Der Bankzugang muss zuerst eingerichtet werden (Anmeldung und Kontenabruf).",
+  RATE_LIMITED: "Der Abruf wurde gerade erst gestartet. Bitte eine Minute warten.",
+  NOT_ELIGIBLE: "Fuer diesen Bankzugang ist kein automatischer Abruf moeglich.",
 };
 
 /** Fachlicher Fehler des Kontoabrufs mit festem Code und festem Text (nie Banktexte, nie Zugangsdaten); 409. */

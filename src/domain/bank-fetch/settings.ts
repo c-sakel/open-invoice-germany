@@ -2,11 +2,11 @@
  * Einstellungen des Kontoabrufs je Firma. Die Produkt-ID wird nur hier geschrieben und nie ausgegeben.
  */
 import { dbInternal } from "@/lib/db";
-import { berlinMidnight, berlinParts } from "@/lib/berlin-time";
 import { logActivity } from "@/domain/activity/log";
 import { bankFetchSettingsInputSchema } from "@/schemas/bank-fetch";
 import { BankFetchError } from "./errors";
 import { FETCH_FIRST_DAYS_DEFAULT } from "./limits";
+import { nextAutoAtFromToday } from "./window";
 
 export interface BankFetchSettingsView {
   productIdConfigured: boolean;
@@ -58,9 +58,7 @@ export async function saveBankFetchSettings(orgId: string, raw: unknown, actor: 
   }
 }
 
-/** Naechster Abrufzeitpunkt: `autoHour` Uhr Berliner Zeit (heute, sonst morgen). */
+/** Naechster Abrufzeitpunkt: `autoHour` Uhr Berliner Wandzeit (heute, sonst morgen). */
 export function nextAutoRunAt(now: Date, autoHour: number): Date {
-  const { year, month, day } = berlinParts(now);
-  const today = new Date(berlinMidnight(year, month, day).getTime() + autoHour * 3_600_000);
-  return today.getTime() > now.getTime() ? today : new Date(berlinMidnight(year, month, day + 1).getTime() + autoHour * 3_600_000);
+  return nextAutoAtFromToday(now, autoHour);
 }

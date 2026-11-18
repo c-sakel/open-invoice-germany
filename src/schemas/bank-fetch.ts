@@ -90,3 +90,21 @@ export const connectInputSchema = z
 export const TAN_RE = /^[0-9A-Za-z]{1,20}$/;
 
 export const continueInputSchema = z.object({ tan: z.string().max(64).optional() }).strict();
+
+const dayString = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine((v) => {
+    const d = new Date(`${v}T00:00:00.000Z`);
+    return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+  }, "Ungueltiges Datum");
+
+/** Manueller Abruf: PIN nur bei "PIN je Abruf" (sonst die gespeicherte), Startdatum bis 365 Tage zurueck. */
+export const manualFetchInputSchema = z
+  .object({
+    pin: pinSchema.optional(),
+    from: dayString.optional(),
+    unlockConfirmed: z.boolean().optional(),
+    bankUnlockConfirmed: z.boolean().optional(),
+  })
+  .strict();

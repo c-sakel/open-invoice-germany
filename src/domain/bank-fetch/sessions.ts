@@ -5,6 +5,7 @@
 import { randomBytes } from "node:crypto";
 import type { FintsSession, ScaChallenge } from "@/lib/fints/client";
 import { BankFetchError } from "./errors";
+import type { RunSummary } from "./run-types";
 import { releaseLease, type Lease } from "./lease";
 import { FINTS_SCA_TIMEOUT_MS } from "./limits";
 
@@ -15,6 +16,19 @@ export interface PendingStep {
   accountId?: string;
   from?: string;
   to?: string;
+  /** Stand eines manuellen Abrufs ueber mehrere Konten (nur Verweise und Zaehler). */
+  fetch?: FetchProgress;
+}
+
+export interface FetchProgress {
+  actorLabel: string;
+  manualFrom?: string | undefined;
+  /** Konten, die nach dem aktuellen noch folgen. */
+  queue: string[];
+  runs: RunSummary[];
+  scaUsed: boolean;
+  anySuccess: boolean;
+  firstFailure: string | null;
 }
 
 export interface LiveSession {

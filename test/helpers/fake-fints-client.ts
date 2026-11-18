@@ -13,6 +13,7 @@ import {
 } from "@/lib/fints/client";
 
 export type FakeSyncAnswer = FintsStep<FintsSyncResult> | FintsError;
+export type FakeCamtAnswer = FintsStep<FintsCamtResult> | FintsError;
 export type FakeContinueAnswer = FintsStep<FintsSyncResult | FintsCamtResult> | FintsError;
 
 export function syncResult(over: Partial<FintsSyncResult> = {}): FintsSyncResult {
@@ -27,6 +28,14 @@ export function syncResult(over: Partial<FintsSyncResult> = {}): FintsSyncResult
     ...over,
   };
 }
+
+/** Ergebnis eines Kontoabrufs mit den gegebenen CAMT-Dokumenten (Rohtext). */
+export function camtResult(docs: string[]): FintsCamtResult {
+  const documents = docs.map((d) => new TextEncoder().encode(d));
+  return { documents, bytes: documents.reduce((n, d) => n + d.length, 0) };
+}
+
+export const camtDone = (docs: string[], scaUsed = false): FintsStep<FintsCamtResult> => ({ kind: "done", value: camtResult(docs), scaUsed, bankCodes: ["0020"] });
 
 export const done = (value: FintsSyncResult, scaUsed = false): FintsStep<FintsSyncResult> => ({ kind: "done", value, scaUsed, bankCodes: ["0020"] });
 
@@ -43,6 +52,9 @@ export class FakeFintsSession implements FintsSession {
     private readonly syncAnswers: FakeSyncAnswer[],
     private readonly continueAnswers: FakeContinueAnswer[],
     private readonly info: string | null,
+    private readonly camtAnswers: FakeCamtAnswer[] = [],
+    private readonly fetches: { iban: string; from: string; to: string }[] = [],
+    private readonly gate: { wait: Promise<void> | null } = { wait: null },
   ) {}
 
   /** Haengt eine weitere Antwort fuer continueSca an (Tests, die erst nach dem Oeffnen entscheiden). */
@@ -58,8 +70,13 @@ export class FakeFintsSession implements FintsSession {
     return a;
   }
 
-  async fetchCamt(): Promise<FintsStep<FintsCamtResult>> {
-    throw new FintsError("PROTOCOL_ERROR");
+  async fetchCamt(iban: string, from: string, to: string): Promise<FintsStep<FintsCamtResult>> {
+    this.fetches.push({ iban, from, to });
+    if (this.gate.wait) await this.gate.wait;
+    const a = this.camtAnswers.shift();
+    if (!a) throw new FintsError("PROTOCOL_ERROR");
+    if (a instanceof FintsError) throw a;
+    return a;
   }
 
   async continueSca(tan?: string): Promise<FintsStep<FintsSyncResult | FintsCamtResult>> {
@@ -85,12 +102,18 @@ export class FakeFintsClient implements FintsClient {
   sessions: FakeFintsSession[] = [];
   syncAnswers: FakeSyncAnswer[] = [];
   continueAnswers: FakeContinueAnswer[] = [];
+  /** Antworten auf fetchCamt, der Reihe nach ueber alle Sitzungen. */
+  camtAnswers: FakeCamtAnswer[] = [];
+  /** Angefragte Konten und Zeitraeume. */
+  fetches: { iban: string; from: string; to: string }[] = [];
+  /** Haelt fetchCamt an, bis das Versprechen erfuellt ist (Tests mit gleichzeitigen Abrufen). */
+  gate: { wait: Promise<void> | null } = { wait: null };
   /** Wird als BPD/UPD-Zwischenspeicher der Sitzung gemeldet (Test: Verschluesselung). */
   info: string | null = '{"bpd":{"version":1},"upd":{"bankAccounts":[{"holder1":"Erika Mustermann","iban":"DE89370400440532013000"}]},"systemId":"S4711"}';
 
   open(access: FintsAccess): FintsSession {
     this.opens.push(access);
-    const s = new FakeFintsSession(this.syncAnswers, this.continueAnswers, this.info);
+    const s = new FakeFintsSession(this.syncAnswers, this.continueAnswers, this.info, this.camtAnswers, this.fetches, this.gate);
     this.sessions.push(s);
     return s;
   }

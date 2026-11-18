@@ -5,8 +5,15 @@
  * Belegt (Bibliothek und oeffentliche Hinweise der Banken): 0010/0020/0100/9000 (angenommen/ausgefuehrt/Dialogende),
  * 0030, 3955, 3956, 3957 (Freigabe), 3040 (weitere Daten), 3920 (Verfahren), 9931 und 9942 (Anmeldung abgelehnt),
  * 3938 (Zugang gesperrt), 3076 (starke Kundenauthentifizierung nicht noetig, nur Hinweis ohne Fehlerwirkung).
- * Nicht belegt, daher vor erfolgreicher Anmeldung als unklar behandelt (kein erneuter Versuch mit derselben PIN):
- * 9930, 9340, 9010, 9050, 9800 und jeder andere 9xxx-Code.
+ * Gegengeprueft gegen oeffentliche Quellen (Bibliothek fints-rs docs.rs ResponseCodeKind, Hilfeseiten von Banking-Software
+ * und Buchhaltungssoftware, Fehlermeldungen in Foren; keine amtliche Gesamtliste verfuegbar):
+ *   9010  "Allgemeiner Fehler" (fints-rs GeneralError), tritt mit Unterkennungen auf (Token-Hilfeseite, Lexware)
+ *   9050  "Teilweise fehlerhaft" (fints-rs PartialErrors; Giga: Nachricht enthaelt einen Fehler)
+ *   9800  "Dialog abgebrochen" (fints-rs DialogAborted; Lexware/Giga), Ursache oft ein Zusatzcode (9340, 9210)
+ *   9340  uneinheitlich: "PIN falsch" (fints-rs PinWrong) gegen "ungueltige/unbekannte Signatur" (Lexware, Outbank-Hilfe)
+ *   9930  keine Quelle gefunden
+ * Weil die Bedeutung von 9340 bankabhaengig ist, 9930 unbelegt ist und die anderen nur Sammelcodes sind, bleibt es dabei:
+ * 9930, 9340, 9010, 9050, 9800 und jeder andere 9xxx-Code vor erfolgreicher Anmeldung sind unklar (kein erneuter Versuch).
  */
 export type CodeClass = "OK" | "OK_NO_SCA" | "SCA" | "AUTH" | "TAN_REJECTED" | "LOCKED" | "TRANSIENT" | "OTHER";
 export type CodePhase = "INIT" | "ORDER";

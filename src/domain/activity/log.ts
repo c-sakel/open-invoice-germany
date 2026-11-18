@@ -145,6 +145,7 @@ export const ACTIVITY_TYPES = {
   BANK_CONNECTION_UPDATED: "Bankzugang geaendert",
   BANK_CONNECTION_ARCHIVED: "Bankzugang archiviert",
   BANK_FETCH_PIN_REJECTED: "Kontoabruf: PIN abgelehnt",
+  BANK_FETCH_ACTION: "Kontoabruf: Eingriff noetig",
 } as const;
 
 export type ActivityType = keyof typeof ACTIVITY_TYPES;

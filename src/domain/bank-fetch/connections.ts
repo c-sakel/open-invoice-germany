@@ -14,6 +14,9 @@ import { BankFetchError } from "./errors";
 import { MAX_BANK_CONNECTIONS, MAX_FETCH_ACCOUNTS } from "./limits";
 import { dropConnectionSessions } from "./sessions";
 import { loadBankFetchSettings, nextAutoRunAt, requireProductId } from "./settings";
+import { scaRenewBy } from "./window";
+
+export { scaRenewBy };
 
 export interface BankAccountView {
   id: string;
@@ -47,9 +50,6 @@ export interface BankConnectionView {
   lastErrorCode: string | null;
   accounts: BankAccountView[];
 }
-
-const DAY_MS = 24 * 60 * 60 * 1000;
-const SCA_VALID_DAYS = 180;
 
 export const CONNECTION_SELECT = {
   id: true,
@@ -89,11 +89,6 @@ export const CONNECTION_SELECT = {
 } as const satisfies Prisma.BankConnectionSelect;
 
 type ConnectionRow = Prisma.BankConnectionGetPayload<{ select: typeof CONNECTION_SELECT }>;
-
-/** Spaetestens dann braucht die Bank wieder eine starke Freigabe (180 Tage nach der letzten). */
-export function scaRenewBy(lastScaAt: Date | null): Date | null {
-  return lastScaAt ? new Date(lastScaAt.getTime() + SCA_VALID_DAYS * DAY_MS) : null;
-}
 
 export function toConnectionView(row: ConnectionRow): BankConnectionView {
   return {
@@ -335,6 +330,8 @@ export async function selectAccounts(orgId: string, id: string, raw: unknown, ac
 export type AuthOutcome = { ok: true; scaUsed: boolean; manualFetch?: boolean } | { ok: false; error: FintsError; pinHmac: string | null };
 
 const TRANSIENT_CODES = new Set(["TIMEOUT", "CONNECT_FAILED", "DNS_FAILED", "TLS_FAILED", "HTTP_STATUS"]);
+/** Fehler, die vom Nutzer oder der Umgebung abhaengen und den Zugang nicht als gestoert kennzeichnen. */
+const USER_DRIVEN_CODES = new Set(["SCA_TIMEOUT", "SCA_REJECTED", "TAN_FORMAT", "NETWORK_BLOCKED"]);
 
 /**
  * Wirkung eines Anmelde-/Abrufergebnisses auf den Bankzugang (Banksperre-Schutz): Eine Ablehnung der PIN, eine Sperre
@@ -354,22 +351,29 @@ export function authOutcomeData(state: string, outcome: AuthOutcome, now: Date):
   }
   const code = outcome.error.code;
   if (code === "PIN_REJECTED" || code === "ACCESS_LOCKED" || code === "AUTH_UNCLEAR") {
+    // Ein unklarer Anmeldefehler gilt beim ersten Mal nur als Warnung (PIN bleibt); wiederholt er sich, wird er wie eine
+    // Ablehnung behandelt: die PIN wird verworfen und nie ohne ausdrueckliche Bestaetigung erneut gesendet.
+    const rejected = code !== "AUTH_UNCLEAR" || state === "AUTH_UNCLEAR";
     return {
-      state: code === "AUTH_UNCLEAR" ? "AUTH_UNCLEAR" : "PIN_REJECTED",
+      state: rejected ? "PIN_REJECTED" : "AUTH_UNCLEAR",
       autoEnabled: false,
       nextAutoAt: null,
       authFailures: { increment: 1 },
       lastErrorCode: code,
       lastAttemptAt: now,
+      ...(rejected ? { pinEnc: null, pinMode: "PER_FETCH" } : {}),
       ...(outcome.pinHmac != null ? { rejectedPinHmac: outcome.pinHmac } : {}),
     };
   }
   // In einem gesperrten Zustand bleibt der Fehlercode erhalten (er unterscheidet die Sperre der Bank).
   const locked = state === "PIN_REJECTED" || state === "AUTH_UNCLEAR";
+  const transient = TRANSIENT_CODES.has(code);
   return {
     ...(locked ? {} : { lastErrorCode: code }),
     lastAttemptAt: now,
-    ...(TRANSIENT_CODES.has(code) ? { transientFailuresToday: { increment: 1 } } : {}),
+    ...(transient ? { transientFailuresToday: { increment: 1 } } : {}),
+    // Ein bereitgestellter Zugang mit anhaltendem Fehler wartet auf einen manuellen Abruf (der Job sendet dann nichts).
+    ...(!transient && !USER_DRIVEN_CODES.has(code) && (state === "READY" || state === "ERROR") ? { state: "ERROR" } : {}),
   };
 }
 
@@ -379,5 +383,6 @@ export async function applyAuthOutcome(orgId: string, id: string, outcome: AuthO
   await dbInternal.bankConnection.updateMany({ where: { id, orgId, archivedAt: null }, data: authOutcomeData(row.state, outcome, now) });
   if (!outcome.ok && (outcome.error.code === "PIN_REJECTED" || outcome.error.code === "ACCESS_LOCKED" || outcome.error.code === "AUTH_UNCLEAR")) {
     await logActivity(dbInternal, { orgId, entityType: "BANK_CONNECTION", entityId: id, type: "BANK_FETCH_PIN_REJECTED", actor, at: now, data: { code: outcome.error.code } });
+    await logActivity(dbInternal, { orgId, entityType: "BANK_CONNECTION", entityId: id, type: "BANK_FETCH_ACTION", actor, at: now, data: { action: "PIN_CHECK_REQUIRED" } });
   }
 }
