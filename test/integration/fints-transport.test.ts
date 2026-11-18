@@ -102,6 +102,7 @@ tlsDescribe("FinTS-Transport gegen den Testserver", () => {
     expect(step.value.documents).toHaveLength(1);
     expect(Buffer.from(step.value.documents[0] ?? new Uint8Array()).equals(Buffer.from(camtDocument(FINTS_IBAN, "A1"), "utf8"))).toBe(true);
     expect(step.value.bytes).toBe(step.value.documents[0]?.length);
+    expect(step.value.from).toBe("2026-10-01");
     expect(server.hkcaz).toEqual([{ iban: FINTS_IBAN, from: "2026-10-01", to: "2026-11-01", continuation: null }]);
     expect(step.bankCodes.every((c) => /^\d{4}$/.test(c))).toBe(true);
     await session.close();
@@ -112,7 +113,9 @@ tlsDescribe("FinTS-Transport gegen den Testserver", () => {
     const { info } = await bankingInfoFromSync();
     resetServer({ sca: "none" });
     const session = openWith(info, null);
-    done(await session.fetchCamt(FINTS_IBAN, "2020-01-01", "2026-11-01"));
+    const step = done(await session.fetchCamt(FINTS_IBAN, "2020-01-01", "2026-11-01"));
+    // Das Ergebnis nennt den tatsaechlich abgerufenen Beginn.
+    expect(step.value.from).toBe("2025-08-08");
     // 450 Tage vor dem 2026-11-01
     expect(server.hkcaz[0]?.from).toBe("2025-08-08");
     expect(server.hkcaz[0]?.to).toBe("2026-11-01");

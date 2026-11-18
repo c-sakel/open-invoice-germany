@@ -18,8 +18,8 @@ import {
   updateBankConnection,
 } from "@/domain/bank-fetch/connections";
 import { loadBankFetchSettings, saveBankFetchSettings } from "@/domain/bank-fetch/settings";
-import { connectBankConnection, continueSetup } from "@/domain/bank-fetch/setup";
-import { sweepSessions } from "@/domain/bank-fetch/sessions";
+import { cancelSetup, connectBankConnection, continueSetup } from "@/domain/bank-fetch/setup";
+import { sessionCount, sweepSessions } from "@/domain/bank-fetch/sessions";
 import { acquireLease, releaseLease } from "@/domain/bank-fetch/lease";
 import { authOutcomeData } from "@/domain/bank-fetch/connections";
 import { toPublicChallenge } from "@/domain/bank-fetch/setup";
@@ -504,6 +504,51 @@ describe("Einrichtung", () => {
     expect(fake.sessions[0]?.closed).toBe(1);
     expect(fake.sessions[0]?.continueCalls).toBe(1);
     expect((await rowOf(v.id)).leaseUntil).toBeNull();
+  });
+
+  it("Abbruch der Einrichtung beendet den Dialog, gibt die Sperre frei, der Token ist danach ungueltig", async () => {
+    const orgId = await mkOrg("Abbruch");
+    const other = await mkOrg("AbbruchFremd");
+    const v = await mkConn(orgId);
+    fake.syncAnswers.push(decoupledChallenge());
+    const res = await connectBankConnection(orgId, v.id, { pin: PIN, tanMethodId: 923 }, actor, NOW);
+    if (res.state !== "SCA") throw new Error("SCA erwartet");
+    const before = sessionCount();
+    // fremde Firma oder anderer Benutzer: 404, die Sitzung bleibt bestehen
+    await expect(cancelSetup(other, res.token, actor, at(10))).rejects.toBeInstanceOf(NotFoundError);
+    await expect(cancelSetup(orgId, res.token, { userId: "user-2", name: "anderer" }, at(10))).rejects.toBeInstanceOf(NotFoundError);
+    expect(sessionCount()).toBe(before);
+    expect(fake.sessions[0]?.closed).toBe(0);
+    expect((await rowOf(v.id)).leaseUntil).not.toBeNull();
+    await cancelSetup(orgId, res.token, actor, at(20));
+    expect(fake.sessions[0]?.closed).toBe(1);
+    expect((await rowOf(v.id)).leaseUntil).toBeNull();
+    expect(sessionCount()).toBe(before - 1);
+    await expect(cancelSetup(orgId, res.token, actor, at(30))).rejects.toBeInstanceOf(NotFoundError);
+    await expect(continueSetup(orgId, res.token, {}, actor, at(40))).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it("jede Sitzung raeumt sich nach Ablauf der Freigabefrist selbst ab (Dialog beendet, Sperre frei)", async () => {
+    const orgId = await mkOrg("Timer");
+    const v = await mkConn(orgId);
+    fake.syncAnswers.push(decoupledChallenge());
+    const timers: { fn: () => void; ms: number | undefined }[] = [];
+    const real = globalThis.setTimeout;
+    const spy = vi.spyOn(globalThis, "setTimeout").mockImplementation(((fn: () => void, ms?: number, ...rest: unknown[]) => {
+      timers.push({ fn, ms });
+      return real(() => undefined, 0, ...rest);
+    }) as unknown as typeof setTimeout);
+    const res = await connectBankConnection(orgId, v.id, { pin: PIN, tanMethodId: 923 }, actor, NOW);
+    spy.mockRestore();
+    if (res.state !== "SCA") throw new Error("SCA erwartet");
+    const t = timers.find((x) => x.ms === 5 * 60_000 + 1_000);
+    expect(t).toBeDefined();
+    expect(fake.sessions[0]?.closed).toBe(0);
+    t?.fn();
+    await new Promise((r) => real(r, 50));
+    expect(fake.sessions[0]?.closed).toBe(1);
+    expect((await rowOf(v.id)).leaseUntil).toBeNull();
+    await expect(continueSetup(orgId, res.token, {}, actor, at(1000))).rejects.toBeInstanceOf(NotFoundError);
   });
 });
 

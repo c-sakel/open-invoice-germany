@@ -19,7 +19,7 @@ import { continueInputSchema, manualFetchInputSchema, TAN_RE } from "@/schemas/b
 import { FINTS_PRODUCT_VERSION, getFintsClient } from "./client-factory";
 import { applyAuthOutcome, assertPinMaySend, loadConnectionRow, pinHmac } from "./connections";
 import { BankFetchError } from "./errors";
-import { acquireLease, releaseLease, type Lease } from "./lease";
+import { acquireLease, releaseLease, renewLease, type Lease } from "./lease";
 import {
   FETCH_FIRST_DAYS_DEFAULT,
   FINTS_DIALOG_TIMEOUT_MS,
@@ -32,7 +32,7 @@ import {
 } from "./limits";
 import { notifyFetchAction, notifyFetchBlocked, notifyFetchError, notifyFetchGap } from "./notify";
 import type { RunSummary } from "./run-types";
-import { putSession, returnSession, sweepSessions, takeSession, type FetchProgress, type LiveSession } from "./sessions";
+import { putSession, returnSession, setExpireHook, sweepSessions, takeSession, type FetchProgress, type LiveSession } from "./sessions";
 import { toPublicChallenge, type PublicChallenge } from "./setup";
 import { loadBankFetchSettings, requireProductId } from "./settings";
 import { berlinToday, fetchWindow, nextAutoAt, type FetchWindow } from "./window";
@@ -76,6 +76,10 @@ interface Ctx {
   anySuccess: boolean;
   firstFailure: string | null;
   failureRecorded: boolean;
+  /** Besitzerkennung der Sperre des Bankzugangs; wird vor jedem Konto verlaengert. */
+  lease: Lease;
+  /** Offene Sitzung, deren Besitzerkennung mitgefuehrt wird (nur beim Fortsetzen). */
+  live: LiveSession | null;
 }
 
 type QueueResult =
@@ -163,6 +167,10 @@ function noteFailure(ctx: Ctx, code: string): void {
 /** Uebernimmt die abgerufenen Dokumente eines Kontos ueber den CAMT-Import und fuehrt den Abrufstand nach. */
 async function finishAccount(ctx: Ctx, acc: AccountRef, window: FetchWindow, value: FintsCamtResult, scaUsed: boolean, bankCodes: readonly string[]): Promise<void> {
   ctx.scaUsed = ctx.scaUsed || scaUsed;
+  // Die Bank kann den Rueckblick kuerzen: Protokoll und Luecke beziehen sich auf den tatsaechlich abgerufenen Beginn.
+  const actualFrom = value.from !== undefined && value.from > window.from ? value.from : window.from;
+  const gapBefore = actualFrom > window.from ? (window.gapBefore ?? window.from) : window.gapBefore;
+  window = { from: actualFrom, to: window.to, gapBefore };
   let importId: string | null = null;
   let importedCount = 0;
   let duplicateCount = 0;
@@ -184,11 +192,21 @@ async function finishAccount(ctx: Ctx, acc: AccountRef, window: FetchWindow, val
       throw e;
     }
   }
+  // Import, Abrufstand und Laufzeile sind bewusst keine gemeinsame Transaktion (der Import hat eine eigene): bricht der
+  // Vorgang dazwischen ab, erkennt der naechste Abruf die Umsaetze an den Fingerabdruecken als Dubletten.
   await dbInternal.bankConnectionAccount.updateMany({ where: { id: acc.id, orgId: ctx.orgId }, data: { lastFetchedTo: dayDate(window.to) } });
   await recordRun(ctx, acc, window, "OK", bankCodes, { documents: value.documents.length, bytes: value.bytes, importId, importedCount, duplicateCount, scaUsed });
   ctx.anySuccess = true;
   // Die Bank (oder die Obergrenze) lieferte weniger Tage als die Luecke seit dem letzten Abruf: einmalig auf den Import hinweisen.
   if (window.gapBefore !== null) await notifyFetchGap(ctx.orgId, ctx.connectionId, window.gapBefore, ctx.now);
+}
+
+/** Verlaengert die Sperre des Bankzugangs; gehoert sie einem anderen, beginnt kein weiterer Dialog. */
+async function keepLease(ctx: Ctx): Promise<void> {
+  const next = await renewLease(ctx.orgId, ctx.connectionId, ctx.lease, ctx.now);
+  if (next === null) throw new BankFetchError("BUSY");
+  ctx.lease = next;
+  if (ctx.live) ctx.live.lease = next;
 }
 
 /** Ruft die Konten der Reihe nach ab (je Konto ein Dialog). Verbindungsfehler werden nach dem Protokollieren geworfen. */
@@ -198,6 +216,7 @@ async function processQueue(ctx: Ctx, queue: string[]): Promise<QueueResult> {
     const id = queue.shift();
     const acc = id === undefined ? undefined : ctx.accounts.get(id);
     if (!acc) continue;
+    await keepLease(ctx);
     const window = fetchWindow({
       today: berlinToday(ctx.now),
       lastFetchedTo: acc.lastFetchedTo ? acc.lastFetchedTo.toISOString().slice(0, 10) : null,
@@ -259,6 +278,14 @@ async function concludeDone(ctx: Ctx): Promise<Finished> {
   await persistBankingInfo(ctx);
   if (ctx.anySuccess || ctx.firstFailure === null) {
     await applyAuthOutcome(ctx.orgId, ctx.connectionId, { ok: true, scaUsed: ctx.scaUsed, manualFetch: ctx.trigger === "MANUAL" }, ctx.actorLabel, ctx.now);
+    if (ctx.trigger === "MANUAL") {
+      // Ein von Hand ausgefuehrter Abruf ersetzt den naechsten Takt (kein zusaetzlicher PIN-Versand kurz danach).
+      const conn = await dbInternal.bankConnection.findFirst({ where: { id: ctx.connectionId, orgId: ctx.orgId, archivedAt: null }, select: { autoEnabled: true } });
+      if (conn?.autoEnabled) {
+        const settings = await loadBankFetchSettings(ctx.orgId);
+        await dbInternal.bankConnection.updateMany({ where: { id: ctx.connectionId, orgId: ctx.orgId, archivedAt: null }, data: { nextAutoAt: nextAutoAt(ctx.now, settings.autoHour) } });
+      }
+    }
     if (ctx.pinHmac !== null) {
       // Eine PIN, mit der der Abruf gelang, ist nicht (mehr) abgelehnt.
       await dbInternal.bankConnection.updateMany({ where: { id: ctx.connectionId, orgId: ctx.orgId, rejectedPinHmac: ctx.pinHmac }, data: { rejectedPinHmac: null } });
@@ -401,6 +428,8 @@ async function executeStart(p: StartParams): Promise<StartResult> {
       anySuccess: false,
       firstFailure: null,
       failureRecorded: false,
+      lease,
+      live: null,
     };
     const res = await processQueue(ctx, queue);
     if (res.kind === "sca") {
@@ -409,7 +438,7 @@ async function executeStart(p: StartParams): Promise<StartResult> {
         orgId,
         userId: p.actor?.userId ?? "",
         connectionId,
-        lease,
+        lease: ctx.lease,
         purpose: "FETCH",
         session,
         challenge: ch,
@@ -442,7 +471,7 @@ async function executeStart(p: StartParams): Promise<StartResult> {
   } finally {
     if (!parked) {
       if (session) await session.close();
-      await releaseLease(orgId, connectionId, lease);
+      await releaseLease(orgId, connectionId, ctx?.lease ?? lease);
     }
   }
 }
@@ -478,6 +507,8 @@ function ctxFromLive(live: LiveSession, accounts: Map<string, AccountRef>, now: 
     anySuccess: f.anySuccess,
     firstFailure: f.firstFailure,
     failureRecorded: false,
+    lease: live.lease,
+    live,
   };
 }
 
@@ -525,6 +556,12 @@ export async function continueManualFetch(orgId: string, token: string, raw: unk
   }
   const window: FetchWindow = { from, to, gapBefore: null };
 
+  try {
+    await keepLease(ctx);
+  } catch (e) {
+    await endLive(live);
+    throw e;
+  }
   let step;
   try {
     step = await live.session.continueSca(tan);
@@ -608,11 +645,16 @@ async function recordPendingFailure(live: LiveSession, result: "SCA_CANCELLED" |
  * Freigaben entstehen nur im manuellen Abruf, dort sieht der Nutzer das Ergebnis in der Oberflaeche.
  */
 export async function sweepFetchSessions(nowMs: number = Date.now()): Promise<number> {
-  return sweepSessions(nowMs, async (live) => {
-    if (live.purpose !== "FETCH" || !live.pending.fetch) return;
-    await recordPendingFailure(live, "SCA_TIMEOUT", new Date(nowMs));
-  });
+  return sweepSessions(nowMs, async (live) => expireFetchSession(live, nowMs));
 }
+
+async function expireFetchSession(live: LiveSession, nowMs: number): Promise<void> {
+  if (live.purpose !== "FETCH" || !live.pending.fetch) return;
+  await recordPendingFailure(live, "SCA_TIMEOUT", new Date(nowMs));
+}
+
+// Jede Sitzung raeumt sich nach Ablauf der Freigabefrist selbst ab (PIN und Dialog bleiben nie laenger im Speicher).
+setExpireHook((live) => expireFetchSession(live, Date.now()));
 
 /** Bricht eine offene Freigabe ab: Dialog beenden, Sperre freigeben, Lauf als abgebrochen vermerken. */
 export async function cancelManualFetch(orgId: string, token: string, actor: FetchActor, now: Date = new Date()): Promise<void> {

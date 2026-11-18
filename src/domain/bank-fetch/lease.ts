@@ -26,6 +26,19 @@ export async function acquireLease(orgId: string, connectionId: string, now: Dat
   return res.count === 1 ? until : null;
 }
 
+/**
+ * Verlaengert die eigene Sperre (nur bei gleicher Besitzerkennung) und liefert die neue Kennung; null, wenn die Sperre
+ * inzwischen einem anderen gehoert (dann darf kein weiterer Dialog beginnen).
+ */
+export async function renewLease(orgId: string, connectionId: string, lease: Lease, now: Date): Promise<Lease | null> {
+  const until = new Date(Math.max(now.getTime(), Date.now()) + FETCH_LEASE_MS);
+  const res = await dbInternal.bankConnection.updateMany({
+    where: { id: connectionId, orgId, archivedAt: null, leaseUntil: lease },
+    data: { leaseUntil: until },
+  });
+  return res.count === 1 ? until : null;
+}
+
 /** Gibt nur die eigene Sperre frei (gleiche Besitzerkennung). */
 export async function releaseLease(orgId: string, connectionId: string, lease: Lease): Promise<void> {
   try {

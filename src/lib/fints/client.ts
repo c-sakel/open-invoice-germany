@@ -113,6 +113,8 @@ export interface FintsSyncResult {
 export interface FintsCamtResult {
   documents: Uint8Array[];
   bytes: number;
+  /** Tatsaechlich abgerufener Beginn (Tag YYYY-MM-DD); spaeter als angefragt, wenn die Bank den Rueckblick begrenzt. */
+  from?: string;
 }
 
 export interface FintsSession {

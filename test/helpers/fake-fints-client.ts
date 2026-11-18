@@ -30,12 +30,13 @@ export function syncResult(over: Partial<FintsSyncResult> = {}): FintsSyncResult
 }
 
 /** Ergebnis eines Kontoabrufs mit den gegebenen CAMT-Dokumenten (Rohtext). */
-export function camtResult(docs: string[]): FintsCamtResult {
+export function camtResult(docs: string[], from?: string): FintsCamtResult {
   const documents = docs.map((d) => new TextEncoder().encode(d));
-  return { documents, bytes: documents.reduce((n, d) => n + d.length, 0) };
+  return { documents, bytes: documents.reduce((n, d) => n + d.length, 0), ...(from !== undefined ? { from } : {}) };
 }
 
-export const camtDone = (docs: string[], scaUsed = false): FintsStep<FintsCamtResult> => ({ kind: "done", value: camtResult(docs), scaUsed, bankCodes: ["0020"] });
+/** `from`: tatsaechlich abgerufener Beginn, wenn die Bank den Rueckblick kuerzt. */
+export const camtDone = (docs: string[], scaUsed = false, from?: string): FintsStep<FintsCamtResult> => ({ kind: "done", value: camtResult(docs, from), scaUsed, bankCodes: ["0020"] });
 
 export const done = (value: FintsSyncResult, scaUsed = false): FintsStep<FintsSyncResult> => ({ kind: "done", value, scaUsed, bankCodes: ["0020"] });
 

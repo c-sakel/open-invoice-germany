@@ -49,6 +49,14 @@ export interface LiveSession {
 
 const MAX_SESSIONS = 50;
 
+type ExpireHook = (s: LiveSession) => Promise<void>;
+let expireHook: ExpireHook | undefined;
+
+/** Hinterlegt, wie ein abgelaufener Abruf vermerkt wird (die Abrufschicht setzt das beim Laden). */
+export function setExpireHook(hook: ExpireHook): void {
+  expireHook = hook;
+}
+
 type Holder = { __oigFintsSessions?: Map<string, LiveSession> };
 
 function registry(): Map<string, LiveSession> {
@@ -64,7 +72,27 @@ export function putSession(s: Omit<LiveSession, "token">): string {
   for (const v of reg.values()) if (v.connectionId === s.connectionId) throw new BankFetchError("BUSY");
   const token = randomBytes(16).toString("base64url");
   reg.set(token, { ...s, token });
+  // Raeumt die Sitzung nach Ablauf der Freigabefrist selbst ab (PIN und Bankdialog bleiben nie laenger offen).
+  const timer = setTimeout(() => {
+    void expireToken(token);
+  }, FINTS_SCA_TIMEOUT_MS + 1_000);
+  timer.unref();
   return token;
+}
+
+async function expireToken(token: string): Promise<void> {
+  const reg = registry();
+  const s = reg.get(token);
+  if (!s) return;
+  reg.delete(token);
+  if (expireHook) {
+    try {
+      await expireHook(s);
+    } catch (e) {
+      console.error("Kontoabruf: Ablauf nicht vermerkt", e instanceof Error ? e.name : "unbekannt");
+    }
+  }
+  await closeAndRelease(s);
 }
 
 async function closeAndRelease(s: LiveSession): Promise<void> {

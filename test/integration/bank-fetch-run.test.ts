@@ -430,6 +430,102 @@ describe("Fehler vor dem Bankkontakt, Ablauf, Luecke", () => {
     expect(n[0]?.title).toContain("25.05.2253");
     expect(n[0]?.dedupeKey).toBe(`BANK_FETCH_ACTION:GAP:${id}:2253-05-25`);
   });
+
+  it("kuerzt die Bank den Rueckblick: Protokoll nennt den abgerufenen Beginn, Meldung auf die Luecke", async () => {
+    const { orgId, id } = await mkReady("Gekuerzt", { auto: false });
+    fake.camtAnswers.push(camtDone([doc(FINTS_IBAN_2, "gek")], false, "2254-02-01"), camtDone([doc(FINTS_IBAN, "gek")], false, "2254-02-01"));
+    const runs = done_(await startManualFetch(orgId, id, { from: "2254-01-01" }, actor, t(2)));
+    expect(runs.map((r) => r.from)).toEqual(["2254-02-01", "2254-02-01"]);
+    expect(runs.every((r) => r.gapBefore === "2254-01-01")).toBe(true);
+    const rows = await runsOf(id);
+    expect(rows.at(-1)?.fromDate?.toISOString().slice(0, 10)).toBe("2254-02-01");
+    const n = await dbInternal.notification.findMany({ where: { orgId, dedupeKey: { contains: "GAP" } }, select: { title: true } });
+    expect(n).toHaveLength(1);
+    expect(n[0]?.title).toContain("01.01.2254");
+  });
+
+  it("Sperre verloren waehrend des Abrufs: kein weiterer Dialog, kein Freigeben fremder Sperre", async () => {
+    const { orgId, id } = await mkReady("SperreWeg", { auto: false });
+    fake.fetches.length = 0;
+    let release: () => void = () => undefined;
+    fake.gate.wait = new Promise<void>((res) => {
+      release = res;
+    });
+    pushBoth("sperreweg");
+    const p = startManualFetch(orgId, id, {}, actor, t(2));
+    const settled = p.then(
+      () => "ok",
+      (e: unknown) => (e as { code?: string }).code ?? "fehler",
+    );
+    await new Promise((r) => setTimeout(r, 300));
+    // ein anderer Prozess hat die Sperre inzwischen uebernommen
+    const foreign = new Date(Date.now() + 3_600_000);
+    await dbInternal.bankConnection.update({ where: { id }, data: { leaseUntil: foreign }, select: { id: true } });
+    release();
+    expect(await settled).toBe("BUSY");
+    expect(fake.fetches).toHaveLength(1);
+    expect((await rowOf(id)).leaseUntil).toEqual(foreign);
+    expect(fake.sessions.at(-1)?.closed).toBeGreaterThanOrEqual(1);
+  });
+
+  it("die Sperre wird vor jedem Konto verlaengert", async () => {
+    const { orgId, id } = await mkReady("SperreLang", { auto: false });
+    const seen: (Date | null)[] = [];
+    const origFetch = FakeFintsClient.prototype.open;
+    const spy = vi.spyOn(FakeFintsClient.prototype, "open").mockImplementation(function (this: FakeFintsClient, access) {
+      const s = origFetch.call(this, access);
+      const f = s.fetchCamt.bind(s);
+      s.fetchCamt = async (iban, from, to) => {
+        seen.push((await rowOf(id)).leaseUntil);
+        return f(iban, from, to);
+      };
+      return s;
+    });
+    pushBoth("sperrelang");
+    done_(await startManualFetch(orgId, id, {}, actor, t(2)));
+    spy.mockRestore();
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).not.toBeNull();
+    expect(seen[1]!.getTime()).toBeGreaterThanOrEqual(seen[0]!.getTime());
+  });
+
+  it("ein manueller Abruf ersetzt den naechsten Takt (naechster Berliner Tag)", async () => {
+    const { orgId, id } = await mkReady("ManuellTakt");
+    expect(berlinDateKey((await rowOf(id)).nextAutoAt!)).toBe("2254-03-01");
+    pushBoth("manuelltakt");
+    done_(await startManualFetch(orgId, id, {}, actor, t(3)));
+    expect(berlinDateKey((await rowOf(id)).nextAutoAt!)).toBe("2254-03-02");
+  });
+
+  it("die Freigabe-Sitzung raeumt sich nach Ablauf selbst ab (Lauf SCA_TIMEOUT, Sperre frei)", async () => {
+    const { orgId, id } = await mkReady("SelbstRaeumen", { auto: false });
+    fake.camtAnswers.push(decoupledChallenge());
+    const timers: { fn: () => void; ms: number | undefined }[] = [];
+    const real = globalThis.setTimeout;
+    const spy = vi.spyOn(globalThis, "setTimeout").mockImplementation(((fn: () => void, ms?: number, ...rest: unknown[]) => {
+      timers.push({ fn, ms });
+      return real(() => undefined, 0, ...rest);
+    }) as unknown as typeof setTimeout);
+    const first = await startManualFetch(orgId, id, {}, actor, t(2));
+    spy.mockRestore();
+    expect(first.state).toBe("SCA");
+    const tm = timers.find((x) => x.ms === 5 * 60_000 + 1_000);
+    expect(tm).toBeDefined();
+    tm?.fn();
+    await new Promise((r) => real(r, 100));
+    expect((await runsOf(id)).at(-1)).toMatchObject({ result: "SCA_TIMEOUT", trigger: "MANUAL" });
+    expect((await rowOf(id)).leaseUntil).toBeNull();
+    expect(fake.sessions.at(-1)?.closed).toBeGreaterThanOrEqual(1);
+  });
+
+  it("dieselbe Sperrmeldung kommt nach geaenderten Zugangsdaten erneut", async () => {
+    const { orgId, id } = await mkReady("SperreNeu");
+    await dbInternal.bankConnection.update({ where: { id }, data: { bankingInfoJson: null }, select: { id: true } });
+    await runBankFetchJob(NOW);
+    await dbInternal.bankConnection.update({ where: { id }, data: { credentialsChangedAt: t(50), nextAutoAt: new Date(NOW.getTime() - 1000) }, select: { id: true } });
+    await runBankFetchJob(t(100));
+    expect(await dbInternal.notification.count({ where: { orgId, type: "BANK_FETCH_ACTION", dedupeKey: { contains: "BLOCKED" } } })).toBe(2);
+  });
 });
 
 describe("Ausgaben ohne Geheimnisse", () => {

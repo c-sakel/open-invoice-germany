@@ -36,10 +36,13 @@ export async function notifyFetchAction(orgId: string, connectionId: string, kin
   }
 }
 
-/** Fehler vor dem Bankkontakt (Zugang nicht abrufbereit): eine Meldung je Zugang und Code. */
+/** Fehler vor dem Bankkontakt (Zugang nicht abrufbereit): eine Meldung je Zugang, Code und Stand der Zugangsdaten. */
 export async function notifyFetchBlocked(orgId: string, connectionId: string, code: string, now: Date): Promise<void> {
   try {
     if (!(await enabled(orgId, "BANK_FETCH_ACTION"))) return;
+    // Nach einer Aenderung der Zugangsdaten gilt derselbe Code wieder als neuer Anlass.
+    const conn = await dbInternal.bankConnection.findFirst({ where: { id: connectionId, orgId }, select: { credentialsChangedAt: true } });
+    const stand = conn?.credentialsChangedAt ? conn.credentialsChangedAt.getTime() : 0;
     await createNotification({
       orgId,
       type: "BANK_FETCH_ACTION",
@@ -47,7 +50,7 @@ export async function notifyFetchBlocked(orgId: string, connectionId: string, co
       link: LINK,
       entityType: "BANK_CONNECTION",
       entityId: connectionId,
-      dedupeKey: `BANK_FETCH_ACTION:BLOCKED:${connectionId}:${code}`,
+      dedupeKey: `BANK_FETCH_ACTION:BLOCKED:${connectionId}:${code}:${stand}`,
       at: now,
     });
   } catch (e) {

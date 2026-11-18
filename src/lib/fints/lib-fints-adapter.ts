@@ -207,6 +207,8 @@ class LibFintsSession implements FintsSession {
   private readonly transport: FintsTransport;
   private readonly collector = new CamtCollector();
   private pending: Pending | null = null;
+  /** Tatsaechlich angefragter Beginn des laufenden Kontoabrufs (Tag), nach der Abrufgrenze der Bank. */
+  private camtFrom: string | undefined;
   private busy = false;
 
   constructor(
@@ -373,7 +375,7 @@ class LibFintsSession implements FintsSession {
     const base = { scaUsed: this.transport.state.scaSeen, bankCodes: this.transport.state.lastCodes };
     if (kind === "sync") return { kind: "done", value: this.syncResult(), ...base };
     if (!this.collector.invoked) throw new FintsError("PROTOCOL_ERROR");
-    return { kind: "done", value: { documents: this.collector.documents, bytes: this.collector.bytes }, ...base };
+    return { kind: "done", value: { documents: this.collector.documents, bytes: this.collector.bytes, ...(this.camtFrom !== undefined ? { from: this.camtFrom } : {}) }, ...base };
   }
 
   synchronize(): Promise<FintsStep<FintsSyncResult>> {
@@ -409,6 +411,7 @@ class LibFintsSession implements FintsSession {
       const maxDays = typeof params?.maxDays === "number" && params.maxDays > 0 ? params.maxDays : null;
       const earliest = maxDays === null ? fromDay.getTime() : toDay.getTime() - maxDays * 86_400_000;
       const effectiveFrom = new Date(Math.max(fromDay.getTime(), earliest));
+      this.camtFrom = effectiveFrom.toISOString().slice(0, 10);
       this.beginOperation();
       this.collector.reset(wanted);
       const resp = await this.client.getAccountStatements(account, effectiveFrom, toDay, true);
