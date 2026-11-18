@@ -52,7 +52,11 @@ export const MAX_FETCH_ACCOUNTS = 10;
 export const FETCH_LEASE_MS = 10 * 60_000;
 export const MANUAL_FETCH_MIN_INTERVAL_MS = 60_000;
 export const TRANSIENT_RETRY_MIN_MS = 2 * 60 * 60_000;
-export const MAX_TRANSIENT_ATTEMPTS_PER_DAY = 3;
+/**
+ * Hoechstens zwei PIN-Sendungen je Zugang und Berliner Tag im automatischen Abruf (Erstversuch eingeschlossen): die Bank
+ * zaehlt moeglicherweise auch abgebrochene Anmeldungen als Fehlversuch.
+ */
+export const MAX_TRANSIENT_ATTEMPTS_PER_DAY = 2;
 
 /** Zeitraum: automatisch hoechstens 89 Tage (ohne Freigabe), manuell mit Freigabe 365, Ueberlappung, erster Abruf. */
 export const FETCH_MAX_DAYS_AUTO = 89;

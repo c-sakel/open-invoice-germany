@@ -30,7 +30,7 @@ import {
   MAX_TRANSIENT_ATTEMPTS_PER_DAY,
   TRANSIENT_RETRY_MIN_MS,
 } from "./limits";
-import { notifyFetchAction, notifyFetchError } from "./notify";
+import { notifyFetchAction, notifyFetchBlocked, notifyFetchError, notifyFetchGap } from "./notify";
 import type { RunSummary } from "./run-types";
 import { putSession, returnSession, sweepSessions, takeSession, type FetchProgress, type LiveSession } from "./sessions";
 import { toPublicChallenge, type PublicChallenge } from "./setup";
@@ -187,6 +187,8 @@ async function finishAccount(ctx: Ctx, acc: AccountRef, window: FetchWindow, val
   await dbInternal.bankConnectionAccount.updateMany({ where: { id: acc.id, orgId: ctx.orgId }, data: { lastFetchedTo: dayDate(window.to) } });
   await recordRun(ctx, acc, window, "OK", bankCodes, { documents: value.documents.length, bytes: value.bytes, importId, importedCount, duplicateCount, scaUsed });
   ctx.anySuccess = true;
+  // Die Bank (oder die Obergrenze) lieferte weniger Tage als die Luecke seit dem letzten Abruf: einmalig auf den Import hinweisen.
+  if (window.gapBefore !== null) await notifyFetchGap(ctx.orgId, ctx.connectionId, window.gapBefore, ctx.now);
 }
 
 /** Ruft die Konten der Reihe nach ab (je Konto ein Dialog). Verbindungsfehler werden nach dem Protokollieren geworfen. */
@@ -321,7 +323,7 @@ type StartResult = { kind: "DONE"; runs: RunSummary[]; status: AutoStatus; code:
 /** Eine Abrufsitzung beginnen: pruefen, sperren, PIN bestimmen, abrufen. */
 async function executeStart(p: StartParams): Promise<StartResult> {
   const { orgId, connectionId, now } = p;
-  await sweepSessions(now.getTime());
+  await sweepFetchSessions(now.getTime());
   const productId = await requireProductId(orgId);
   const pre = await loadConnectionRow(orgId, connectionId);
   if (p.trigger === "AUTO" && !(pre.autoEnabled && pre.state === "READY" && pre.pinEnc != null)) throw new BankFetchError("NOT_ELIGIBLE");
@@ -482,7 +484,7 @@ function ctxFromLive(live: LiveSession, accounts: Map<string, AccountRef>, now: 
 /** Setzt eine offene Freigabe fort: Abfrage der App-Freigabe (ohne Bankkontakt vor der Wartezeit) oder Eingabe der TAN. */
 export async function continueManualFetch(orgId: string, token: string, raw: unknown, actor: FetchActor, now: Date = new Date()): Promise<FetchOutcome> {
   const input = continueInputSchema.parse(raw);
-  await sweepSessions(now.getTime());
+  await sweepFetchSessions(now.getTime());
   const nowMs = now.getTime();
   const live = takeSession(token, orgId, actor.userId, nowMs);
   if (!live) throw new NotFoundError("Sitzung nicht gefunden.");
@@ -585,15 +587,31 @@ async function resumeQueue(live: LiveSession, ctx: Ctx, now: Date): Promise<Fetc
 /** Beendet eine offene Freigabe ohne Ergebnis (Abbruch oder Zeitueberschreitung) und protokolliert das Konto. */
 async function failCurrent(live: LiveSession, result: "SCA_CANCELLED" | "SCA_TIMEOUT", now: Date): Promise<void> {
   try {
-    const accounts = await loadAccounts(live.orgId, live.connectionId);
-    const settings = await loadBankFetchSettings(live.orgId);
-    const ctx = ctxFromLive(live, accounts, now, settings.firstFetchDays);
-    const acc = live.pending.accountId ? (accounts.get(live.pending.accountId) ?? null) : null;
-    const window = live.pending.from && live.pending.to ? { from: live.pending.from, to: live.pending.to, gapBefore: null } : null;
-    await recordRun(ctx, acc, window, result, []);
+    await recordPendingFailure(live, result, now);
   } finally {
     await endLive(live);
   }
+}
+
+/** Vermerkt das offene Konto einer Freigabe als abgebrochen/abgelaufen (append-only, ohne Geheimnisse); schliesst nichts. */
+async function recordPendingFailure(live: LiveSession, result: "SCA_CANCELLED" | "SCA_TIMEOUT", now: Date): Promise<void> {
+  const accounts = await loadAccounts(live.orgId, live.connectionId);
+  const settings = await loadBankFetchSettings(live.orgId);
+  const ctx = ctxFromLive(live, accounts, now, settings.firstFetchDays);
+  const acc = live.pending.accountId ? (accounts.get(live.pending.accountId) ?? null) : null;
+  const window = live.pending.from && live.pending.to ? { from: live.pending.from, to: live.pending.to, gapBefore: null } : null;
+  await recordRun(ctx, acc, window, result, []);
+}
+
+/**
+ * Raeumt abgelaufene Freigabe-Sitzungen ab und vermerkt je Abruf eine Zeile SCA_TIMEOUT. Eine Meldung gibt es nicht:
+ * Freigaben entstehen nur im manuellen Abruf, dort sieht der Nutzer das Ergebnis in der Oberflaeche.
+ */
+export async function sweepFetchSessions(nowMs: number = Date.now()): Promise<number> {
+  return sweepSessions(nowMs, async (live) => {
+    if (live.purpose !== "FETCH" || !live.pending.fetch) return;
+    await recordPendingFailure(live, "SCA_TIMEOUT", new Date(nowMs));
+  });
 }
 
 /** Bricht eine offene Freigabe ab: Dialog beenden, Sperre freigeben, Lauf als abgebrochen vermerken. */
@@ -623,12 +641,36 @@ async function scheduleNext(orgId: string, connectionId: string, status: AutoSta
   await dbInternal.bankConnection.updateMany({ where: { id: connectionId, orgId, archivedAt: null }, data: { nextAutoAt: next } });
 }
 
+/** Fehler vor dem Bankkontakt: der Job darf nicht in jedem Lauf erneut scheitern. */
+const BLOCKED_BEFORE_CONTACT: ReadonlySet<string> = new Set(["NOT_SET_UP", "SECRET_UNREADABLE", "PIN_PREVIOUSLY_REJECTED", "ACCESS_LOCKED", "NO_ACCOUNT_SELECTED", "PIN_REQUIRED", "PRODUCT_ID_MISSING"]);
+/** Davon schalten den automatischen Abruf aus (die gespeicherte PIN ist unbrauchbar oder abgelehnt). */
+const DISABLES_AUTO: ReadonlySet<string> = new Set(["SECRET_UNREADABLE", "PIN_PREVIOUSLY_REJECTED", "ACCESS_LOCKED"]);
+
+async function holdScheduled(orgId: string, connectionId: string, code: string, now: Date): Promise<void> {
+  try {
+    const settings = await loadBankFetchSettings(orgId);
+    await dbInternal.bankConnection.updateMany({
+      where: { id: connectionId, orgId, archivedAt: null },
+      data: { nextAutoAt: nextAutoAt(now, settings.autoHour), lastAttemptAt: now, ...(DISABLES_AUTO.has(code) ? { autoEnabled: false } : {}) },
+    });
+    await notifyFetchBlocked(orgId, connectionId, code, now);
+  } catch (e) {
+    console.error("Kontoabruf: Planung nicht gesetzt", e instanceof Error ? e.name : "unbekannt");
+  }
+}
+
 /**
  * Automatischer Abruf eines Bankzugangs (nur Hintergrund-Job). Wirft BankFetchError, wenn der Zugang nicht abrufbereit
  * oder gesperrt ist (kein Bankkontakt). Meldungen und die Planung des naechsten Laufs gehoeren dazu.
  */
 export async function runScheduledFetch(orgId: string, connectionId: string, now: Date): Promise<RunSummary[]> {
-  const res = await executeStart({ orgId, connectionId, trigger: "AUTO", actor: null, now });
+  let res: StartResult;
+  try {
+    res = await executeStart({ orgId, connectionId, trigger: "AUTO", actor: null, now });
+  } catch (e) {
+    if (e instanceof BankFetchError && BLOCKED_BEFORE_CONTACT.has(e.code)) await holdScheduled(orgId, connectionId, e.code, now);
+    throw e;
+  }
   if (res.kind !== "DONE") return [];
   const row = await dbInternal.bankConnection.findFirst({ where: { id: connectionId, orgId }, select: { state: true } });
   if (res.status === "SCA_REQUIRED") {

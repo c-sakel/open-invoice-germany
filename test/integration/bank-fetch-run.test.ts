@@ -14,6 +14,7 @@ import { connectBankConnection } from "@/domain/bank-fetch/setup";
 import { cancelManualFetch, continueManualFetch, startManualFetch, type FetchOutcome } from "@/domain/bank-fetch/run";
 import { runBankFetchJob } from "@/domain/bank-fetch/job";
 import { sweepSessions } from "@/domain/bank-fetch/sessions";
+import { sweepFetchSessions } from "@/domain/bank-fetch/run";
 import { runScheduledJobs } from "@/domain/scheduler/runner";
 import { camtDone, camtResult, decoupledChallenge, done, FakeFintsClient, syncResult } from "../helpers/fake-fints-client";
 import { camtDocument, FINTS_BLZ, FINTS_IBAN, FINTS_IBAN_2, FINTS_OTHER_IBAN, FINTS_PRODUCT_ID, FINTS_URL, FINTS_USER } from "../helpers/fints-fixtures";
@@ -318,7 +319,7 @@ describe("Banksperre-Schutz", () => {
     expect(await rowOf(id)).toMatchObject({ state: "READY", autoEnabled: true });
   });
 
-  it("voruebergehende Fehler: +2 h, hoechstens drei am Tag, dann naechster Tag; Meldung erst am zweiten Fehltag", async () => {
+  it("voruebergehende Fehler: +2 h, hoechstens zwei Sendungen am Tag, dann naechster Tag; Meldung erst am zweiten Fehltag", async () => {
     const { orgId, id } = await mkReady("Transient");
     const timeout = () => new FintsError("TIMEOUT");
     fake.camtAnswers.push(timeout());
@@ -327,11 +328,13 @@ describe("Banksperre-Schutz", () => {
     expect(row).toMatchObject({ state: "READY", transientFailuresToday: 1 });
     expect(row.nextAutoAt?.getTime()).toBe(NOW.getTime() + 2 * 3_600_000);
     fake.camtAnswers.push(timeout());
+    const base = fake.opens.length;
     await runBankFetchJob(new Date(NOW.getTime() + 2 * 3_600_000));
     fake.camtAnswers.push(timeout());
     await runBankFetchJob(new Date(NOW.getTime() + 4 * 3_600_000));
+    expect(fake.opens.length - base).toBe(1); // zweite (und letzte) Sendung des Tages
     row = await rowOf(id);
-    expect(row.transientFailuresToday).toBe(3);
+    expect(row.transientFailuresToday).toBe(2);
     expect(berlinDateKey(row.nextAutoAt!)).toBe("2254-03-02");
     expect(await dbInternal.notification.count({ where: { orgId, type: "BANK_FETCH_ERROR" } })).toBe(0);
     // Folgetag: der Vortag war ein Fehlschlag -> Meldung (ein Eintrag je Code und Tag)
@@ -369,10 +372,63 @@ describe("Banksperre-Schutz", () => {
     await dbInternal.bankConnection.update({ where: { id }, data: { lastScaAt: new Date("2253-09-10T10:00:00.000Z"), nextAutoAt: new Date("2255-01-01T00:00:00.000Z") }, select: { id: true } });
     await runBankFetchJob(NOW);
     await runBankFetchJob(t(100));
+    expect(await dbInternal.activityLog.count({ where: { orgId, entityId: id, type: "BANK_FETCH_ACTION" } })).toBe(1);
     const n = await dbInternal.notification.findMany({ where: { orgId, type: "BANK_FETCH_ACTION" }, select: { dedupeKey: true, link: true } });
     expect(n).toHaveLength(1);
     expect(n[0]?.dedupeKey).toBe(`BANK_FETCH_SCA_RENEW:${id}:2253-09-10`);
     expect(n[0]?.link).toBe("/einstellungen/kontoabruf");
+  });
+});
+
+describe("Fehler vor dem Bankkontakt, Ablauf, Luecke", () => {
+  it("nicht lesbare PIN: ein Versuch, Abruf aus, naechster Tag, eine Meldung", async () => {
+    const { orgId, id } = await mkReady("Unlesbar");
+    const base = fake.opens.length;
+    await dbInternal.bankConnection.update({ where: { id }, data: { pinEnc: "kaputt" }, select: { id: true } });
+    const a = await runBankFetchJob(NOW);
+    await runBankFetchJob(t(100));
+    await runBankFetchJob(t(1000));
+    expect(a.connections).toBe(1);
+    expect(a.errors).toBe(1);
+    expect(fake.opens.length - base).toBe(0);
+    const row = await rowOf(id);
+    expect(row.autoEnabled).toBe(false);
+    expect(berlinDateKey(row.nextAutoAt!)).toBe("2254-03-02");
+    expect(await dbInternal.notification.count({ where: { orgId, type: "BANK_FETCH_ACTION", dedupeKey: { contains: "BLOCKED" } } })).toBe(1);
+  });
+
+  it("Zugang ohne Bankdaten: kein zweiter Versuch am selben Tag, Abruf bleibt an, eine Meldung", async () => {
+    const { orgId, id } = await mkReady("OhneInfo");
+    await dbInternal.bankConnection.update({ where: { id }, data: { bankingInfoJson: null }, select: { id: true } });
+    await runBankFetchJob(NOW);
+    const sum = await runBankFetchJob(t(100));
+    expect(sum.connections).toBe(0);
+    const row = await rowOf(id);
+    expect(row.autoEnabled).toBe(true);
+    expect(berlinDateKey(row.nextAutoAt!)).toBe("2254-03-02");
+    expect(await dbInternal.notification.count({ where: { orgId, type: "BANK_FETCH_ACTION", dedupeKey: { contains: "BLOCKED" } } })).toBe(1);
+  });
+
+  it("abgelaufene Freigabe-Sitzung: Lauf SCA_TIMEOUT, Sperre frei", async () => {
+    const { orgId, id } = await mkReady("Ablauf", { auto: false });
+    fake.camtAnswers.push(decoupledChallenge());
+    const first = await startManualFetch(orgId, id, {}, actor, t(2));
+    expect(first.state).toBe("SCA");
+    expect(await sweepFetchSessions(t(2).getTime() + 6 * 60_000)).toBe(1);
+    expect((await runsOf(id)).at(-1)).toMatchObject({ result: "SCA_TIMEOUT", trigger: "MANUAL" });
+    expect((await rowOf(id)).leaseUntil).toBeNull();
+    expect(await sweepFetchSessions(t(2).getTime() + 7 * 60_000)).toBe(0);
+  });
+
+  it("gekuerzter Zeitraum: einmalige Meldung mit Hinweis auf den CAMT-Import", async () => {
+    const { orgId, id } = await mkReady("Luecke");
+    await dbInternal.bankConnectionAccount.updateMany({ where: { connectionId: id }, data: { lastFetchedTo: new Date("2253-06-01T00:00:00.000Z") } });
+    pushBoth("luecke");
+    await runBankFetchJob(NOW);
+    const n = await dbInternal.notification.findMany({ where: { orgId, dedupeKey: { contains: "GAP" } }, select: { title: true, dedupeKey: true } });
+    expect(n).toHaveLength(1);
+    expect(n[0]?.title).toContain("25.05.2253");
+    expect(n[0]?.dedupeKey).toBe(`BANK_FETCH_ACTION:GAP:${id}:2253-05-25`);
   });
 });
 

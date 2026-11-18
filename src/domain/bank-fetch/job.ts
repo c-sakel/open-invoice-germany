@@ -8,9 +8,8 @@ import { dbInternal } from "@/lib/db";
 import { logActivity } from "@/domain/activity/log";
 import { BankFetchError } from "./errors";
 import { notifyFetchAction } from "./notify";
-import { runScheduledFetch, SYSTEM_ACTOR } from "./run";
-import { sweepSessions } from "./sessions";
-import { scaWarnDue } from "./window";
+import { runScheduledFetch, sweepFetchSessions, SYSTEM_ACTOR } from "./run";
+import { scaRenewBy, scaWarnDue } from "./window";
 
 export interface BankFetchJobSummary {
   connections: number;
@@ -50,7 +49,7 @@ export async function runBankFetchJob(now: Date): Promise<BankFetchJobSummary> {
     }
   }
   try {
-    await sweepSessions(now.getTime());
+    await sweepFetchSessions(now.getTime());
     const watched = await dbInternal.bankConnection.findMany({
       where: { autoEnabled: true, archivedAt: null, lastScaAt: { not: null } },
       select: { id: true, orgId: true, lastScaAt: true },
@@ -58,7 +57,16 @@ export async function runBankFetchJob(now: Date): Promise<BankFetchJobSummary> {
     for (const w of watched) {
       if (!scaWarnDue(w.lastScaAt, now)) continue;
       await notifyFetchAction(w.orgId, w.id, "SCA_RENEW", now, w.lastScaAt);
-      await logActivity(dbInternal, { orgId: w.orgId, entityType: "BANK_CONNECTION", entityId: w.id, type: "BANK_FETCH_ACTION", actor: SYSTEM_ACTOR, at: now, data: { action: "SCA_RENEW" } });
+      // Einmal je Zugang und Ablaufdatum der Freigabe, nicht je Lauf.
+      const expires = berlinDateKey(scaRenewBy(w.lastScaAt)!);
+      const dataJson = JSON.stringify({ action: "SCA_RENEW", expires });
+      const logged = await dbInternal.activityLog.findFirst({
+        where: { orgId: w.orgId, entityType: "BANK_CONNECTION", entityId: w.id, type: "BANK_FETCH_ACTION", dataJson },
+        select: { id: true },
+      });
+      if (logged === null) {
+        await logActivity(dbInternal, { orgId: w.orgId, entityType: "BANK_CONNECTION", entityId: w.id, type: "BANK_FETCH_ACTION", actor: SYSTEM_ACTOR, at: now, data: { action: "SCA_RENEW", expires } });
+      }
     }
   } catch (e) {
     summary.errors += 1;

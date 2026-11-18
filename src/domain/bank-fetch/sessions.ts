@@ -113,13 +113,23 @@ export async function dropConnectionSessions(orgId: string, connectionId: string
   }
 }
 
-/** Schliesst abgelaufene Sitzungen (nach 5 Minuten). */
-export async function sweepSessions(now: number = Date.now()): Promise<number> {
+/**
+ * Schliesst abgelaufene Sitzungen (nach 5 Minuten). `onExpire` darf den Ablauf vermerken (nicht schliessen); ein Fehler
+ * darin verhindert das Schliessen und Freigeben nie.
+ */
+export async function sweepSessions(now: number = Date.now(), onExpire?: (s: LiveSession) => Promise<void>): Promise<number> {
   const reg = registry();
   let n = 0;
   for (const [token, s] of [...reg.entries()]) {
     if (now - s.createdAt > FINTS_SCA_TIMEOUT_MS) {
       reg.delete(token);
+      if (onExpire) {
+        try {
+          await onExpire(s);
+        } catch (e) {
+          console.error("Kontoabruf: Ablauf nicht vermerkt", e instanceof Error ? e.name : "unbekannt");
+        }
+      }
       await closeAndRelease(s);
       n += 1;
     }

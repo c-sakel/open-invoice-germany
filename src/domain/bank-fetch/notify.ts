@@ -36,6 +36,45 @@ export async function notifyFetchAction(orgId: string, connectionId: string, kin
   }
 }
 
+/** Fehler vor dem Bankkontakt (Zugang nicht abrufbereit): eine Meldung je Zugang und Code. */
+export async function notifyFetchBlocked(orgId: string, connectionId: string, code: string, now: Date): Promise<void> {
+  try {
+    if (!(await enabled(orgId, "BANK_FETCH_ACTION"))) return;
+    await createNotification({
+      orgId,
+      type: "BANK_FETCH_ACTION",
+      title: `Der automatische Kontoabruf wurde nicht ausgefuehrt (Code ${code}). Bitte den Zugang pruefen.`,
+      link: LINK,
+      entityType: "BANK_CONNECTION",
+      entityId: connectionId,
+      dedupeKey: `BANK_FETCH_ACTION:BLOCKED:${connectionId}:${code}`,
+      at: now,
+    });
+  } catch (e) {
+    console.error("Kontoabruf: Meldung nicht angelegt", e instanceof Error ? e.name : "unbekannt");
+  }
+}
+
+/** Der Abruf reichte nicht bis zum gewuenschten Beginn zurueck: Hinweis auf den CAMT-Import, einmal je Zugang und Datum. */
+export async function notifyFetchGap(orgId: string, connectionId: string, gapBefore: string, now: Date): Promise<void> {
+  try {
+    if (!(await enabled(orgId, "BANK_FETCH_ACTION"))) return;
+    const [y, m, d] = gapBefore.split("-");
+    await createNotification({
+      orgId,
+      type: "BANK_FETCH_ACTION",
+      title: `Umsaetze vor dem ${d}.${m}.${y} konnten nicht abgerufen werden. Bitte als CAMT-Datei importieren.`,
+      link: LINK,
+      entityType: "BANK_CONNECTION",
+      entityId: connectionId,
+      dedupeKey: `BANK_FETCH_ACTION:GAP:${connectionId}:${gapBefore}`,
+      at: now,
+    });
+  } catch (e) {
+    console.error("Kontoabruf: Meldung nicht angelegt", e instanceof Error ? e.name : "unbekannt");
+  }
+}
+
 /** War der letzte Abrufversuch vor heute ein Fehlschlag? Dann ist heute der zweite Fehltag in Folge. */
 export async function previousDayFailed(orgId: string, connectionId: string, now: Date): Promise<boolean> {
   const { year, month, day } = berlinParts(now);
