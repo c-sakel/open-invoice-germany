@@ -13,6 +13,7 @@ export const BANK_STATEMENT_SELECT = {
   fileName: true,
   format: true,
   schemaVersion: true,
+  origin: true,
   accountIban: true,
   statementId: true,
   periodFrom: true,

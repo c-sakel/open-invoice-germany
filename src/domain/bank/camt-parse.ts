@@ -1,5 +1,5 @@
 /**
- * CAMT.053 (Kontoauszug) und CAMT.054 (Soll-/Haben-Anzeige) einlesen, Versionen 02 bis 13.
+ * CAMT.052 (Kontobewegungen), CAMT.053 (Kontoauszug) und CAMT.054 (Soll-/Haben-Anzeige) einlesen, Versionen 02 bis 13.
  * Reine Auswertung ohne Datenbankzugriff; Betraege in Integer-Cent.
  */
 import { z } from "zod";
@@ -38,7 +38,7 @@ export interface ParsedStatement {
 }
 
 export interface ParsedCamt {
-  format: "CAMT053" | "CAMT054";
+  format: "CAMT052" | "CAMT053" | "CAMT054";
   schemaVersion: string;
   statements: ParsedStatement[];
   entryCount: number;
@@ -187,7 +187,7 @@ const stmtContainer = (child: string) => z.object({ [child]: oneOrMany(stmtSchem
 
 // ── Hilfen ───────────────────────────────────────────────────────────────────
 
-const NS_RE = /^urn:iso:std:iso:20022:tech:xsd:camt\.(053|054)\.001\.(0[2-9]|1[0-3])$/;
+const NS_RE = /^urn:iso:std:iso:20022:tech:xsd:camt\.(052|053|054)\.001\.(0[2-9]|1[0-3])$/;
 
 function badDate(): never {
   throw new CamtFormatError("Ungueltiges Datum in der Datei.", "BAD_DATE");
@@ -386,7 +386,7 @@ function parseStatement(st: Stmt, counters: Counters): ParsedStatement {
   };
 }
 
-/** Liest CAMT.053/.054; ruft `assertSafeXml` selbst auf, bevor der Parser das XML sieht. */
+/** Liest CAMT.052/.053/.054; ruft `assertSafeXml` selbst auf, bevor der Parser das XML sieht. */
 export function parseCamt(xml: string): ParsedCamt {
   assertSafeXml(xml);
   const entryTags = xml.match(/<(?:[\w.-]+:)?Ntry[\s>/]/g);
@@ -406,13 +406,18 @@ export function parseCamt(xml: string): ParsedCamt {
       : [];
   if (nsValues.length === 0) throw new CamtFormatError("Die Datei ist kein CAMT-Kontoauszug.", "NOT_CAMT");
   const match = nsValues.map((v) => NS_RE.exec(v)).find((m): m is RegExpExecArray => m !== null);
-  if (!match) throw new CamtFormatError("Diese CAMT-Version wird nicht unterstuetzt (erlaubt: camt.053 und camt.054, Version 02 bis 13).", "UNSUPPORTED_VERSION");
-  const format = match[1] === "053" ? "CAMT053" : "CAMT054";
+  if (!match) throw new CamtFormatError("Diese CAMT-Version wird nicht unterstuetzt (erlaubt: camt.052, camt.053 und camt.054, Version 02 bis 13).", "UNSUPPORTED_VERSION");
+  const format = match[1] === "052" ? "CAMT052" : match[1] === "053" ? "CAMT053" : "CAMT054";
   const schemaVersion = `camt.${match[1]}.001.${match[2]}`;
 
   const doc = normalize(rootRaw, 0);
   const root = doc && typeof doc === "object" && !Array.isArray(doc) ? doc : {};
-  const [containerKey, childKey] = format === "CAMT053" ? ["BkToCstmrStmt", "Stmt"] : ["BkToCstmrDbtCdtNtfctn", "Ntfctn"];
+  const [containerKey, childKey] =
+    format === "CAMT052"
+      ? ["BkToCstmrAcctRpt", "Rpt"]
+      : format === "CAMT053"
+        ? ["BkToCstmrStmt", "Stmt"]
+        : ["BkToCstmrDbtCdtNtfctn", "Ntfctn"];
   const container = stmtContainer(childKey).safeParse(root[containerKey]);
   if (!container.success) throw new CamtFormatError("Die Datei hat nicht die erwartete CAMT-Struktur.", "MALFORMED");
   const stmts = container.data[childKey] ?? [];

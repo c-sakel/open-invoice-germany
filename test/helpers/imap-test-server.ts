@@ -3,23 +3,17 @@
  * Klartext mit STARTTLS und Klartext ohne STARTTLS. Das Zertifikat entsteht zur Laufzeit per openssl in einem
  * Temp-Verzeichnis und liegt danach nur im Speicher. Protokolliert alle empfangenen Kommandos.
  */
-import { execFileSync } from "node:child_process";
-import fs from "node:fs";
 import net from "node:net";
-import os from "node:os";
-import path from "node:path";
 import tls from "node:tls";
+import { createTestTlsMaterial, opensslAvailable, type TlsMaterial } from "./tls-material";
+
+export { createTestTlsMaterial, opensslAvailable, type TlsMaterial };
 
 export interface TestMail {
   raw: Uint8Array;
   flags?: string[];
   /** ISO-Datum, Standard 2026-11-10. */
   internalDate?: string;
-}
-
-export interface TlsMaterial {
-  cert: string;
-  key: string;
 }
 
 export interface ImapTestServerOptions {
@@ -44,37 +38,6 @@ export interface ImapTestServer {
   /** Gespeicherte Flags je UID. */
   seen: Set<number>;
   close(): Promise<void>;
-}
-
-/** Ist openssl vorhanden? */
-export function opensslAvailable(): boolean {
-  try {
-    execFileSync("openssl", ["version"], { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** Selbstsigniertes Zertifikat fuer einen DNS-Namen; Dateien nur kurz im Temp-Verzeichnis, ohne .pem-Namen. */
-export function createTestTlsMaterial(dnsName: string): TlsMaterial {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "imap-test-"));
-  try {
-    const certFile = path.join(dir, "server-cert.txt");
-    const keyFile = path.join(dir, "server-k8.txt");
-    execFileSync(
-      "openssl",
-      [
-        "req", "-x509", "-newkey", "rsa:2048", "-sha256", "-nodes",
-        "-keyout", keyFile, "-out", certFile, "-days", "2", "-subj", `/CN=${dnsName}`,
-        "-addext", `subjectAltName=DNS:${dnsName}`,
-      ],
-      { stdio: "ignore" },
-    );
-    return { cert: fs.readFileSync(certFile, "utf8"), key: fs.readFileSync(keyFile, "utf8") };
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
 }
 
 function expand(set: string, n: number): number[] {

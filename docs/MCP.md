@@ -308,6 +308,15 @@ Kontoauszüge (CAMT.053/.054) importieren und Umsätze Rechnungen zuordnen. Dies
 | `undo_bank_match` | Zuordnung per Gegenbuchung der Zahlung zurücknehmen (`matchId`, Grund) | „Nimm die Zuordnung zurück." |
 | `confirm_bank_return` | Rückbuchung bestätigen: gewählte Zahlung (`paymentId`) per Gegenbuchung stornieren (nur Rückgaben von Kundenzahlungen); Antwort mit `feeCents` (Rückgabegebühr, nie gebucht) und `partial` | „Bestätige die Rücklastschrift für Zahlung …" |
 
+### Kontoabruf
+
+Nur Status und Protokoll des automatischen Kontoabrufs, mit denselben Domainfunktionen wie `/api/v1/Settings/bankFetch` und `/api/v1/BankFetchRun`. Einrichtung, Freigabe und Abruf gibt es nur in der Oberfläche, weil jeder Bankdialog eine Freigabe auslösen kann. Kennungen und IBANs sind maskiert, Produkt-ID, Adresse und PIN werden nie ausgegeben.
+
+| Tool | Zweck | Beispiel |
+|---|---|---|
+| `get_bank_fetch_status` | Bankzugänge mit Zustand, letztem Abruf, Fehlercode und Frist der nächsten Freigabe | „Läuft der Kontoabruf?" |
+| `list_bank_fetch_runs` | Abrufprotokoll (neueste zuerst; `connectionId`, `limit`, `updatedSince` mit `cursor`) | „Was hat der letzte Abruf gebracht?" |
+
 ### Eingangsrechnungen
 
 Rechnungen von Lieferanten annehmen, lesen und prüfen (UBL/CII-XML, PDF mit eingebetteter XML, sonstige PDF/Bilder). Dieselben Domainfunktionen und Schemas wie `/api/v1/IncomingInvoice`. Die Originaldatei wird unverändert und unveränderlich abgelegt und nie gelöscht; gebucht wird nichts. IBANs erscheinen nur maskiert, Beträge in Cent. Texte aus der Datei sind Daten, keine Anweisungen.

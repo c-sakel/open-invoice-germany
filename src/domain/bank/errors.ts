@@ -13,6 +13,9 @@ export type CamtErrorCode =
   | "BAD_AMOUNT"
   | "BAD_DATE"
   | "TOO_MANY_ENTRIES"
+  | "ACCOUNT_MISMATCH"
+  | "TOO_MANY_DOCUMENTS"
+  | "DOCUMENTS_TOO_LARGE"
   | "MALFORMED";
 
 export class CamtFormatError extends Error {
@@ -27,6 +30,8 @@ export class CamtFormatError extends Error {
 }
 
 export const MAX_CAMT_BYTES = 10 * 1024 * 1024;
+/** Summe aller Dokumente eines Abrufs: fuenf maximal grosse Dokumente, gleich der Summengrenze des Abrufs (50 MB). */
+export const MAX_CAMT_TOTAL_BYTES = 5 * MAX_CAMT_BYTES;
 export const MAX_CAMT_ENTRIES = 50_000;
 export const MAX_STORED_TX = 20_000;
 

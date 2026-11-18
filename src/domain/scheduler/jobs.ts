@@ -16,6 +16,7 @@ import { runArchiveJob } from "./archive-job";
 import { processOnlinePaymentPolls } from "@/domain/online-payment/poll";
 import { processPaymentRuleRuns } from "@/domain/payment-rule/execute";
 import { runMailboxJob } from "@/domain/mailbox/job";
+import { runBankFetchJob } from "@/domain/bank-fetch/job";
 import type { SchedulerJob } from "./runner";
 
 export const jobs: Record<SchedulerJob, (now: Date) => Promise<Record<string, unknown>>> = {
@@ -41,6 +42,10 @@ export const jobs: Record<SchedulerJob, (now: Date) => Promise<Record<string, un
   },
   mailbox: async (now) => {
     const result = await runMailboxJob(now);
+    return { ...result };
+  },
+  "bank-fetch": async (now) => {
+    const result = await runBankFetchJob(now);
     return { ...result };
   },
   "online-payments": async (now) => {

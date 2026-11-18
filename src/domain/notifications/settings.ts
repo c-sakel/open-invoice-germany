@@ -32,6 +32,8 @@ export const NOTIFICATION_TYPES = {
   INCOMING_DUE: "Eingangsrechnung faellig",
   INBOUND_MAIL_NEW: "Neue Belege im Postfach",
   INBOUND_MAIL_ERROR: "Postfach-Abruf gestört",
+  BANK_FETCH_ACTION: "Kontoabruf braucht Ihre Freigabe",
+  BANK_FETCH_ERROR: "Kontoabruf gestört",
 } as const;
 
 export type NotificationType = keyof typeof NOTIFICATION_TYPES;

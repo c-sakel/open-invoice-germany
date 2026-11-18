@@ -25,6 +25,7 @@ import {
   skontoOnlyCount,
   type BankActionResult,
   type BankRowView,
+  originBadge,
 } from "./bank-view";
 
 export const BANK_TAB_LABELS = { OPEN: "Offen", PARTIAL: "Teilweise", MATCHED: "Zugeordnet", IGNORED: "Ignoriert", RETURN: "Rückgaben" } as const;
@@ -66,7 +67,10 @@ function BankRow({ row, exec }: { row: BankRowView; exec: Exec }) {
 
   return (
     <li className="grid gap-2 rounded-md border border-rule bg-surface p-3 text-sm md:grid-cols-[7rem_1fr_9rem_auto] md:items-start md:gap-4">
-      <div className="text-ink-soft">{fmtDay(row.bookingDate)}</div>
+      <div className="text-ink-soft">
+        {fmtDay(row.bookingDate)}
+        {originBadge(row.origin) ? <span className="mt-1 block w-fit rounded bg-well px-1.5 py-0.5 text-xs text-ink-muted">{originBadge(row.origin)}</span> : null}
+      </div>
       <div className="min-w-0 space-y-1">
         <p className="font-medium text-ink">
           {row.counterpartyName ?? "Unbekannt"}

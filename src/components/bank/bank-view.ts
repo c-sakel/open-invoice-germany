@@ -49,6 +49,8 @@ export interface BankRowView {
   returnSuggestions: ReturnSuggestion[];
   /** Auszahlung eines Zahlungsanbieters: keine Rechnungsvorschlaege. */
   payoutHint: string | null;
+  /** Herkunft des Imports: Datei-Upload oder Kontoabruf (nur gesetzt, wenn bekannt). */
+  origin?: "UPLOAD" | "FINTS";
 }
 
 export function toBankRowView(
@@ -170,4 +172,9 @@ export function describeReturnResult(r: { feeCents: number; partial: boolean }, 
   if (r.partial) out.push("Nur ein Teil der Zahlung wurde gegengebucht: Die Rückbuchung war kleiner als der Rest der Zahlung.");
   if (r.feeCents > 0) out.push(`Rückgabegebühr der Bank: ${formatter(r.feeCents, currency)} (wird nicht gebucht).`);
   return out;
+}
+
+/** Beschriftung der Herkunft eines Umsatzes; Datei-Uploads bleiben unbeschriftet. */
+export function originBadge(origin: BankRowView["origin"]): string | null {
+  return origin === "FINTS" ? "Kontoabruf" : null;
 }

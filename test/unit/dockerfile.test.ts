@@ -33,6 +33,8 @@ describe("Dockerfile", () => {
     "src/app/favicon.ico",
     "src/workers/incoming-worker.mjs",
     "src/workers/mail-worker.mjs",
+    "src/workers/fints-worker.mjs",
+    "node_modules/lib-fints/dist/index.js",
     "node_modules/postal-mime/dist/esm/postal-mime.js",
     "node_modules/imapflow/dist/esm/imap-flow.js",
     "node_modules/pino/package.json",
@@ -109,11 +111,20 @@ describe("Dockerfile", () => {
     expect(probe).toContain("mail-worker.mjs");
   });
 
+  it("docker.yml laedt lib-fints und den Bank-Worker im Image wie in der Anwendung", () => {
+    const wf = read(".github/workflows/docker.yml");
+    expect(wf).toMatch(/--user 1000:1000 --entrypoint node oig:ci --input-type=module - < scripts\/probe-fints-runtime\.mjs/);
+    const probe = read("scripts/probe-fints-runtime.mjs");
+    expect(probe).toContain('import("lib-fints")');
+    expect(probe).toContain("fints-worker.mjs");
+  });
+
   it("next.config.ts nimmt Worker-Skript und Pruefartefakte ins Tracing auf", () => {
     const cfg = read("next.config.ts");
     expect(cfg).toContain("outputFileTracingIncludes");
     expect(cfg).toContain("./src/workers/**/*");
     expect(cfg).toContain("./node_modules/postal-mime/**/*");
+    expect(cfg).toContain("./node_modules/lib-fints/**/*");
     expect(cfg).toContain("imapflow");
     expect(cfg).toContain("./assets/einvoice-validation/**/*");
   });

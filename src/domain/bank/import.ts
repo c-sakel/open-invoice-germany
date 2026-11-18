@@ -1,5 +1,5 @@
 /**
- * Kontoauszug-Import (CAMT.053/.054) mit Vorschau. Schutz vor Doppelimport ueber den Datei-Hash
+ * Kontoauszug-Import (CAMT.052/.053/.054) mit Vorschau. Schutz vor Doppelimport ueber den Datei-Hash
  * (je Organisation) und je Umsatz ueber den Fingerabdruck. Es wird nichts gebucht; Umsaetze landen
  * als OPEN (bzw. RETURN bei Rueckgaben) in der Warteschlange.
  */
@@ -12,9 +12,11 @@ import { rateLimit } from "@/lib/rate-limit";
 import { logActivity } from "@/domain/activity/log";
 import { sanitizeFileName } from "@/domain/import/types";
 import { decodeCamtBytes } from "./camt-xml";
-import { parseCamt, type ParsedTransaction } from "./camt-parse";
+import { parseCamt, type ParsedCamt, type ParsedTransaction } from "./camt-parse";
 import { transactionFingerprints } from "./fingerprint";
-import { CamtFormatError, MAX_STORED_TX } from "./errors";
+import { CamtFormatError, MAX_CAMT_TOTAL_BYTES, MAX_STORED_TX } from "./errors";
+
+export const MAX_IMPORT_DOCUMENTS = 400;
 
 export class BankImportDuplicateError extends Error {
   readonly status = 409;
@@ -106,6 +108,22 @@ async function knownIbans(db: Db, orgId: string): Promise<Set<string>> {
   return out;
 }
 
+export interface BankDocumentsImportOptions {
+  actor: string;
+  source: "FINTS";
+  now?: Date;
+  expectedIban: string;
+}
+
+interface ImportMeta {
+  origin: "UPLOAD" | "FINTS";
+  fileName?: string;
+  source: "UI" | "API" | "MCP" | "FINTS";
+  actor: string;
+  now?: Date;
+  dryRun?: boolean;
+}
+
 export async function importBankStatement(
   orgId: string,
   bytes: Uint8Array,
@@ -116,8 +134,104 @@ export async function importBankStatement(
   const xml = decodeCamtBytes(bytes);
   const fileSha256 = createHash("sha256").update(bytes).digest("hex");
   const parsed = parseCamt(xml);
+  return importParsed(orgId, [parsed], fileSha256, {
+    origin: "UPLOAD",
+    fileName: opts.fileName,
+    source: opts.source,
+    actor: opts.actor,
+    now: opts.now,
+    dryRun: opts.dryRun,
+  });
+}
 
-  // Fingerabdruecke je Konto ueber alle Meldungen der Datei laufend zaehlen.
+/**
+ * Mehrere abgerufene CAMT-Dokumente eines Kontos als EIN Import: Umsaetze in Dokumentreihenfolge
+ * zusammenfuehren, Fingerabdruecke einmal ueber die ganze Folge bilden.
+ */
+export async function importBankDocuments(
+  orgId: string,
+  docs: readonly Uint8Array[],
+  opts: BankDocumentsImportOptions,
+): Promise<BankImportResult> {
+  if (docs.length > MAX_IMPORT_DOCUMENTS) {
+    throw new CamtFormatError("Zu viele Dokumente in einem Abruf.", "TOO_MANY_DOCUMENTS");
+  }
+  let totalBytes = 0;
+  for (const d of docs) totalBytes += d.length;
+  if (totalBytes > MAX_CAMT_TOTAL_BYTES) {
+    throw new CamtFormatError("Die Dokumente eines Abrufs sind zusammen zu gross.", "DOCUMENTS_TOO_LARGE");
+  }
+  if (docs.length === 0) {
+    return {
+      status: "imported",
+      importId: null,
+      format: "",
+      schemaVersion: "",
+      accountIban: maskIban(opts.expectedIban),
+      entryCount: 0,
+      importedCount: 0,
+      duplicateCount: 0,
+      skippedCount: 0,
+      skippedReasons: {},
+      returnCount: 0,
+      warnings: ["NOTHING_NEW"],
+    };
+  }
+  const expected = normalizeIban(opts.expectedIban);
+  const parsedList: ParsedCamt[] = [];
+  const hashes: string[] = [];
+  for (const bytes of docs) {
+    const parsed = parseCamt(decodeCamtBytes(bytes));
+    for (const st of parsed.statements) {
+      if (normalizeIban(st.accountIban) !== expected) {
+        throw new CamtFormatError("Ein Dokument gehoert nicht zum abgerufenen Konto.", "ACCOUNT_MISMATCH");
+      }
+    }
+    parsedList.push(parsed);
+    hashes.push(createHash("sha256").update(bytes).digest("hex"));
+  }
+  const fileSha256 = createHash("sha256")
+    .update("fints\n" + hashes.map((h) => `${h}\n`).join(""))
+    .digest("hex");
+  let from: Date | null = null;
+  let to: Date | null = null;
+  for (const p of parsedList) {
+    for (const st of p.statements) {
+      if (st.periodFrom && (!from || st.periodFrom < from)) from = st.periodFrom;
+      if (st.periodTo && (!to || st.periodTo > to)) to = st.periodTo;
+    }
+  }
+  const day = (d: Date | null): string => (d ? d.toISOString().slice(0, 10) : "unbekannt");
+  return importParsed(orgId, parsedList, fileSha256, {
+    origin: "FINTS",
+    fileName: `kontoabruf-${maskIban(expected).replace(/\s+/g, "")}-${day(from)}-${day(to)}.xml`,
+    source: opts.source,
+    actor: opts.actor,
+    now: opts.now,
+  });
+}
+
+async function importParsed(
+  orgId: string,
+  parsedList: readonly ParsedCamt[],
+  fileSha256: string,
+  opts: ImportMeta,
+): Promise<BankImportResult> {
+  const firstDoc = parsedList[0]!;
+  const parsed = {
+    // Format und Schemaversion des Importprotokolls stammen vom ersten Dokument (gemischte 052/053 werden als erstes gefuehrt).
+    format: firstDoc.format,
+    schemaVersion: firstDoc.schemaVersion,
+    statements: parsedList.flatMap((p) => p.statements),
+    entryCount: parsedList.reduce((n, p) => n + p.entryCount, 0),
+    skippedCount: parsedList.reduce((n, p) => n + p.skippedCount, 0),
+    skippedReasons: parsedList.reduce<Record<string, number>>((acc, p) => {
+      for (const [k, v] of Object.entries(p.skippedReasons)) acc[k] = (acc[k] ?? 0) + v;
+      return acc;
+    }, {}),
+  };
+
+  // Fingerabdruecke je Konto ueber alle Meldungen laufend zaehlen.
   const byAccount = new Map<string, ParsedTransaction[]>();
   for (const st of parsed.statements) {
     const list = byAccount.get(st.accountIban) ?? [];
@@ -133,6 +247,14 @@ export async function importBankStatement(
   const accounts = [...byAccount.keys()];
   const firstIban = parsed.statements[0]?.accountIban ?? "";
   const first = parsed.statements[0];
+  let periodFrom = first?.periodFrom ?? null;
+  let periodTo = first?.periodTo ?? null;
+  if (opts.origin === "FINTS") {
+    for (const st of parsed.statements) {
+      if (st.periodFrom && (!periodFrom || st.periodFrom < periodFrom)) periodFrom = st.periodFrom;
+      if (st.periodTo && (!periodTo || st.periodTo > periodTo)) periodTo = st.periodTo;
+    }
+  }
 
   const buildResult = (
     status: "preview" | "imported",
@@ -208,8 +330,9 @@ export async function importBankStatement(
           accountIban: firstIban ? normalizeIban(firstIban) : null,
           statementId: first?.statementId ?? null,
           seqNo: first?.seqNo ?? null,
-          periodFrom: first?.periodFrom ?? null,
-          periodTo: first?.periodTo ?? null,
+          periodFrom: periodFrom ?? null,
+          periodTo: periodTo ?? null,
+          origin: opts.origin,
           entryCount: result.entryCount,
           importedCount: result.importedCount,
           duplicateCount,

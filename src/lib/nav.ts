@@ -56,6 +56,7 @@ export const SETTINGS_KEYS = [
   "webhooks",
   "pruefung",
   "datev",
+  "kontoabruf",
   "konto",
 ] as const;
 export type SettingsKey = (typeof SETTINGS_KEYS)[number];
@@ -135,6 +136,7 @@ export const SETTINGS_ITEMS: readonly SettingsNavItem[] = [
   { href: "/einstellungen/webhooks", label: "Webhooks", key: "webhooks" },
   { href: "/einstellungen/pruefung", label: "Prüfung", key: "pruefung" },
   { href: "/einstellungen/datev", label: "DATEV", key: "datev" },
+  { href: "/einstellungen/kontoabruf", label: "Kontoabruf", key: "kontoabruf" },
   // Task 9 (R12): einzige Einstellungsseite OHNE Organisationsbezug — das eigene
   // Anmeldekonto (Passwort). `SettingsTabs` rueckt sie deshalb optisch nach rechts ab.
   { href: "/einstellungen/konto", label: "Konto", key: "konto" },
@@ -149,7 +151,7 @@ export const SETTINGS_GROUPS: readonly { label: string; keys: readonly SettingsK
   { label: "Firma", keys: ["stammdaten", "marke", "briefpapier", "zahlungsmethoden", "online-zahlung"] },
   { label: "Belege", keys: ["belege", "nummernkreise", "kurse", "vorlagen", "textvorlagen", "mahnwesen", "kundenfelder", "tags"] },
   { label: "Kommunikation", keys: ["email", "post", "postfach", "kundenportal", "benachrichtigungen"] },
-  { label: "System", keys: ["automatisierung", "zahlungsregeln", "api", "webhooks", "pruefung", "datev", "konto"] },
+  { label: "System", keys: ["automatisierung", "zahlungsregeln", "api", "webhooks", "pruefung", "datev", "kontoabruf", "konto"] },
 ];
 
 function splitHref(href: string): { path: string; params: URLSearchParams } {

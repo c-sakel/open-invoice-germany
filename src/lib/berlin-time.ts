@@ -99,3 +99,17 @@ export function berlinCalendarDay(d: Date): Date {
   const { year, month, day } = berlinParts(d);
   return new Date(Date.UTC(year, month - 1, day));
 }
+
+/**
+ * Wandzeit `hour`:00 Uhr Berliner Zeit am Kalendertag (Ueberlauf wird normalisiert) als UTC-Instant. An Tagen der
+ * Zeitumstellung zaehlt die Wanduhr, nicht die verstrichene Zeit: eine nicht existierende Stunde (Umstellung auf
+ * Sommerzeit) wird zur ersten danach, eine doppelte (Umstellung auf Winterzeit) zur frueheren.
+ */
+export function berlinWallTime(year: number, month: number, day: number, hour: number): Date {
+  const wall = Date.UTC(year, month - 1, day, hour);
+  for (const offsetHours of [2, 1]) {
+    const t = wall - offsetHours * 3_600_000;
+    if (localMs(t) === wall) return new Date(t);
+  }
+  return new Date(wall - 3_600_000);
+}

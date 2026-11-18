@@ -702,7 +702,7 @@ curl -s -X POST https://rechnung.example.org/api/v1/Contact/import \
 
 ## Bankabgleich
 
-Kontoauszüge (CAMT.053/.054, XML, UTF-8) importieren und Umsätze Rechnungen zuordnen. Gebucht wird nur nach ausdrücklicher Bestätigung (kein automatisches Buchen; ein Überschuss wird nie als Zahlung gebucht). Zahlungen aus dem Abgleich tragen im `Payment`-Objekt `provider: "BANK"` (sonst `null`). IBANs erscheinen nur maskiert, Beträge in Cent.
+Kontoauszüge (CAMT.052/.053/.054, XML, UTF-8) importieren und Umsätze Rechnungen zuordnen. Gebucht wird nur nach ausdrücklicher Bestätigung (kein automatisches Buchen; ein Überschuss wird nie als Zahlung gebucht). Zahlungen aus dem Abgleich tragen im `Payment`-Objekt `provider: "BANK"` (sonst `null`). IBANs erscheinen nur maskiert, Beträge in Cent.
 
 | Endpunkt | Scope | Zweck |
 |---|---|---|
@@ -718,6 +718,15 @@ Kontoauszüge (CAMT.053/.054, XML, UTF-8) importieren und Umsätze Rechnungen zu
 | `POST /api/v1/BankTransaction/{id}/return` | `write` | Rückbuchung bestätigen (`paymentId`): Gegenbuchung der Zahlung |
 
 Lesen braucht `read`; alles, was importiert oder bucht, `write` — wie `POST /api/v1/Invoice/{id}/payment` und der CSV-Import. Die Oberfläche lädt über `POST /api/bank-statements` (Session, `multipart/form-data`, nur same-origin).
+
+### Kontoabruf (nur lesend)
+
+| Endpunkt | Scope | Zweck |
+|---|---|---|
+| `GET /api/v1/Settings/bankFetch` | `read` | Status: `productIdConfigured`, `autoHour`, Bankzugänge (`id`, `label`, `bankCode`, `state`, `pinMode`, `autoEnabled`, `userIdMasked`, `lastAttemptAt`, `lastSuccessAt`, `lastErrorCode`, `scaRenewBy`) mit Konten (`ibanMasked`, `currency`, `selected`, `camtSupported`, `lastFetchedTo`) |
+| `GET /api/v1/BankFetchRun` | `read` | Abrufprotokoll je Konto (neueste zuerst; Filter `connectionId`, `limit` höchstens 100; mit `updatedSince` und `cursor` Abgleich in aufsteigender Reihenfolge, bezogen auf den Anlagezeitpunkt) |
+
+Produkt-ID, Adresse, PIN und Kennung werden nie ausgegeben (die Kennung nur maskiert). Einrichtung, Freigabe und Abruf lassen sich nicht per REST anstoßen: Jeder Bankdialog kann eine Freigabe auf dem Telefon auslösen. Importierte Umsätze erscheinen in `BankStatement` und `BankTransaction` mit dem Feld `origin` (`UPLOAD` oder `FINTS`).
 
 ## Eingangsrechnungen
 

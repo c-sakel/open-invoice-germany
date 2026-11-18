@@ -51,6 +51,7 @@ import { registerCsvTools } from "./tools/csv";
 import { registerBankTools } from "./tools/bank";
 import { registerIncomingTools } from "./tools/incoming";
 import { registerMailboxTools } from "./tools/mailbox";
+import { registerBankFetchTools } from "./tools/bank-fetch";
 import { registerPaymentRuleTools } from "./tools/payment-rules";
 import { registerDatevTools } from "./tools/datev";
 
@@ -95,6 +96,7 @@ registerCsvTools(server, mcpContext);
 registerBankTools(server, mcpContext);
 registerIncomingTools(server, mcpContext);
 registerMailboxTools(server, mcpContext);
+registerBankFetchTools(server, mcpContext);
 registerPaymentRuleTools(server, mcpContext);
 registerDatevTools(server, mcpContext);
 

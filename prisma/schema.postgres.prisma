@@ -94,6 +94,10 @@ model Organization {
   inboundMailboxSettings  InboundMailboxSettings?
   inboundMailMessages     InboundMailMessage[]
   inboundMailAttachments  InboundMailAttachment[]
+  bankFetchSettings       BankFetchSettings?
+  bankConnections         BankConnection[]
+  bankConnectionAccounts  BankConnectionAccount[]
+  bankFetchRuns           BankFetchRun[]
   datevExportItems        DatevExportItem[]
   sepaCreditorId          String? // Phase 18e: SEPA-Glaeubiger-ID (BT-90), normalisiert
 }
@@ -1789,7 +1793,9 @@ model BankStatementImport {
   warningsJson   String? // z. B. UNKNOWN_ACCOUNT, MULTIPLE_ACCOUNTS
   createdBy      String
   createdAt      DateTime          @default(now())
+  origin         String            @default("UPLOAD") // UPLOAD | FINTS
   transactions   BankTransaction[]
+  fetchRuns      BankFetchRun[]
 
   @@unique([orgId, fileSha256])
   @@index([orgId, createdAt])
@@ -2276,4 +2282,105 @@ model InboundMailAttachment {
   @@unique([messageId, partIndex])
   @@index([orgId, status, createdAt])
   @@index([orgId, sha256])
+}
+
+/// Kontoabruf je Firma (Standard: Zeile fehlt = aus). Die Produkt-ID wird je Installation in der Oberflaeche hinterlegt.
+model BankFetchSettings {
+  id             String       @id @default(cuid())
+  orgId          String       @unique
+  org            Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  productId      String?
+  autoHour       Int          @default(6)
+  firstFetchDays Int          @default(30)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+}
+
+/// Bankzugang (FinTS PIN/TAN, nur lesend). Wird nie geloescht, nur archiviert; PIN nur verschluesselt in pinEnc.
+model BankConnection {
+  id                     String                  @id @default(cuid())
+  orgId                  String
+  org                    Organization            @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  label                  String
+  bankCode               String
+  url                    String
+  userId                 String
+  customerId             String?
+  pinMode                String                  @default("PER_FETCH") // PER_FETCH | STORED
+  pinEnc                 String?
+  rejectedPinHmac        String?
+  tanMethodId            Int?
+  tanMediaName           String?
+  bankingInfoJson        String?
+  autoEnabled            Boolean                 @default(false)
+  state                  String                  @default("NEW") // NEW | READY | SCA_REQUIRED | PIN_REJECTED | AUTH_UNCLEAR | ERROR | ARCHIVED
+  authFailures           Int                     @default(0)
+  transientFailuresToday Int                     @default(0)
+  lastAttemptAt          DateTime?
+  lastSuccessAt          DateTime?
+  lastScaAt              DateTime?
+  lastErrorCode          String? // nur Code
+  nextAutoAt             DateTime?
+  leaseUntil             DateTime?
+  credentialsChangedAt   DateTime?
+  archivedAt             DateTime?
+  accounts               BankConnectionAccount[]
+  runs                   BankFetchRun[]
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+
+  @@index([orgId, state])
+}
+
+/// Konto eines Bankzugangs (IBAN unveraenderlich, nur die Auswahl und der Abrufstand sind fortschreibbar).
+model BankConnectionAccount {
+  id             String         @id @default(cuid())
+  orgId          String
+  org            Organization   @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  connectionId   String
+  connection     BankConnection @relation(fields: [connectionId], references: [id], onDelete: Restrict)
+  iban           String
+  accountNumber  String?
+  subAccount     String?
+  currency       String?
+  productName    String?
+  camtSupported  Boolean        @default(false)
+  selected       Boolean        @default(false)
+  lastFetchedTo  DateTime?
+  runs           BankFetchRun[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@unique([connectionId, iban])
+  @@index([orgId, selected])
+}
+
+/// Abrufprotokoll je Konto (append-only, nach Abschluss geschrieben; keine Bankdaten, keine Banktexte).
+model BankFetchRun {
+  id             String                 @id @default(cuid())
+  orgId          String
+  org            Organization           @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  connectionId   String
+  connection     BankConnection         @relation(fields: [connectionId], references: [id], onDelete: Restrict)
+  accountId      String?
+  account        BankConnectionAccount? @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  trigger        String // AUTO | MANUAL
+  startedAt      DateTime
+  finishedAt     DateTime
+  result         String
+  bankCodes      String? // nur 4-stellige Rueckmeldecodes
+  fromDate       DateTime?
+  toDate         DateTime?
+  documents      Int                    @default(0)
+  bytes          Int                    @default(0)
+  importId       String?
+  import         BankStatementImport?   @relation(fields: [importId], references: [id], onDelete: Restrict)
+  importedCount  Int                    @default(0)
+  duplicateCount Int                    @default(0)
+  scaUsed        Boolean                @default(false)
+  actor          String
+  createdAt      DateTime               @default(now())
+
+  @@index([orgId, startedAt])
+  @@index([connectionId, startedAt])
 }

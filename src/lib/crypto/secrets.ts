@@ -51,6 +51,15 @@ export const NOTE_HMAC_PURPOSE = "oig-note-hmac-v1";
 /** Eigener HKDF-Info-String fuer das Passwort des Rechnungs-Postfachs. */
 export const INBOUND_MAIL_PASSWORD_PURPOSE = "oig-imap-v1";
 
+/** Eigener HKDF-Info-String fuer die gespeicherte Online-Banking-PIN (nur bei ausdruecklich gewaehlter Speicherung). */
+export const FINTS_PIN_PURPOSE = "oig-fints-pin-v1";
+
+/** Eigener HKDF-Info-String fuer die Pruefsumme einer abgelehnten PIN (verhindert erneutes Senden derselben PIN). */
+export const FINTS_PIN_REJECT_PURPOSE = "oig-fints-pin-reject-v1";
+
+/** Eigener HKDF-Info-String fuer den zwischengespeicherten Bankdatensatz (BPD/UPD mit Kontoinhaber und IBAN). */
+export const FINTS_BANKINFO_PURPOSE = "oig-fints-bankinfo-v1";
+
 function key(purpose: string): Buffer {
   const secret = process.env.AUTH_SECRET;
   if (!secret || secret.length < 16) throw new SecretsUnavailableError();
