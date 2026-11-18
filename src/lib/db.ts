@@ -575,6 +575,39 @@ function assertBankTransactionUpdateAllowed(data: unknown): void {
 }
 
 /**
+ * Kontoabruf: Das Abrufprotokoll ist append-only. Bankzugaenge werden nie geloescht (nur archiviert);
+ * Konten eines Bankzugangs sind nicht loeschbar, ihre IBAN und Zuordnung bleiben unveraenderlich.
+ */
+export class BankFetchRunImmutableError extends Error {
+  constructor() {
+    super("Abrufprotokolle sind unveraenderlich (append-only).");
+    this.name = "BankFetchRunImmutableError";
+  }
+}
+
+export class BankConnectionDeleteError extends Error {
+  constructor() {
+    super("Bankzugaenge duerfen nicht geloescht werden (nur archivieren).");
+    this.name = "BankConnectionDeleteError";
+  }
+}
+
+export class BankConnectionAccountImmutableError extends Error {
+  constructor(detail: string) {
+    super(`Konto eines Bankzugangs ist nicht aenderbar: ${detail}`);
+    this.name = "BankConnectionAccountImmutableError";
+  }
+}
+
+const BANK_CONNECTION_ACCOUNT_LOCKED_KEYS = new Set(["iban", "connectionId", "orgId"]);
+
+function assertBankConnectionAccountUpdateAllowed(data: unknown): void {
+  const keys = Object.keys((data ?? {}) as Record<string, unknown>);
+  const badKeys = keys.filter((k) => BANK_CONNECTION_ACCOUNT_LOCKED_KEYS.has(k));
+  if (badKeys.length > 0) throw new BankConnectionAccountImmutableError(badKeys.join(", "));
+}
+
+/**
  * Eingangsrechnung: Kopffelder, Hashes, Pfade und Annahmezeitpunkt sind nach dem Anlegen gesperrt;
  * aenderbar sind nur der Bearbeitungsstand (Status, Pruef-/Freigabe-/Ablehnungs-/Bezahlt-Merker),
  * die Lieferantenzuordnung, die interne Notiz, von Hand erfasste Kopfdaten und die wirksame
@@ -1194,6 +1227,57 @@ export const prisma = base.$extends({
       },
       async deleteMany() {
         throw new BankTransactionImmutableError("deleteMany");
+      },
+    },
+    bankFetchRun: {
+      async update() {
+        throw new BankFetchRunImmutableError();
+      },
+      async updateMany() {
+        throw new BankFetchRunImmutableError();
+      },
+      async updateManyAndReturn() {
+        throw new BankFetchRunImmutableError();
+      },
+      async upsert() {
+        throw new BankFetchRunImmutableError();
+      },
+      async delete() {
+        throw new BankFetchRunImmutableError();
+      },
+      async deleteMany() {
+        throw new BankFetchRunImmutableError();
+      },
+    },
+    bankConnection: {
+      async delete() {
+        throw new BankConnectionDeleteError();
+      },
+      async deleteMany() {
+        throw new BankConnectionDeleteError();
+      },
+    },
+    bankConnectionAccount: {
+      async update({ args, query }) {
+        assertBankConnectionAccountUpdateAllowed(args.data);
+        return query(args);
+      },
+      async updateMany({ args, query }) {
+        assertBankConnectionAccountUpdateAllowed(args.data);
+        return query(args);
+      },
+      async updateManyAndReturn({ args, query }) {
+        assertBankConnectionAccountUpdateAllowed(args.data);
+        return query(args);
+      },
+      async upsert() {
+        throw new BankConnectionAccountImmutableError("upsert");
+      },
+      async delete() {
+        throw new BankConnectionAccountImmutableError("delete");
+      },
+      async deleteMany() {
+        throw new BankConnectionAccountImmutableError("deleteMany");
       },
     },
     incomingInvoice: {
