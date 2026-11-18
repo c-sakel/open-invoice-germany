@@ -20,6 +20,10 @@ import {
 import { loadBankFetchSettings, saveBankFetchSettings } from "@/domain/bank-fetch/settings";
 import { connectBankConnection, continueSetup } from "@/domain/bank-fetch/setup";
 import { sweepSessions } from "@/domain/bank-fetch/sessions";
+import { acquireLease, releaseLease } from "@/domain/bank-fetch/lease";
+import { authOutcomeData } from "@/domain/bank-fetch/connections";
+import { toPublicChallenge } from "@/domain/bank-fetch/setup";
+import { pinHmac } from "@/domain/bank-fetch/connections";
 import { decoupledChallenge, done, FakeFintsClient, syncResult } from "../helpers/fake-fints-client";
 import { FINTS_BLZ, FINTS_PRODUCT_ID, FINTS_URL, FINTS_USER } from "../helpers/fints-fixtures";
 
@@ -209,9 +213,11 @@ describe("PIN-Modi", () => {
     await expect(setStoredPin(orgId, v.id, { pin: PIN, confirm: true }, "tester", NOW)).rejects.toMatchObject({ code: "PIN_PREVIOUSLY_REJECTED" });
     expect(fake.opens.length).toBe(opens);
 
-    // andere PIN ist erlaubt
+    // auch eine andere PIN braucht die Bestaetigung (zustandsbasiert)
+    await expect(connectBankConnection(orgId, v.id, { pin: PIN2 }, actor, at(1500))).rejects.toMatchObject({ code: "PIN_PREVIOUSLY_REJECTED" });
+    expect(fake.opens.length).toBe(opens);
     fake.syncAnswers.push(done(syncResult()));
-    await expect(connectBankConnection(orgId, v.id, { pin: PIN2 }, actor, at(2000))).resolves.toMatchObject({ state: "DONE" });
+    await expect(connectBankConnection(orgId, v.id, { pin: PIN2, unlockConfirmed: true }, actor, at(2000))).resolves.toMatchObject({ state: "DONE" });
     expect((await rowOf(v.id)).state).toBe("NEW");
 
     // mit Bestaetigung ist dieselbe PIN wieder moeglich
@@ -229,6 +235,108 @@ describe("PIN-Modi", () => {
     await expect(connectBankConnection(orgId, v.id, {}, actor, NOW)).rejects.toMatchObject({ code: "AUTH_UNCLEAR" });
     expect(await rowOf(v.id)).toMatchObject({ state: "AUTH_UNCLEAR", autoEnabled: false });
     await expect(connectBankConnection(orgId, v.id, {}, actor, at(5000))).rejects.toMatchObject({ code: "PIN_PREVIOUSLY_REJECTED" });
+  });
+
+  it("nach Schluesselwechsel bleibt die Sperre bestehen (Zustand, nicht HMAC)", async () => {
+    const orgId = await mkOrg("Schluessel");
+    const v = await mkConn(orgId);
+    fake.syncAnswers.push(new FintsError("PIN_REJECTED", ["9931"]));
+    await expect(connectBankConnection(orgId, v.id, { pin: PIN }, actor, NOW)).rejects.toMatchObject({ code: "PIN_REJECTED" });
+    const secret = process.env.AUTH_SECRET;
+    process.env.AUTH_SECRET = "anderer-schluessel-test-0123456789";
+    try {
+      expect(pinHmac(PIN)).not.toBe((await rowOf(v.id)).rejectedPinHmac);
+      const opens = fake.opens.length;
+      await expect(connectBankConnection(orgId, v.id, { pin: PIN }, actor, at(1000))).rejects.toMatchObject({ code: "PIN_PREVIOUSLY_REJECTED" });
+      await expect(setStoredPin(orgId, v.id, { pin: PIN, confirm: true }, "tester", at(1000))).rejects.toMatchObject({ code: "PIN_PREVIOUSLY_REJECTED" });
+      expect(fake.opens.length).toBe(opens);
+    } finally {
+      process.env.AUTH_SECRET = secret;
+    }
+  });
+
+  it("von der Bank gesperrter Zugang: nur die ausdrueckliche Entsperr-Bestaetigung, nie eine neue PIN allein", async () => {
+    const orgId = await mkOrg("Gesperrt");
+    const v = await mkConn(orgId);
+    fake.syncAnswers.push(new FintsError("ACCESS_LOCKED", ["9931"]));
+    await expect(connectBankConnection(orgId, v.id, { pin: PIN }, actor, NOW)).rejects.toMatchObject({ code: "ACCESS_LOCKED" });
+    const opens = fake.opens.length;
+    await expect(setStoredPin(orgId, v.id, { pin: PIN2, confirm: true }, "tester", at(1000))).rejects.toMatchObject({ code: "ACCESS_LOCKED" });
+    await expect(setStoredPin(orgId, v.id, { pin: PIN2, confirm: true, unlockConfirmed: true }, "tester", at(1000))).rejects.toMatchObject({ code: "ACCESS_LOCKED" });
+    await expect(connectBankConnection(orgId, v.id, { pin: PIN2, unlockConfirmed: true }, actor, at(1000))).rejects.toMatchObject({ code: "ACCESS_LOCKED" });
+    expect(fake.opens.length).toBe(opens);
+    expect((await rowOf(v.id)).state).toBe("PIN_REJECTED");
+    // eine voruebergehende Stoerung hebt die Sperre nicht auf
+    fake.syncAnswers.push(new FintsError("TIMEOUT"));
+    await expect(connectBankConnection(orgId, v.id, { pin: PIN2, bankUnlockConfirmed: true }, actor, at(2000))).rejects.toMatchObject({ code: "TIMEOUT" });
+    await expect(connectBankConnection(orgId, v.id, { pin: PIN2, unlockConfirmed: true }, actor, at(3000))).rejects.toMatchObject({ code: "ACCESS_LOCKED" });
+    await setStoredPin(orgId, v.id, { pin: PIN2, confirm: true, bankUnlockConfirmed: true }, "tester", at(4000));
+    expect(await rowOf(v.id)).toMatchObject({ state: "NEW", lastErrorCode: null, rejectedPinHmac: null });
+  });
+
+  it("zwei parallele Aufrufe: der zweite sieht die Ablehnung des ersten nie als veraltet", async () => {
+    const orgId = await mkOrg("Parallel");
+    const v = await mkConn(orgId);
+    fake.syncAnswers.push(new FintsError("PIN_REJECTED", ["9931"]));
+    const results = await Promise.allSettled([
+      connectBankConnection(orgId, v.id, { pin: PIN }, actor, NOW),
+      connectBankConnection(orgId, v.id, { pin: PIN }, actor, NOW),
+    ]);
+    expect(fake.opens).toHaveLength(1);
+    const codes = results.map((r) => (r.status === "rejected" ? (r.reason as { code?: string }).code : "ok")).sort();
+    // je nach Ablauf: Sperre gehalten (BUSY) oder Ablehnung des ersten bereits sichtbar; nie ein zweiter Bankkontakt
+    expect(codes).toContain("PIN_REJECTED");
+    expect(["BUSY", "PIN_PREVIOUSLY_REJECTED"]).toContain(codes.find((c) => c !== "PIN_REJECTED"));
+    await expect(connectBankConnection(orgId, v.id, { pin: PIN }, actor, at(1000))).rejects.toMatchObject({ code: "PIN_PREVIOUSLY_REJECTED" });
+    expect(fake.opens).toHaveLength(1);
+  });
+
+  it("die Sperre gibt nur ihr Besitzer frei", async () => {
+    const orgId = await mkOrg("Besitzer");
+    const v = await mkConn(orgId);
+    const first = await acquireLease(orgId, v.id, NOW);
+    expect(first).not.toBeNull();
+    expect(await acquireLease(orgId, v.id, at(1000))).toBeNull();
+    // abgelaufen: ein anderer erwirbt, die alte Kennung gibt nichts mehr frei
+    const second = await acquireLease(orgId, v.id, at(11 * 60_000));
+    expect(second).not.toBeNull();
+    await releaseLease(orgId, v.id, first as Date);
+    expect((await rowOf(v.id)).leaseUntil).toEqual(second);
+    await releaseLease(orgId, v.id, second as Date);
+    expect((await rowOf(v.id)).leaseUntil).toBeNull();
+  });
+
+  it("Archivieren bei laufendem Vorgang: BUSY; danach schreibt kein Ergebnis auf den archivierten Zugang", async () => {
+    const orgId = await mkOrg("ArchivBusy");
+    const v = await mkConn(orgId);
+    fake.syncAnswers.push({ kind: "sca", challenge: { decoupled: false, text: "TAN eingeben", image: null, waitFirstMs: 0, waitNextMs: 0, maxPolls: 0 } });
+    const res = await connectBankConnection(orgId, v.id, { pin: PIN, tanMethodId: 920 }, actor, NOW);
+    if (res.state !== "SCA") throw new Error("SCA erwartet");
+    await expect(archiveBankConnection(orgId, v.id, "tester", at(1000))).rejects.toMatchObject({ code: "BUSY" });
+    expect((await rowOf(v.id)).archivedAt).toBeNull();
+    fake.sessions[0]?.continueAnswersPush(done(syncResult(), true));
+    await continueSetup(orgId, res.token, { tan: TAN }, actor, at(10));
+    await archiveBankConnection(orgId, v.id, "tester", at(2000));
+    // ein spaet eintreffendes Ergebnis veraendert den archivierten Zugang nicht
+    const before = await rowOf(v.id);
+    const { applyAuthOutcome } = await import("@/domain/bank-fetch/connections");
+    await applyAuthOutcome(orgId, v.id, { ok: false, error: new FintsError("PIN_REJECTED"), pinHmac: pinHmac(PIN) }, "t", at(3000));
+    await applyAuthOutcome(orgId, v.id, { ok: true, scaUsed: true }, "t", at(3000));
+    expect(await rowOf(v.id)).toEqual(before);
+  });
+
+  it("Erfolg der Einrichtung bleibt NEW, ein manueller Abruf macht den Zugang bereit", () => {
+    expect(authOutcomeData("NEW", { ok: true, scaUsed: false }, NOW)).toMatchObject({ state: "NEW" });
+    expect(authOutcomeData("NEW", { ok: true, scaUsed: false, manualFetch: true }, NOW)).toMatchObject({ state: "READY" });
+  });
+
+  it("TAN-Bild nur als PNG, JPEG oder GIF; sonst verworfen mit Hinweis", () => {
+    const base = { decoupled: false, text: "x", waitFirstMs: 0, waitNextMs: 0, maxPolls: 0 };
+    const bytes = new Uint8Array([1, 2, 3]);
+    expect(toPublicChallenge({ ...base, image: { mime: "image/png", bytes } }, 0)).toMatchObject({ imageOmitted: false });
+    expect(toPublicChallenge({ ...base, image: { mime: "image/svg+xml" as "image/png", bytes } }, 0)).toMatchObject({ imageDataUrl: null, imageOmitted: true });
+    expect(toPublicChallenge({ ...base, image: { mime: "text/html" as "image/png", bytes } }, 0).imageDataUrl).toBeNull();
+    expect(toPublicChallenge({ ...base, image: null }, 0)).toMatchObject({ imageOmitted: false });
   });
 
   it("voruebergehende Fehler lassen den Zugang unveraendert und merken nur den Code", async () => {

@@ -68,6 +68,8 @@ export const storedPinInputSchema = z
     confirm: z.literal(true),
     /** Ausdrueckliche Bestaetigung, eine zuvor abgelehnte PIN erneut zu verwenden. */
     unlockConfirmed: z.boolean().optional(),
+    /** Ausdrueckliche Bestaetigung, dass der von der Bank gesperrte Zugang dort entsperrt wurde. */
+    bankUnlockConfirmed: z.boolean().optional(),
   })
   .strict();
 
@@ -81,6 +83,7 @@ export const connectInputSchema = z
     tanMethodId: z.number().int().min(100).max(999).optional(),
     tanMediaName: z.string().min(1).max(64).refine(printable, "Ungueltige Zeichen").optional(),
     unlockConfirmed: z.boolean().optional(),
+    bankUnlockConfirmed: z.boolean().optional(),
   })
   .strict();
 

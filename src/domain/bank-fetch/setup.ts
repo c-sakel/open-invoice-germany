@@ -9,7 +9,7 @@ import { FintsError, type FintsSession, type FintsSyncResult, type FintsCamtResu
 import { NotFoundError } from "@/domain/errors";
 import { connectInputSchema, continueInputSchema, TAN_RE } from "@/schemas/bank-fetch";
 import { getFintsClient, FINTS_PRODUCT_VERSION } from "./client-factory";
-import { applyAuthOutcome, authOutcomeData, loadConnectionRow, pinHmac, toConnectionView, type BankConnectionView } from "./connections";
+import { applyAuthOutcome, assertPinMaySend, authOutcomeData, loadConnectionRow, pinHmac, toConnectionView, type BankConnectionView } from "./connections";
 import { BankFetchError } from "./errors";
 import { acquireLease, releaseLease } from "./lease";
 import { FINTS_MAX_CHALLENGE_CHARS, FINTS_MAX_STATUS_POLLS, FINTS_MAX_TAN_IMAGE_BYTES, FINTS_MIN_WAIT_MS, FINTS_SCA_TIMEOUT_MS } from "./limits";
@@ -20,6 +20,8 @@ export interface PublicChallenge {
   decoupled: boolean;
   text: string;
   imageDataUrl: string | null;
+  /** Die Bank hat ein Bild geliefert, das nicht angezeigt werden darf (zu gross oder unzulaessiger Typ). */
+  imageOmitted: boolean;
   /** So lange (ms) soll die Oberflaeche mit der naechsten Abfrage warten. */
   waitMs: number;
 }
@@ -36,13 +38,16 @@ export interface SetupActor {
   name: string;
 }
 
-/** Fuer die Oberflaeche: nur Text und Bild, keine Kennungen der Bank. */
+const IMAGE_MIMES: ReadonlySet<string> = new Set(["image/png", "image/jpeg", "image/gif"]);
+
+/** Fuer die Oberflaeche: nur Text und Bild (nur Rastergrafiken, begrenzte Groesse), keine Kennungen der Bank. */
 export function toPublicChallenge(c: ScaChallenge, waitMs: number): PublicChallenge {
-  const img = c.image && c.image.bytes.byteLength <= FINTS_MAX_TAN_IMAGE_BYTES ? c.image : null;
+  const img = c.image && c.image.bytes.byteLength <= FINTS_MAX_TAN_IMAGE_BYTES && IMAGE_MIMES.has(c.image.mime.toLowerCase()) ? c.image : null;
   return {
     decoupled: c.decoupled,
     text: c.text.slice(0, FINTS_MAX_CHALLENGE_CHARS),
-    imageDataUrl: img ? `data:${img.mime};base64,${Buffer.from(img.bytes).toString("base64")}` : null,
+    imageDataUrl: img ? `data:${img.mime.toLowerCase()};base64,${Buffer.from(img.bytes).toString("base64")}` : null,
+    imageOmitted: c.image != null && img === null,
     waitMs: c.decoupled ? Math.max(waitMs, 0) : 0,
   };
 }
@@ -69,10 +74,10 @@ async function persistSync(orgId: string, id: string, session: FintsSession, res
   const info = session.bankingInfo();
   const bankingInfoJson = info === null ? undefined : encryptSecret(info, FINTS_BANKINFO_PURPOSE);
   await dbInternal.$transaction(async (tx) => {
-    const cur = await tx.bankConnection.findFirst({ where: { id, orgId }, select: { state: true } });
+    const cur = await tx.bankConnection.findFirst({ where: { id, orgId, archivedAt: null }, select: { state: true } });
     if (!cur) return;
     const data = final ? authOutcomeData(cur.state, { ok: true, scaUsed }, now) : { lastAttemptAt: now, ...(scaUsed ? { lastScaAt: now } : {}) };
-    await tx.bankConnection.updateMany({ where: { id, orgId }, data: { ...data, ...(bankingInfoJson !== undefined ? { bankingInfoJson } : {}) } });
+    await tx.bankConnection.updateMany({ where: { id, orgId, archivedAt: null }, data: { ...data, ...(bankingInfoJson !== undefined ? { bankingInfoJson } : {}) } });
     if (!final) return;
     const reported = new Set<string>();
     for (const a of result.accounts) {
@@ -118,32 +123,37 @@ export async function connectBankConnection(orgId: string, id: string, raw: unkn
   const input = connectInputSchema.parse(raw);
   await sweepSessions(now.getTime());
   const productId = await requireProductId(orgId);
-  const conn = await loadConnectionRow(orgId, id);
-  let pin: string;
-  if (input.pin !== undefined) {
-    pin = input.pin;
-  } else if (conn.pinEnc != null) {
-    try {
-      pin = decryptSecret(conn.pinEnc, FINTS_PIN_PURPOSE);
-    } catch {
-      throw new BankFetchError("SECRET_UNREADABLE");
-    }
-  } else {
-    throw new BankFetchError("PIN_REQUIRED");
-  }
-  const hmac = pinHmac(pin);
-  if (conn.rejectedPinHmac === hmac && input.unlockConfirmed !== true) throw new BankFetchError("PIN_PREVIOUSLY_REJECTED");
-  if (!(await acquireLease(orgId, id, now))) throw new BankFetchError("BUSY");
-
+  await loadConnectionRow(orgId, id);
+  // Zustand, abgelehnte PIN und Zugangsdaten erst unter der Sperre lesen: ein paralleler Aufruf sieht sonst
+  // eine Ablehnung des ersten nicht.
+  const lease = await acquireLease(orgId, id, now);
+  if (lease === null) throw new BankFetchError("BUSY");
   let session: FintsSession | null = null;
   let parked = false;
+  let pinHmacValue: string | null = null;
   try {
+    const conn = await loadConnectionRow(orgId, id);
+    let pin: string;
+    if (input.pin !== undefined) {
+      pin = input.pin;
+    } else if (conn.pinEnc != null) {
+      try {
+        pin = decryptSecret(conn.pinEnc, FINTS_PIN_PURPOSE);
+      } catch {
+        throw new BankFetchError("SECRET_UNREADABLE");
+      }
+    } else {
+      throw new BankFetchError("PIN_REQUIRED");
+    }
+    const hmac = pinHmac(pin);
+    pinHmacValue = hmac;
+    assertPinMaySend(conn, hmac, input);
     const tanMethodId = input.tanMethodId ?? conn.tanMethodId;
     const tanMediaName = input.tanMethodId !== undefined ? (input.tanMediaName ?? null) : conn.tanMediaName;
     if (input.tanMethodId !== undefined) {
       await dbInternal.bankConnection.updateMany({ where: { id, orgId }, data: { tanMethodId, tanMediaName } });
     }
-    if (input.unlockConfirmed === true && conn.rejectedPinHmac === hmac) {
+    if ((input.unlockConfirmed === true || input.bankUnlockConfirmed === true) && conn.rejectedPinHmac != null) {
       await dbInternal.bankConnection.updateMany({ where: { id, orgId }, data: { rejectedPinHmac: null } });
     }
     session = getFintsClient().open(
@@ -167,6 +177,7 @@ export async function connectBankConnection(orgId: string, id: string, raw: unkn
         orgId,
         userId: actor.userId,
         connectionId: id,
+        lease,
         purpose: "SETUP",
         session,
         challenge: step.challenge,
@@ -182,12 +193,12 @@ export async function connectBankConnection(orgId: string, id: string, raw: unkn
   } catch (e) {
     if (e instanceof BankFetchError || e instanceof NotFoundError) throw e;
     const fe = asFintsError(e);
-    await applyAuthOutcome(orgId, id, { ok: false, error: fe, pinHmac: hmac }, actor.name, now);
+    await applyAuthOutcome(orgId, id, { ok: false, error: fe, pinHmac: pinHmacValue }, actor.name, now);
     throw fe;
   } finally {
     if (!parked) {
       if (session) await session.close();
-      await releaseLease(orgId, id);
+      await releaseLease(orgId, id, lease);
     }
   }
 }
@@ -199,7 +210,7 @@ async function bankingInfoOf(orgId: string, id: string): Promise<string | null> 
 
 async function endLive(live: LiveSession): Promise<void> {
   await live.session.close();
-  await releaseLease(live.orgId, live.connectionId);
+  await releaseLease(live.orgId, live.connectionId, live.lease);
 }
 
 /** Setzt eine offene Freigabe fort: Abfrage der App-Freigabe (ohne Bankkontakt vor der Wartezeit) oder Eingabe der TAN. */

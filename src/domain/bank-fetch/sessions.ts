@@ -5,7 +5,7 @@
 import { randomBytes } from "node:crypto";
 import type { FintsSession, ScaChallenge } from "@/lib/fints/client";
 import { BankFetchError } from "./errors";
-import { releaseLease } from "./lease";
+import { releaseLease, type Lease } from "./lease";
 import { FINTS_SCA_TIMEOUT_MS } from "./limits";
 
 /** Was die Sitzung gerade erwartet (nur Verweise, keine Zugangsdaten; der PIN-HMAC dient der Banksperre-Pruefung). */
@@ -22,6 +22,8 @@ export interface LiveSession {
   orgId: string;
   userId: string;
   connectionId: string;
+  /** Besitzerkennung der Sperre des Bankzugangs; nur damit wird sie freigegeben. */
+  lease: Lease;
   purpose: "SETUP" | "FETCH";
   session: FintsSession;
   challenge: ScaChallenge;
@@ -57,7 +59,7 @@ async function closeAndRelease(s: LiveSession): Promise<void> {
   } catch {
     // close wirft nie, doppelt abgesichert
   }
-  await releaseLease(s.orgId, s.connectionId);
+  await releaseLease(s.orgId, s.connectionId, s.lease);
 }
 
 /** Entnimmt die Sitzung (nur gleiche Firma und gleicher Benutzer, nicht abgelaufen); sonst null. */

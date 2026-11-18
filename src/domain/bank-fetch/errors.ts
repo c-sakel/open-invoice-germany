@@ -2,6 +2,7 @@ export type BankFetchErrorCode =
   | "PRODUCT_ID_MISSING"
   | "PIN_REQUIRED"
   | "PIN_PREVIOUSLY_REJECTED"
+  | "ACCESS_LOCKED"
   | "SECRET_UNREADABLE"
   | "TEST_REQUIRED"
   | "PIN_NOT_STORED"
@@ -17,6 +18,7 @@ const MESSAGES: Record<BankFetchErrorCode, string> = {
   PRODUCT_ID_MISSING: "Die Produkt-ID fuer den Kontoabruf ist noch nicht hinterlegt.",
   PIN_REQUIRED: "Bitte die PIN eingeben.",
   PIN_PREVIOUSLY_REJECTED: "Diese PIN wurde von der Bank abgelehnt. Bitte zuerst die Zugangsdaten bei der Bank pruefen und die Wiederholung ausdruecklich bestaetigen.",
+  ACCESS_LOCKED: "Die Bank hat den Zugang gesperrt. Bitte den Zugang zuerst bei der Bank entsperren und das ausdruecklich bestaetigen.",
   SECRET_UNREADABLE: "Die gespeicherte PIN ist nicht lesbar. Bitte neu eingeben.",
   TEST_REQUIRED: "Der automatische Abruf kann erst nach einem erfolgreichen manuellen Abruf mit den aktuellen Zugangsdaten eingeschaltet werden.",
   PIN_NOT_STORED: "Fuer den automatischen Abruf muss die PIN gespeichert sein.",

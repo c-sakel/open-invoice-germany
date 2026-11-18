@@ -1,6 +1,8 @@
 /**
  * Grenzen fuer den Kontoabruf. Eine Stelle, damit Transport, Adapter, Abruf und Oberflaeche dieselben Werte nutzen.
  */
+import { MAX_CAMT_BYTES, MAX_CAMT_TOTAL_BYTES } from "@/domain/bank/errors";
+
 const KB = 1024;
 const MB = 1024 * KB;
 
@@ -24,15 +26,18 @@ export const FINTS_SCA_TIMEOUT_MS = 5 * 60_000;
 /** Probe-Dekodierung im Worker. */
 export const FINTS_PROBE_TIMEOUT_MS = 2_000;
 export const FINTS_PROBE_HEAP_MB = 256;
+/** Obergrenzen der Probe: auch eine grosse, rechtmaessige Antwort darf sie nie ueberschreiten. */
+export const FINTS_PROBE_MAX_TIMEOUT_MS = 20_000;
+export const FINTS_PROBE_MAX_HEAP_MB = 768;
 
 /** Statusabfragen einer Freigabe in der App: hoechstens min(Bank, 60), Wartezeit mindestens 2 s. */
 export const FINTS_MAX_STATUS_POLLS = 60;
 export const FINTS_MIN_WAIT_MS = 2_000;
 
-/** CAMT-Dokumente: je Konto-Abruf, je Dokument, Summe. */
+/** CAMT-Dokumente: je Konto-Abruf, je Dokument, Summe (Dokument und Summe gelten auch fuer den Import, eine Definition). */
 export const FINTS_MAX_DOCUMENTS = 400;
-export const FINTS_MAX_DOCUMENT_BYTES = 10 * MB;
-export const FINTS_MAX_DOCUMENT_TOTAL_BYTES = 50 * MB;
+export const FINTS_MAX_DOCUMENT_BYTES = MAX_CAMT_BYTES;
+export const FINTS_MAX_DOCUMENT_TOTAL_BYTES = MAX_CAMT_TOTAL_BYTES;
 
 /** BPD/UPD (serialisiert), Challenge-Text, TAN-Bild. */
 export const FINTS_MAX_BANKING_INFO_BYTES = 256 * KB;

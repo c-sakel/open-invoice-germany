@@ -180,6 +180,26 @@ const CREDENTIAL_RESET = {
   lastErrorCode: null,
 } as const;
 
+/**
+ * Banksperre-Schutz, zustandsbasiert: Solange der Zugang abgelehnt, unklar oder von der Bank gesperrt ist (oder eine
+ * abgelehnte PIN vermerkt ist), wird keine PIN gesendet, bis der Nutzer es ausdruecklich bestaetigt. Der HMAC der
+ * abgelehnten PIN ist nur ein Zusatz: Er haengt am Schluessel und ist nach einem Schluesselwechsel nicht mehr
+ * pruefbar, der Zustand sperrt trotzdem. Eine Sperre durch die Bank hebt nur die Bestaetigung "bei der Bank
+ * entsperrt" auf, nie eine neue PIN allein.
+ */
+export function assertPinMaySend(
+  conn: { state: string; lastErrorCode: string | null; rejectedPinHmac: string | null },
+  hmac: string,
+  confirm: { unlockConfirmed?: boolean | undefined; bankUnlockConfirmed?: boolean | undefined },
+): void {
+  const locked = conn.state === "PIN_REJECTED" || conn.state === "AUTH_UNCLEAR";
+  if (locked && conn.lastErrorCode === "ACCESS_LOCKED") {
+    if (confirm.bankUnlockConfirmed !== true) throw new BankFetchError("ACCESS_LOCKED");
+    return;
+  }
+  if (confirm.unlockConfirmed !== true && (locked || conn.rejectedPinHmac === hmac)) throw new BankFetchError("PIN_PREVIOUSLY_REJECTED");
+}
+
 function assertNotBusy(row: ConnectionRow, now: Date): void {
   if (row.leaseUntil != null && row.leaseUntil.getTime() > now.getTime()) throw new BankFetchError("BUSY");
 }
@@ -221,15 +241,18 @@ export async function updateBankConnection(orgId: string, id: string, raw: unkno
 }
 
 export async function archiveBankConnection(orgId: string, id: string, actor: string, now: Date = new Date()): Promise<void> {
-  await loadConnectionRow(orgId, id);
-  await dropConnectionSessions(orgId, id);
+  const existing = await loadConnectionRow(orgId, id);
+  assertNotBusy(existing, now);
   await dbInternal.$transaction(async (tx) => {
-    await tx.bankConnection.updateMany({
-      where: { id, orgId },
+    // Die Sperre wird in derselben Anweisung geprueft: ein parallel gestarteter Vorgang macht das Archivieren zu BUSY.
+    const res = await tx.bankConnection.updateMany({
+      where: { id, orgId, archivedAt: null, OR: [{ leaseUntil: null }, { leaseUntil: { lt: now } }] },
       data: { ...CREDENTIAL_RESET, state: "ARCHIVED", archivedAt: now, leaseUntil: null },
     });
+    if (res.count !== 1) throw new BankFetchError("BUSY");
     await tx.bankConnectionAccount.updateMany({ where: { connectionId: id, orgId }, data: { selected: false } });
   });
+  await dropConnectionSessions(orgId, id);
   await logActivity(dbInternal, { orgId, entityType: "BANK_CONNECTION", entityId: id, type: "BANK_CONNECTION_ARCHIVED", actor, at: now, data: {} });
 }
 
@@ -237,19 +260,18 @@ export async function setStoredPin(orgId: string, id: string, raw: unknown, acto
   const input = storedPinInputSchema.parse(raw);
   const existing = await loadConnectionRow(orgId, id);
   assertNotBusy(existing, now);
-  const hmac = pinHmac(input.pin);
-  if (existing.rejectedPinHmac === hmac && input.unlockConfirmed !== true) throw new BankFetchError("PIN_PREVIOUSLY_REJECTED");
+  assertPinMaySend(existing, pinHmac(input.pin), input);
   const pinEnc = encryptSecret(input.pin, FINTS_PIN_PURPOSE);
   const reset = existing.state === "PIN_REJECTED" || existing.state === "AUTH_UNCLEAR";
   await dbInternal.bankConnection.updateMany({
-    where: { id, orgId },
+    where: { id, orgId, archivedAt: null },
     data: {
       pinEnc,
       pinMode: "STORED",
       autoEnabled: false,
       nextAutoAt: null,
       credentialsChangedAt: now,
-      ...(input.unlockConfirmed === true ? { rejectedPinHmac: null } : {}),
+      ...(input.unlockConfirmed === true || input.bankUnlockConfirmed === true ? { rejectedPinHmac: null } : {}),
       ...(reset ? { state: "NEW", lastErrorCode: null } : {}),
     },
   });
@@ -306,7 +328,11 @@ export async function selectAccounts(orgId: string, id: string, raw: unknown, ac
   return getBankConnection(orgId, id);
 }
 
-export type AuthOutcome = { ok: true; scaUsed: boolean } | { ok: false; error: FintsError; pinHmac: string | null };
+/**
+ * `manualFetch`: der Erfolg stammt aus einem manuellen Abruf der Umsaetze. Erst der macht den Zugang bereit (READY) und
+ * damit den automatischen Abruf einschaltbar; ein Erfolg der Einrichtung bleibt NEW.
+ */
+export type AuthOutcome = { ok: true; scaUsed: boolean; manualFetch?: boolean } | { ok: false; error: FintsError; pinHmac: string | null };
 
 const TRANSIENT_CODES = new Set(["TIMEOUT", "CONNECT_FAILED", "DNS_FAILED", "TLS_FAILED", "HTTP_STATUS"]);
 
@@ -318,7 +344,7 @@ const TRANSIENT_CODES = new Set(["TIMEOUT", "CONNECT_FAILED", "DNS_FAILED", "TLS
 export function authOutcomeData(state: string, outcome: AuthOutcome, now: Date): Prisma.BankConnectionUpdateManyMutationInput {
   if (outcome.ok) {
     return {
-      state: state === "READY" || state === "SCA_REQUIRED" ? "READY" : "NEW",
+      state: state === "READY" || state === "SCA_REQUIRED" || outcome.manualFetch === true ? "READY" : "NEW",
       lastAttemptAt: now,
       lastSuccessAt: now,
       authFailures: 0,
@@ -338,17 +364,19 @@ export function authOutcomeData(state: string, outcome: AuthOutcome, now: Date):
       ...(outcome.pinHmac != null ? { rejectedPinHmac: outcome.pinHmac } : {}),
     };
   }
+  // In einem gesperrten Zustand bleibt der Fehlercode erhalten (er unterscheidet die Sperre der Bank).
+  const locked = state === "PIN_REJECTED" || state === "AUTH_UNCLEAR";
   return {
-    lastErrorCode: code,
+    ...(locked ? {} : { lastErrorCode: code }),
     lastAttemptAt: now,
     ...(TRANSIENT_CODES.has(code) ? { transientFailuresToday: { increment: 1 } } : {}),
   };
 }
 
 export async function applyAuthOutcome(orgId: string, id: string, outcome: AuthOutcome, actor: string, now: Date = new Date()): Promise<void> {
-  const row = await dbInternal.bankConnection.findFirst({ where: { id, orgId }, select: { state: true } });
+  const row = await dbInternal.bankConnection.findFirst({ where: { id, orgId, archivedAt: null }, select: { state: true } });
   if (!row) return;
-  await dbInternal.bankConnection.updateMany({ where: { id, orgId }, data: authOutcomeData(row.state, outcome, now) });
+  await dbInternal.bankConnection.updateMany({ where: { id, orgId, archivedAt: null }, data: authOutcomeData(row.state, outcome, now) });
   if (!outcome.ok && (outcome.error.code === "PIN_REJECTED" || outcome.error.code === "ACCESS_LOCKED" || outcome.error.code === "AUTH_UNCLEAR")) {
     await logActivity(dbInternal, { orgId, entityType: "BANK_CONNECTION", entityId: id, type: "BANK_FETCH_PIN_REJECTED", actor, at: now, data: { code: outcome.error.code } });
   }

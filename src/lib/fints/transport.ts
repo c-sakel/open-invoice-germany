@@ -17,6 +17,8 @@ import {
   FINTS_MAX_RESPONSE_BYTES,
   FINTS_MAX_SEGMENTS,
   FINTS_PROBE_HEAP_MB,
+  FINTS_PROBE_MAX_HEAP_MB,
+  FINTS_PROBE_MAX_TIMEOUT_MS,
   FINTS_PROBE_TIMEOUT_MS,
   FINTS_REQUEST_TIMEOUT_MS,
 } from "@/domain/bank-fetch/limits";
@@ -84,10 +86,6 @@ function freshState(): DialogState {
   return { messages: 0, bytes: 0, dialogId: "0", lastMsgNr: 0, initAccepted: false, open: false, ended: false, lastCodes: [], scaSeen: false };
 }
 
-/** Obergrenzen der Probe: auch eine grosse, rechtmaessige Antwort darf sie nie ueberschreiten. */
-const PROBE_MAX_TIMEOUT_MS = 20_000;
-const PROBE_MAX_HEAP_MB = 768;
-
 /**
  * Zeit- und Speichergrenze der Probe-Dekodierung, linear mit der Antwortgroesse: Grundwert fuer kleine Antworten,
  * bis zur Groessengrenze der Antwort wachsend, aber mit fester Obergrenze (eine Endlosschleife scheitert weiter).
@@ -95,8 +93,8 @@ const PROBE_MAX_HEAP_MB = 768;
 export function probeLimits(bytes: number): { timeoutMs: number; maxHeapMb: number } {
   const share = Math.min(1, Math.max(0, bytes / FINTS_MAX_RESPONSE_BYTES));
   return {
-    timeoutMs: Math.round(FINTS_PROBE_TIMEOUT_MS + share * (PROBE_MAX_TIMEOUT_MS - FINTS_PROBE_TIMEOUT_MS)),
-    maxHeapMb: Math.round(FINTS_PROBE_HEAP_MB + share * (PROBE_MAX_HEAP_MB - FINTS_PROBE_HEAP_MB)),
+    timeoutMs: Math.round(FINTS_PROBE_TIMEOUT_MS + share * (FINTS_PROBE_MAX_TIMEOUT_MS - FINTS_PROBE_TIMEOUT_MS)),
+    maxHeapMb: Math.round(FINTS_PROBE_HEAP_MB + share * (FINTS_PROBE_MAX_HEAP_MB - FINTS_PROBE_HEAP_MB)),
   };
 }
 
