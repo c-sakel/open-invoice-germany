@@ -702,7 +702,7 @@ curl -s -X POST https://rechnung.example.org/api/v1/Contact/import \
 
 ## Bankabgleich
 
-Kontoauszüge (CAMT.053/.054, XML, UTF-8) importieren und Umsätze Rechnungen zuordnen. Gebucht wird nur nach ausdrücklicher Bestätigung (kein automatisches Buchen; ein Überschuss wird nie als Zahlung gebucht). Zahlungen aus dem Abgleich tragen im `Payment`-Objekt `provider: "BANK"` (sonst `null`). IBANs erscheinen nur maskiert, Beträge in Cent.
+Kontoauszüge (CAMT.052/.053/.054, XML, UTF-8) importieren und Umsätze Rechnungen zuordnen. Gebucht wird nur nach ausdrücklicher Bestätigung (kein automatisches Buchen; ein Überschuss wird nie als Zahlung gebucht). Zahlungen aus dem Abgleich tragen im `Payment`-Objekt `provider: "BANK"` (sonst `null`). IBANs erscheinen nur maskiert, Beträge in Cent.
 
 | Endpunkt | Scope | Zweck |
 |---|---|---|

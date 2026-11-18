@@ -271,7 +271,7 @@ Datumsangaben zu Altbelegen beziehen sich auf den Programmstand; maßgeblich ist
 - **Noch nicht vorhanden:** Sub-Cent-Preise für Produkte und Lieferscheine (bräuchte eine Migration), ein Nachtrags-Pfad im Abo, Staffelpreise.
 
 ## Bankabgleich
-- **Nur CAMT.053 und CAMT.054** (XML, UTF-8, Version 02 bis 13). Kein MT940 (SWIFT-MT wird im Zahlungsverkehr abgelöst, die Banken liefern CAMT), kein CSV-Kontoauszug, kein ZIP (Archive vorher entpacken) und keine Bankanbindung per API. Eine Datei als camt.052 lässt sich ebenfalls importieren; der Abruf per FinTS (unten) liefert camt.052.
+- **Nur CAMT.052, CAMT.053 und CAMT.054** (XML, UTF-8, Version 02 bis 13). Kein MT940 (SWIFT-MT wird im Zahlungsverkehr abgelöst, die Banken liefern CAMT), kein CSV-Kontoauszug, kein ZIP (Archive vorher entpacken) und keine Bankanbindung per API. Der Abruf per FinTS (unten) liefert camt.052.
 - **Keine automatische Buchung.** Jede Zuordnung wird von Hand oder per Sammelbestätigung eindeutiger Vorschläge bestätigt (höchstens 200 Umsätze je Aufruf). Ein Überschuss über den offenen Betrag wird nie als Zahlung gebucht.
 - **Skonto nur einzeln.** Vorschläge mit Skonto-Abzug erscheinen in der Sammelbestätigung nicht; sie werden einzeln bestätigt.
 - **Nur Zahlungseingänge und Rückbuchungen.** Belastungen werden nicht importiert; es gibt keine Kontoführung, keinen Saldo und keine Ausgangszahlungen. Die Datei selbst wird nicht aufbewahrt.
