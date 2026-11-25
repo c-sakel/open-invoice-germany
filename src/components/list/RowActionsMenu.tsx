@@ -99,7 +99,12 @@ export function RowActionsMenu({
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  // Menue-Inhalt (Dialoge, Zahlungsformular) erst beim ersten Oeffnen rendern und danach
+  // eingehaengt lassen (offene Dialoge/Eingaben bleiben beim Schliessen des Menues erhalten).
+  // Ohne das liefert jede Zeile (je 2x: Tabelle + Karte) ~4 KB geschlossenes Markup mit aus.
+  const [menuLoaded, setMenuLoaded] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
+  const [paymentLoaded, setPaymentLoaded] = useState(false);
   const cancelDialogRef = useRef<ConfirmDialogHandle>(null);
   // Ruling (a), Phase 8b Fix-Runde 1: REMINDER legt zunaechst eine Mahnung an (wie
   // DUNNING), oeffnet danach aber den Versand-Dialog DAFUER (docType DUNNING) statt nur
@@ -200,17 +205,23 @@ export function RowActionsMenu({
         </a>
       )}
       {has("PAYMENT") && payment && (
-        <button type="button" onClick={() => setPaymentOpen(true)} className={directBtnCls}>
+        <button type="button" onClick={() => { setPaymentLoaded(true); setPaymentOpen(true); }} className={directBtnCls}>
           Zahlung
         </button>
       )}
-      <details className="relative inline-block text-left" open={detailsOpen} onToggle={(e) => setDetailsOpen(e.currentTarget.open)}>
+      <details className="relative inline-block text-left" open={detailsOpen} onToggle={(e) => {
+          const isOpen = e.currentTarget.open;
+          setDetailsOpen(isOpen);
+          if (isOpen) setMenuLoaded(true);
+        }}
+      >
         <summary
           className="flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-md text-ink-muted hover:bg-well hover:text-ink-soft [&::-webkit-details-marker]:hidden"
           aria-label="Aktionen"
         >
           ⋯
         </summary>
+        {menuLoaded && (
         <div className="absolute right-0 z-20 mt-1 w-64 space-y-0.5 rounded-md border border-rule bg-sheet p-1.5 shadow-lg">
           {has("OPEN") && (
             <Link href={openHref} className={linkCls} onClick={closeMenu}>
@@ -333,8 +344,9 @@ export function RowActionsMenu({
           )}
           {error && <p className="px-3 py-1 text-xs text-stamp">{error}</p>}
         </div>
+        )}
       </details>
-      {has("PAYMENT") && payment && (
+      {has("PAYMENT") && payment && paymentLoaded && (
         <RowPaymentDialog open={paymentOpen} onClose={() => setPaymentOpen(false)} title="Zahlung erfassen">
           <PaymentForm invoiceId={id} openCents={payment.openCents} methods={payment.methods} defaultMethod={payment.defaultMethod} />
         </RowPaymentDialog>

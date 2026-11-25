@@ -9,6 +9,10 @@ export interface DataColumn<T> {
   /** Rolle in der mobilen Kartenansicht: Titelzeile, Betrag rechts, Meta-Zeile oder ausgeblendet. */
   mobile: "title" | "amount" | "meta" | "hidden";
   cell: (row: T) => ReactNode;
+  /** Eigene Darstellung in der Kartenansicht. Ohne Angabe gilt `cell` auch dort. Tabelle und
+   *  Kartenliste werden beide ausgeliefert (CSS blendet eine aus); abweichende Varianten je
+   *  Breite gehoeren hierher statt als versteckte Doppelung in `cell` (halbiert das Markup). */
+  mobileCell?: (row: T) => ReactNode;
   /** Kopfzelle nur fuer Screenreader sichtbar (z. B. Auswahlspalte). */
   headerSrOnly?: boolean;
 }
@@ -71,7 +75,7 @@ export function DataTable<T>({ rows, columns, rowKey, rowHref, empty, caption }:
       </table>
       <ul className="divide-y divide-rule sm:hidden" aria-label={caption}>
         {rows.map((row) => {
-          const titleContent = titles.map((c) => <span key={c.key}>{c.cell(row)}</span>);
+          const titleContent = titles.map((c) => <span key={c.key}>{(c.mobileCell ?? c.cell)(row)}</span>);
           return (
             <li key={rowKey(row)} className="py-3">
               <div className="flex items-baseline justify-between gap-3">
@@ -81,7 +85,7 @@ export function DataTable<T>({ rows, columns, rowKey, rowHref, empty, caption }:
                 {amounts.length > 0 && (
                   <div className="tabular whitespace-nowrap text-right font-medium text-ink">
                     {amounts.map((c) => (
-                      <span key={c.key}>{c.cell(row)}</span>
+                      <span key={c.key}>{(c.mobileCell ?? c.cell)(row)}</span>
                     ))}
                   </div>
                 )}
@@ -89,7 +93,7 @@ export function DataTable<T>({ rows, columns, rowKey, rowHref, empty, caption }:
               {metas.length > 0 && (
                 <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-ink-muted">
                   {metas.map((c) => (
-                    <span key={c.key}>{c.cell(row)}</span>
+                    <span key={c.key}>{(c.mobileCell ?? c.cell)(row)}</span>
                   ))}
                 </div>
               )}
