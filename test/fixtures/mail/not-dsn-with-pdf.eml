@@ -1,0 +1,21 @@
+From: Lieferant <rechnung@lieferant.example.org>
+To: rechnungen@example.org
+Subject: Rechnung 2026-002
+Date: Tue, 10 Nov 2026 10:00:00 +0000
+Message-ID: <plain-1@lieferant.example.org>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="BND-PDF"
+
+--BND-PDF
+Content-Type: text/plain; charset=utf-8
+
+Anbei die Rechnung. Action: failed Status: 5.1.1
+
+--BND-PDF
+Content-Type: application/pdf; name="rechnung.pdf"
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="rechnung.pdf"
+
+JVBERi0xLjQKJSBUZXN0CjEgMCBvYmo8PD4+ZW5kb2JqCnRyYWlsZXI8PD4+CiUlRU9GCg==
+
+--BND-PDF--

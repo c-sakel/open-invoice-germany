@@ -69,6 +69,7 @@ export async function loadCustomerForEditor(orgId: string, id: string): Promise<
       name: true,
       customerNumber: true,
       email: true,
+      invoiceEmail: true,
       defaultPaymentMethodId: true,
       defaultDiscountPermille: true,
       defaultCurrency: true,

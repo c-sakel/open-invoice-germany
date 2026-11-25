@@ -18,6 +18,7 @@ import { isOssBuyer } from "@/domain/reporting/oss-calc";
 import { checkOssNotifications } from "@/domain/reporting/oss-notify";
 import { checkKuNotifications } from "@/domain/reporting/ku-notify";
 import { createNotification } from "@/domain/notifications/create";
+import { berlinDateKey } from "@/lib/berlin-time";
 import { isMandatoryNotificationType, loadNotificationSettings, type NotificationType } from "@/domain/notifications/settings";
 
 async function safeNotify(orgId: string, type: NotificationType, fn: () => Promise<unknown>): Promise<void> {
@@ -34,12 +35,9 @@ async function safeNotify(orgId: string, type: NotificationType, fn: () => Promi
 }
 
 /**
- * E-Mail-Versand als unzustellbar markiert (EmailLog.status = BOUNCED). Fix-Welle (S4):
- * `markEmailBounced` (email-log.ts) — der einzige Erzeuger dieses Status — hat aktuell
- * KEINEN Aufrufer (keine Route/kein MCP-Tool empfaengt Bounce-Webhooks); dieser Hook
- * bleibt bewusst bestehen (fuer den Tag, an dem ein Bounce-Empfang angebunden wird), ist
- * aber ueber die UI als "noch nicht aktiv" gekennzeichnet (siehe
- * NotificationSettingsForm) und in LIMITATIONEN.md korrigiert.
+ * E-Mail-Versand als unzustellbar markiert (EmailLog.status = BOUNCED). Erzeuger ist
+ * `markEmailBounced` (email-log.ts), aufgerufen von `applyBounce` (domain/email/bounce.ts), wenn ein
+ * Zustellbericht (RFC 3464) im abgerufenen Postfach ankommt (domain/mailbox/fetch.ts).
  */
 export async function onEmailBounced(orgId: string, input: { logId: string; docType: string; docId: string; to?: string }): Promise<void> {
   await safeNotify(orgId, "EMAIL_BOUNCED", () =>
@@ -69,6 +67,44 @@ export async function onRecurringFailed(orgId: string, input: { recurringId: str
       at: input.at,
     }),
   );
+}
+
+/**
+ * Abo-Rechnung wurde nicht (oder unklar) automatisch versendet (auto-send.ts). Pflicht-Alarm: umgeht den
+ * Einstellungsfilter. Text nur aus festen Bausteinen und der Belegnummer, nie mit Servertext.
+ */
+export async function notifyRecurringNotSentWithinTx(
+  tx: Prisma.TransactionClient,
+  orgId: string,
+  input: { invoiceId: string; number: string | null; status: "NO_ADDRESS" | "UNCLEAR" | "GAVE_UP" | "BOUNCED"; cycle: number; at: Date },
+): Promise<void> {
+  const what = input.number ? `Rechnung ${input.number}` : "Rechnung";
+  const body =
+    input.status === "NO_ADDRESS"
+      ? `${what}: Der Kunde hat keine E-Mail-Adresse. Der Versand wird bis zu 7 Tage lang erneut geprüft.`
+      : input.status === "UNCLEAR"
+        ? `${what}: Ob die E-Mail angekommen ist, ist unklar. Es wird nicht automatisch erneut gesendet. Bitte prüfen und bei Bedarf manuell senden.`
+        : input.status === "BOUNCED"
+          ? `${what}: Die E-Mail ist laut Zustellbericht nicht angekommen (unzustellbar). Bitte die Adresse prüfen und manuell senden.`
+          : `${what}: Der automatische Versand wurde aufgegeben. Bitte manuell senden.`;
+  // Schluessel je Neustart-Zyklus: nach `retryAutoSend` meldet ein erneutes UNCLEAR/GAVE_UP wieder.
+  const dedupeKey = `RECURRING_NOT_SENT:${input.invoiceId}:${input.status}:${input.cycle}`;
+  const existing = await tx.notification.findFirst({ where: { orgId, dedupeKey }, select: { id: true } });
+  if (existing) return;
+  await tx.notification.create({
+    data: {
+      orgId,
+      type: "RECURRING_NOT_SENT",
+      title: "Abo-Rechnung nicht versendet",
+      body,
+      link: `/rechnungen/${input.invoiceId}`,
+      entityType: "INVOICE",
+      entityId: input.invoiceId,
+      createdAt: input.at,
+      dedupeKey,
+    },
+    select: { id: true },
+  });
 }
 
 /** Sammelrechnung nicht moeglich: die Abos der Gruppe wurden einzeln abgerechnet. */
@@ -285,4 +321,49 @@ export async function notifyOnlinePaymentWithinTx(tx: Prisma.TransactionClient, 
     },
     select: { id: true },
   });
+}
+
+/**
+ * Hintergrundaufgabe zweimal hintereinander fehlgeschlagen (scheduler/runner.ts). Pflicht-Alarm fuer JEDE
+ * Organisation (der Lauf ist instanzweit), eine Meldung je Aufgabe und Berliner Tag. Nur feste Bausteine,
+ * nie Servertext.
+ */
+export async function onSchedulerFailed(job: string, runId: string, at: Date): Promise<void> {
+  try {
+    const orgs = await dbInternal.organization.findMany({ select: { id: true } });
+    for (const org of orgs) {
+      await safeNotify(org.id, "SCHEDULER_FAILED", () =>
+        createNotification({
+          orgId: org.id,
+          type: "SCHEDULER_FAILED",
+          title: `Hintergrundaufgabe "${job}" fehlgeschlagen`,
+          body: "Die Aufgabe ist zweimal hintereinander fehlgeschlagen. Details unter Einstellungen, Automatisierung.",
+          link: "/einstellungen/automatisierung",
+          entityType: "SCHEDULER_RUN",
+          entityId: runId,
+          dedupeKey: `SCHEDULER_FAILED:${job}:${berlinDateKey(at)}`,
+          at,
+        }),
+      );
+    }
+  } catch (e) {
+    console.error("notifications hook: SCHEDULER_FAILED fehlgeschlagen", e);
+  }
+}
+
+/** Webhook-Zustellung endgueltig gescheitert (DEAD). Eine Meldung je Endpunkt und Berliner Tag. */
+export async function onWebhookDead(orgId: string, input: { endpointId: string; deliveryId: string; event: string; at: Date }): Promise<void> {
+  await safeNotify(orgId, "WEBHOOK_DEAD", () =>
+    createNotification({
+      orgId,
+      type: "WEBHOOK_DEAD",
+      title: "Webhook endgültig nicht zugestellt",
+      body: `Ereignis ${input.event} konnte nicht zugestellt werden. Das Zustellprotokoll zeigt den Grund.`,
+      link: "/einstellungen/webhooks",
+      entityType: "WEBHOOK_DELIVERY",
+      entityId: input.deliveryId,
+      dedupeKey: `WEBHOOK_DEAD:${input.endpointId}:${berlinDateKey(input.at)}`,
+      at: input.at,
+    }),
+  );
 }

@@ -40,6 +40,7 @@ import { loadInvoicePayLink } from "@/domain/online-payment/views";
 import { loadOnlinePaymentSettings } from "@/domain/online-payment/settings";
 import { finalizeWarningMessage, parseWarningCodes } from "@/domain/invoice/finalize-warnings";
 import { normalizeVatId } from "@/lib/vat-id";
+import { autoSendLabel, canRetryAutoSend, loadAutoSendView } from "@/domain/recurring/auto-send-view";
 import { collectiveBlockRanges } from "@/domain/recurring/collective";
 import { CollectiveOriginCard } from "./_parts/CollectiveOriginCard";
 
@@ -159,6 +160,7 @@ export default async function InvoiceDetail({
   const [allTags, docTags] = await Promise.all([listTags(org.id), tagsForDocuments(org.id, "INVOICE", [invoice.id])]);
   const invoiceTags = docTags.get(invoice.id) ?? [];
   const paymentRuleRuns = await listInvoicePaymentRuleRuns(org.id, invoice.id);
+  const autoSendView = await loadAutoSendView(org.id, invoice.id);
 
   // S6 (Fix-Welle 1, Spec C "Detail-Layout"): "versendet am + Kanal" in der Details-Karte —
   // aus dem juengsten EmailLog-Eintrag, kein neues Feld auf Invoice. "Kanal" ist bislang
@@ -320,6 +322,7 @@ export default async function InvoiceDetail({
             tagOptions={allTags}
             archive={archive}
             paymentRuleRuns={paymentRuleRuns}
+            autoSend={autoSendView ? { status: autoSendView.status, text: autoSendLabel(autoSendView), canRetry: canRetryAutoSend(autoSendView.status) } : null}
           />
           <AttachmentPanel
             docType="INVOICE"

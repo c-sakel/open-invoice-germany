@@ -64,6 +64,7 @@ export function NewCustomerDialog({ onCreated }: { onCreated: (c: InlineCustomer
       name: result.customer.name,
       customerNumber: result.customer.customerNumber,
       email: result.customer.email,
+      invoiceEmail: null,
       defaultPaymentMethodId: result.customer.defaultPaymentMethodId ?? null,
       defaultDiscountPermille: null,
       defaultCurrency: null,

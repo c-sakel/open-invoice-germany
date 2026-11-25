@@ -14,6 +14,7 @@ import { createDraftInvoice } from "@/domain/invoice/create";
 import { createInvoiceComplete } from "@/domain/invoice/create-complete";
 import { completeIdempotencyWithinTx, requireIdempotencyKey } from "@/api/idempotency";
 import { prisma } from "@/lib/db";
+import { loadAutoSendViews } from "@/domain/recurring/auto-send-view";
 import { apiInvoiceBodyDocSchema, GROSS_DISCOUNT_NOTICE, assertGrossPayment, grossResponseFields, resolvePriceInput } from "@/domain/document/price-input";
 
 export const runtime = "nodejs";
@@ -33,9 +34,10 @@ export const GET = withApi(async (req, ctx) => {
     include: { lines: embed.has("lines"), customer: embed.has("customer"), payments: embed.has("payments") },
   });
   const byId = new Map(full.map((i) => [i.id, i]));
+  const autoSend = await loadAutoSendViews(ctx.orgId, ids);
   const rows = ids.flatMap((id) => {
     const inv = byId.get(id);
-    return inv ? [serializeInvoice(inv, embed)] : [];
+    return inv ? [serializeInvoice(inv, embed, autoSend.get(id) ?? null)] : [];
   });
   return apiList(rows, result);
 }, { scope: "read" });

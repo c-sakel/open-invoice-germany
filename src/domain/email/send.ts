@@ -4,8 +4,8 @@
  * Versands ein Log existiert; Ergebnis danach in EINER Transaktion mit dem ChangeLog-
  * Eintrag verbuchen. Kein SMTP-Aufruf innerhalb einer Prisma-Transaktion (SQLite-Sperre).
  *
- * Statuswerte hier nur QUEUED/SENT/FAILED — DELIVERED/BOUNCED setzt kein Provider-Webhook
- * (nicht Teil dieses Programms).
+ * Statuswerte hier nur QUEUED/SENT/FAILED — BOUNCED setzt spaeter ein Zustellbericht aus dem
+ * Postfach-Abruf (bounce.ts); DELIVERED gibt es nicht.
  */
 import { createHash } from "node:crypto";
 import { dbInternal } from "@/lib/db";
@@ -20,7 +20,8 @@ import { createQueuedEmailLog, finishEmailLog } from "@/domain/email/email-log";
 import { setQuoteStatus, setDeliveryNoteStatus } from "@/domain/document/status";
 import { createSmtpProvider } from "@/lib/mail/smtp";
 import { withHtmlPart } from "@/domain/email/html-part";
-import type { MailProvider } from "@/lib/mail/provider";
+import { AUTO_SEND_ACTOR, acquireManualSendLock } from "@/domain/recurring/auto-send-guard";
+import { MailSendError, type MailProvider } from "@/lib/mail/provider";
 import { sendEmailInputSchema, type SendEmailRawInput } from "@/schemas/email";
 import { MAX_EMAIL_ATTACHMENTS_TOTAL_BYTES } from "@/lib/attachments/mime";
 
@@ -28,6 +29,8 @@ export interface SendDocumentEmailResult {
   logId: string;
   status: "SENT" | "FAILED";
   error?: string;
+  /** Nur bei FAILED: NOT_SENT = sicher nicht angenommen, UNKNOWN = unklar (auch Nicht-SMTP-Fehler). */
+  outcome?: "NOT_SENT" | "UNKNOWN";
 }
 
 export class EmailAttachmentsTooLargeError extends Error {
@@ -37,12 +40,22 @@ export class EmailAttachmentsTooLargeError extends Error {
   }
 }
 
+/** Der Aufrufer hat den Besitz am Versandversuch verloren (`beforeQueue` lieferte false); es wurde nichts angelegt oder gesendet. */
+export class SendOwnershipLostError extends Error {
+  constructor() {
+    super("Versandversuch nicht mehr im Besitz des Aufrufers");
+    this.name = "SendOwnershipLostError";
+  }
+}
+
 export async function sendDocumentEmail(
   orgId: string,
   actor: string,
   rawInput: SendEmailRawInput,
   extra: Attachment[],
   provider?: MailProvider,
+  /** Optional: unmittelbar vor dem QUEUED-Protokoll aufgerufen; `false` bricht ab (SendOwnershipLostError). */
+  beforeQueue?: () => Promise<boolean>,
 ): Promise<SendDocumentEmailResult> {
   // Die Domain validiert selbst (G5, Lastenheft 55: kein Bypass ueber MCP oder eine
   // zukuenftige zweite Route). Die HTTP-Route parst zusaetzlich fuer eine fruehe 400-
@@ -122,6 +135,23 @@ export async function sendDocumentEmail(
     sha256: createHash("sha256").update(a.content).digest("hex"),
   }));
 
+  // Manueller Versand und Versandautomatik schliessen sich aus: atomare Sperre unmittelbar vor dem QUEUED-Protokoll
+  // (laeuft die Automatik fuer diese Rechnung, wird abgelehnt; die Automatik kann die gesperrte Zeile nicht claimen).
+  const autoLock = input.docType === "INVOICE" && actor !== AUTO_SEND_ACTOR ? await acquireManualSendLock(orgId, input.docId) : null;
+  let lockReleased = false;
+  const releaseLock = async (outcome: "SENT" | "NOT_SENT" | "UNCLEAR") => {
+    if (!autoLock || lockReleased) return;
+    lockReleased = true;
+    try {
+      await autoLock.release(outcome);
+    } catch (e) {
+      console.error("sendDocumentEmail: Sperre nicht freigegeben", e instanceof Error ? e.name : "unknown");
+    }
+  };
+  if (beforeQueue && !(await beforeQueue().catch(() => false))) {
+    await releaseLock("NOT_SENT");
+    throw new SendOwnershipLostError();
+  }
   const log = await createQueuedEmailLog({
     orgId,
     docType: input.docType,
@@ -138,11 +168,15 @@ export async function sendDocumentEmail(
     attachmentsJson: JSON.stringify(attachmentsMeta),
     warningsJson: JSON.stringify(input.warnings),
     sentByUserId: actor,
+  }).catch(async (e: unknown) => {
+    await releaseLock("NOT_SENT");
+    throw e;
   });
 
   let status: "SENT" | "FAILED" = "SENT";
   let providerId: string | null = null;
   let error: string | undefined;
+  let outcome: "NOT_SENT" | "UNKNOWN" | undefined;
   let htmlSha256: string | undefined;
   try {
     const mail = await withHtmlPart(orgId, settings, {
@@ -160,6 +194,7 @@ export async function sendDocumentEmail(
     providerId = res.providerId;
   } catch (e) {
     status = "FAILED";
+    outcome = e instanceof MailSendError ? e.outcome : "UNKNOWN";
     error = e instanceof Error ? e.message.slice(0, 500) : "Unbekannter Fehler";
   }
 
@@ -179,7 +214,12 @@ export async function sendDocumentEmail(
     subject: input.subject,
     attachmentsMeta,
     htmlSha256,
+  }).catch(async (e: unknown) => {
+    // Protokoll konnte nicht abgeschlossen werden: Ausgang nicht gesichert, nie automatisch wiederholen.
+    await releaseLock("UNCLEAR");
+    throw e;
   });
+  await releaseLock(status === "SENT" ? "SENT" : outcome === "NOT_SENT" ? "NOT_SENT" : "UNCLEAR");
 
   // SENT-Hook (Addendum Task 4): erfolgreicher Versand setzt bei Angebot/AB/Proforma
   // (Status DRAFT/EXPIRED) bzw. Lieferschein (Status CREATED) automatisch SENT. Laeuft
@@ -203,5 +243,5 @@ export async function sendDocumentEmail(
     }
   }
 
-  return { logId: log.id, status, error };
+  return { logId: log.id, status, error, ...(outcome ? { outcome } : {}) };
 }

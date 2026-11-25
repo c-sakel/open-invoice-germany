@@ -287,6 +287,48 @@ describe("Zustellung (deliver.ts) — attemptDelivery", () => {
     expect(delivery.status).toBe("DEAD");
   });
 
+  it("DEAD nach dem 6. Versuch -> eine WEBHOOK_DEAD je Endpunkt und Tag; Typ abgewaehlt -> keine; Test-Zustellung -> keine", async () => {
+    const created = await makeActiveEndpoint(["invoice.finalized"], "https://93.184.216.51/hook");
+    const raw = await loadEndpointRaw(created.id);
+    const mk = (event: string) =>
+      dbInternal.webhookDelivery.create({
+        data: { orgId, endpointId: created.id, event, objectName: "Invoice", objectId: "dead-x", dataJson: "{}", status: "FAILED", attempts: 5, nextAttemptAt: FIX_DATE },
+      });
+    const count = () => dbInternal.notification.count({ where: { orgId, type: "WEBHOOK_DEAD" } });
+    const before = await count();
+
+    const d1 = await mk("invoice.finalized");
+    expect((await attemptDelivery({ ...d1, endpoint: raw }, failFetch(500), FIX_DATE)).outcome).toBe("dead");
+    expect(await count()).toBe(before + 1);
+
+    const d2 = await mk("invoice.finalized");
+    await attemptDelivery({ ...d2, endpoint: raw }, failFetch(500), FIX_DATE);
+    expect(await count()).toBe(before + 1);
+
+    const other = await makeActiveEndpoint(["invoice.finalized"], "https://93.184.216.52/hook");
+    const otherRaw = await loadEndpointRaw(other.id);
+    const dtOther = await dbInternal.webhookDelivery.create({
+      data: { orgId, endpointId: other.id, event: "webhook.test", objectName: "Webhook", objectId: other.id, dataJson: "{}", status: "FAILED", attempts: 5, nextAttemptAt: FIX_DATE },
+    });
+    await attemptDelivery({ ...dtOther, endpoint: otherRaw }, failFetch(500), FIX_DATE);
+    expect(await count()).toBe(before + 1);
+
+    const third = await makeActiveEndpoint(["invoice.finalized"], "https://93.184.216.53/hook");
+    const thirdRaw = await loadEndpointRaw(third.id);
+    const { loadNotificationSettings: load, saveNotificationSettings: save, ALL_NOTIFICATION_TYPES: all } = await import("@/domain/notifications/settings");
+    const cur = await load(orgId);
+    try {
+      await save(orgId, { enabledTypes: all.filter((t) => t !== "WEBHOOK_DEAD"), emailDigest: cur.emailDigest });
+      const d3 = await dbInternal.webhookDelivery.create({
+        data: { orgId, endpointId: third.id, event: "invoice.finalized", objectName: "Invoice", objectId: "dead-y", dataJson: "{}", status: "FAILED", attempts: 5, nextAttemptAt: FIX_DATE },
+      });
+      await attemptDelivery({ ...d3, endpoint: thirdRaw }, failFetch(500), FIX_DATE);
+      expect(await count()).toBe(before + 1);
+    } finally {
+      await save(orgId, { enabledTypes: [...all], emailDigest: cur.emailDigest });
+    }
+  });
+
   it("SSRF-Skip bei Zustellung: URL zeigt zwischenzeitlich auf ein privates Netz -> sofort DEAD, kein fetch-Aufruf", async () => {
     const endpoint = await makeActiveEndpoint(["invoice.finalized"]);
     // Simuliert DNS-Rebinding: die URL war bei Anlage oeffentlich, wird direkt in der DB

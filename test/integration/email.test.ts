@@ -178,12 +178,21 @@ describe("Mailversand: Einstellungen, Vorbelegung, Versand", () => {
     const res = await sendDocumentEmail(orgId, "system", toSendInput(pre), [], memProvider);
     expect(res.status).toBe("FAILED");
     expect(res.error).toContain("550");
+    expect(res.outcome).toBe("UNKNOWN");
 
     const log = await dbInternal.emailLog.findUniqueOrThrow({ where: { id: res.logId } });
     expect(log.status).toBe("FAILED");
     const cl = await dbInternal.changeLog.findFirst({ where: { orgId, entity: "EMAIL", entityId: res.logId, action: "FAILED" } });
     expect(cl).not.toBeNull();
     expect(await chainValid()).toBe(true);
+  });
+
+  it("3b) Provider-Fehler mit outcome NOT_SENT wird durchgereicht", async () => {
+    const pre = await prefillEmail(orgId, { docType: "INVOICE", docId: invoiceId });
+    const memProvider = createMemoryProvider();
+    memProvider.failNext("x", "NOT_SENT");
+    const res = await sendDocumentEmail(orgId, "system", toSendInput(pre), [], memProvider);
+    expect(res).toMatchObject({ status: "FAILED", outcome: "NOT_SENT" });
   });
 
   it("4) copyToSelf: true -> bcc des gesendeten Objekts enthaelt fromEmail", async () => {

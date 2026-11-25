@@ -12,6 +12,7 @@
 import { processIncomingDue } from "@/domain/incoming/due-notify";
 import { dbInternal } from "@/lib/db";
 import { createNotification } from "@/domain/notifications/create";
+import { sendAlarmMailIfDue } from "@/domain/notifications/alarm-mail";
 import { loadNotificationSettings, markDigestSent, type NotificationType } from "@/domain/notifications/settings";
 import { DUNNABLE_TYPES } from "@/domain/dunning/create";
 import { dunningScheduleFor, latestDunning, reachedStageIds } from "@/domain/dunning/schedule";
@@ -268,6 +269,11 @@ export async function runNotificationsJob(now: Date = new Date(), opts: RunNotif
         await processIncomingDue(org.id, now, enabled, result.byType);
       } catch (e) {
         result.errors.push({ orgId: org.id, message: `Eingangsrechnungen: ${e instanceof Error ? e.message : String(e)}` });
+      }
+      try {
+        await sendAlarmMailIfDue(org.id, now, opts.provider);
+      } catch (e) {
+        result.errors.push({ orgId: org.id, message: `Alarm-Mail: ${e instanceof Error ? e.name : "Fehler"}` });
       }
       await sendDigestIfDue(org.id, now, opts.provider, result);
     } catch (e) {

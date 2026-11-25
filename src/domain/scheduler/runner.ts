@@ -21,9 +21,10 @@
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
+import { onSchedulerFailed } from "@/domain/notifications/hooks";
 import { jobs } from "./jobs";
 
-export type SchedulerJob = "fx" | "dunning" | "postal" | "recurring" | "archive" | "mailbox" | "bank-fetch" | "online-payments" | "payment-rules" | "notifications" | "webhooks" | "audit" | "cleanup";
+export type SchedulerJob = "fx" | "dunning" | "postal" | "recurring" | "auto-send" | "archive" | "mailbox" | "bank-fetch" | "online-payments" | "payment-rules" | "notifications" | "webhooks" | "audit" | "cleanup";
 
 export interface JobResult {
   job: SchedulerJob;
@@ -44,7 +45,7 @@ export interface JobResult {
 // "webhooks" liefert hier nur die bereits angelegten Outbox-Zeilen aus). "cleanup" (Fix-
 // Welle, Should-fix 7) laeuft als LETZTER Job — raeumt WebhookDelivery/ApiIdempotency auf,
 // nie eine Zeile, die derselbe Lauf gerade erst als faellig behandelt hat.
-export const JOB_ORDER: SchedulerJob[] = ["fx", "recurring", "dunning", "postal", "archive", "mailbox", "bank-fetch", "online-payments", "payment-rules", "notifications", "webhooks", "audit", "cleanup"];
+export const JOB_ORDER: SchedulerJob[] = ["fx", "recurring", "auto-send", "dunning", "postal", "archive", "mailbox", "bank-fetch", "online-payments", "payment-rules", "notifications", "webhooks", "audit", "cleanup"];
 const STALE_MS = 30 * 60 * 1000;
 
 export interface RunScheduledJobsOptions {
@@ -69,6 +70,25 @@ async function clearStaleLock(job: SchedulerJob, now: Date): Promise<void> {
     data: { status: "FAILED", error: "stale", finishedAt: now },
   });
   await dbInternal.schedulerLock.deleteMany({ where: { job, runId: stale.runId } });
+  await alertOnRepeatedFailure(job, stale.runId, now);
+}
+
+/**
+ * Meldet eine Hintergrundaufgabe, deren letzte zwei Laeufe beide fehlgeschlagen sind (Pflicht-Alarm,
+ * je Aufgabe und Berliner Tag eine Meldung). Ein Fehler hier bricht den Lauf nie ab.
+ */
+async function alertOnRepeatedFailure(job: SchedulerJob, runId: string, now: Date): Promise<void> {
+  try {
+    const last = await dbInternal.schedulerRun.findMany({
+      where: { job },
+      orderBy: { startedAt: "desc" },
+      take: 2,
+      select: { status: true },
+    });
+    if (last.length === 2 && last.every((r) => r.status === "FAILED")) await onSchedulerFailed(job, runId, now);
+  } catch (e) {
+    console.error("scheduler: Alarmpruefung fehlgeschlagen", e instanceof Error ? e.name : "Fehler");
+  }
 }
 
 export async function runScheduledJobs(opts: RunScheduledJobsOptions): Promise<JobResult[]> {
@@ -113,6 +133,7 @@ export async function runScheduledJobs(opts: RunScheduledJobsOptions): Promise<J
           data: { status: "FAILED", finishedAt: new Date(), error: message },
         });
         results.push({ job, ok: false, summary: {}, error: message, runId: entry.id });
+        await alertOnRepeatedFailure(job, entry.id, now);
       }
     } finally {
       await dbInternal.schedulerLock.deleteMany({ where: { job, runId } });

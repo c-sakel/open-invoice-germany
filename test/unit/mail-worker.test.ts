@@ -1,5 +1,8 @@
+import fs from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { MAX_MAIL_ATTACHMENT_BYTES } from "@/domain/mailbox/limits";
+import { messageIdHash } from "@/lib/mailbox/message-id";
 import { parseMailIsolated } from "@/lib/mailbox/parse-mail";
 import { runIsolated } from "@/lib/worker/isolated";
 import {
@@ -138,5 +141,56 @@ describe("Mail-Worker", () => {
     expect(r).toEqual({ ok: false, reason: "ERROR", code: "UNKNOWN_JOB" });
     const s = await runIsolated({ job: "parse-mail", script: "mail", input: new Uint8Array(1), timeoutMs: 5000, maxHeapMb: 128 });
     expect(s).toEqual({ ok: false, reason: "ERROR", code: "BAD_PARAMS" });
+  });
+});
+
+describe("Zustellberichte (RFC 3464)", () => {
+  const eml = (name: string) => new Uint8Array(fs.readFileSync(path.resolve(__dirname, "../fixtures/mail", name)));
+  const expected = messageIdHash("<orig@example.org>");
+
+  it("Postfix-Bericht: failed, 5.1.1, Hash der Original-Message-Id, keine Anlagen", async () => {
+    const r = await parseMailIsolated(eml("dsn-postfix-failed.eml"));
+    expect(r.ok && r.mail.dsn).toEqual({ action: "failed", status: "5.1.1", originalMessageIdHash: expected, finalRecipientDomains: ["example.net"] });
+    expect(r.ok && r.mail.attachments).toEqual([]);
+    expect(expected).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("Exchange-Bericht mit gefalteten Zeilen", async () => {
+    const r = await parseMailIsolated(eml("dsn-exchange-failed.eml"));
+    expect(r.ok && r.mail.dsn).toEqual({ action: "failed", status: "5.4.1", originalMessageIdHash: expected, finalRecipientDomains: ["example.net"] });
+  });
+
+  it("Verzoegerungsbericht: delayed", async () => {
+    const r = await parseMailIsolated(eml("dsn-delayed.eml"));
+    expect(r.ok && r.mail.dsn).toEqual({ action: "delayed", status: "4.4.1", originalMessageIdHash: expected, finalRecipientDomains: ["example.net"] });
+  });
+
+  it("nur text/rfc822-headers reicht fuer den Hash", async () => {
+    const r = await parseMailIsolated(eml("dsn-headers-only.eml"));
+    expect(r.ok && r.mail.dsn).toEqual({ action: "failed", status: "5.2.2", originalMessageIdHash: expected, finalRecipientDomains: ["example.net"] });
+  });
+
+  it("normale Mail mit PDF: dsn null, Anlage wie bisher", async () => {
+    const r = await parseMailIsolated(eml("not-dsn-with-pdf.eml"));
+    expect(r.ok && r.mail.dsn).toBeNull();
+    expect(r.ok && r.mail.attachments.map((a) => a.fileName)).toEqual(["rechnung.pdf"]);
+  });
+
+  it("Status-Feld mit Muell ergibt status null", async () => {
+    const raw = Buffer.from(Buffer.from(eml("dsn-postfix-failed.eml")).toString("latin1").replace("Status: 5.1.1", "Status: 5.x; DROP"), "latin1");
+    const r = await parseMailIsolated(new Uint8Array(raw));
+    expect(r.ok && r.mail.dsn).toEqual({ action: "failed", status: null, originalMessageIdHash: expected, finalRecipientDomains: ["example.net"] });
+  });
+
+  it("ohne multipart/report keine Auswertung, auch wenn ein Teil delivery-status heisst", async () => {
+    const raw = Buffer.from(Buffer.from(eml("dsn-postfix-failed.eml")).toString("latin1").replace("multipart/report; report-type=delivery-status;", "multipart/mixed;"), "latin1");
+    const r = await parseMailIsolated(new Uint8Array(raw));
+    expect(r.ok && r.mail.dsn).toBeNull();
+  });
+
+  it("Worker und Domain normalisieren Message-Ids gleich", async () => {
+    const r = await parseMailIsolated(buildMail({ messageId: "<ABC@Example.org>" }));
+    expect(r.ok && r.mail.messageIdHash).toBe(messageIdHash("<abc@example.org>"));
+    expect(messageIdHash(null)).toBeNull();
   });
 });

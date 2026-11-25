@@ -16,12 +16,22 @@ import {
 } from "@/domain/mailbox/limits";
 import { runIsolated } from "@/lib/worker/isolated";
 
+export interface ParsedDsn {
+  action: "failed" | "delayed" | "other";
+  status: string | null;
+  originalMessageIdHash: string | null;
+  /** Domains der Final-Recipient-Felder (kleingeschrieben, hoechstens 20); nie ganze Adressen. */
+  finalRecipientDomains: string[];
+}
+
 export interface ParsedMail {
   messageIdHash: string | null;
   senderDomain: string | null;
   subject: string | null;
   date: Date | null;
   parts: number;
+  /** Zustellbericht nach RFC 3464 (nur Ergebnis, nie Adressen/Texte); sonst null. */
+  dsn: ParsedDsn | null;
   attachments: { index: number; fileName: string; declaredType: string; bytes: Uint8Array }[];
   skipped: { index: number; reason: "TOO_LARGE" | "TOO_MANY" | "NESTED" }[];
 }
@@ -36,6 +46,14 @@ const workerSchema = z.object({
   subject: z.string().max(MAX_SUBJECT_CHARS * 2).nullable(),
   date: z.string().max(40).nullable(),
   parts: z.number().int().min(0).max(MAX_MAIL_PARTS * 2),
+  dsn: z
+    .object({
+      action: z.enum(["failed", "delayed", "other"]),
+      status: z.string().regex(/^[245]\.\d{1,3}\.\d{1,3}$/).nullable(),
+      originalMessageIdHash: z.string().regex(/^[0-9a-f]{64}$/).nullable(),
+      finalRecipientDomains: z.array(z.string().regex(/^[a-z0-9.-]{1,253}$/)).max(20),
+    })
+    .nullable(),
   attachments: z
     .array(
       z.object({
@@ -83,6 +101,7 @@ export async function parseMailIsolated(raw: Uint8Array): Promise<ParseMailResul
       subject: v.subject,
       date: date !== null && Number.isFinite(date.getTime()) ? date : null,
       parts: v.parts,
+      dsn: v.dsn,
       attachments: v.attachments,
       skipped: v.skipped,
     },

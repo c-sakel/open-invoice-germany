@@ -103,3 +103,29 @@ describe("Karten", () => {
     expect(html).toContain("Hosting");
   });
 });
+
+describe("Abo-Formular: Hinweis ohne Kunden-Mail bei automatischem Versand", () => {
+  const withEmail = (email: string | null | undefined, autoSend: boolean) =>
+    renderToStaticMarkup(
+      <NewRecurringForm
+        products={[]}
+        taxRates={[19, 7, 0]}
+        mode="edit"
+        recurringId="r1"
+        customerName="Kunde"
+        customerEmail={email}
+        initial={initial({ autoFinalize: true, autoSend })}
+      />,
+    );
+
+  it("Auto-Versand an und Kunde ohne Mail: Hinweis mit Wartefrist", () => {
+    expect(withEmail(null, true)).toContain("Dieser Kunde hat keine E-Mail-Adresse");
+    expect(withEmail("  ", true)).toContain("Dieser Kunde hat keine E-Mail-Adresse");
+  });
+
+  it("kein Hinweis mit Mail, ohne Auto-Versand oder bei unbekanntem Kunden", () => {
+    expect(withEmail("kunde@example.org", true)).not.toContain("keine E-Mail-Adresse");
+    expect(withEmail(null, false)).not.toContain("keine E-Mail-Adresse");
+    expect(withEmail(undefined, true)).not.toContain("keine E-Mail-Adresse");
+  });
+});

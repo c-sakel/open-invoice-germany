@@ -1,0 +1,35 @@
+From: MAILER-DAEMON@mx.example.net
+To: rechnungen@example.org
+Subject: Delivery Status Notification (Delay)
+Date: Tue, 10 Nov 2026 12:00:00 +0000
+Message-ID: <dsn-3@mx.example.net>
+MIME-Version: 1.0
+Content-Type: multipart/report; report-type=delivery-status; boundary="BND-DELAY"
+
+--BND-DELAY
+Content-Type: text/plain; charset=us-ascii
+
+Your message has been delayed.
+
+--BND-DELAY
+Content-Type: message/delivery-status
+
+Reporting-MTA: dns; mx.example.net
+
+Final-Recipient: rfc822; kunde@example.net
+Action: delayed
+Status: 4.4.1
+Diagnostic-Code: smtp; connection timed out
+
+--BND-DELAY
+Content-Type: message/rfc822
+
+From: Rechnungen <rechnungen@example.org>
+To: kunde@example.net
+Subject: Ihre Rechnung
+Message-ID: <orig@example.org>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Hallo
+--BND-DELAY--

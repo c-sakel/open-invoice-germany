@@ -18,6 +18,7 @@ import { ReversePaymentDialog } from "./ReversePaymentDialog";
 import { reversedCentsByPayment } from "@/domain/invoice/amounts";
 import type { InvoicePaymentRuleRun } from "@/domain/payment-rule/views";
 import { PROVIDER_LABEL } from "@/domain/online-payment/ui";
+import { AutoSendRetryButton } from "@/components/recurring/AutoSendRetryButton";
 import { PaymentRuleRunLines } from "@/components/payment-rules/PaymentRuleRunLines";
 
 const XML_FORMAT_LABEL: Record<string, string> = { XRECHNUNG: "XRechnung", ZUGFERD: "ZUGFeRD" };
@@ -74,6 +75,7 @@ export function InvoiceStatusCard({
   issueDeadlineKey = null,
   issueDeadlineMissed = false,
   consumerNotice = null,
+  autoSend = null,
 }: {
   invoice: InvoiceDetail;
   openCents: number;
@@ -107,6 +109,8 @@ export function InvoiceStatusCard({
   issueDeadlineMissed?: boolean;
   /** Festgeschrieben: gedruckt ja/nein; Entwurf: Vorgabe (`null` = automatisch). */
   consumerNotice?: boolean | null;
+  /** Automatischer Versand dieser Rechnung (Abo): Anzeigetext + ob "Erneut versuchen" angeboten wird; `null` = kein Auftrag. */
+  autoSend?: { status: string; text: string; canRetry: boolean } | null;
 }) {
   // Fix 1 (Review): Bezahlt/Offen gehoerten frueher zum guarded "Zahlung & Mahnwesen"-
   // Abschnitt (isInvoiceType && !isDraft && !isCancelled) — fuer Entwuerfe, Gutschriften und
@@ -170,6 +174,17 @@ export function InvoiceStatusCard({
   // S6 (Fix-Welle 1): "Kanal" ist bislang immer E-Mail (einziger Versandweg), daher statisch
   // angehaengt statt aus einem eigenen Feld gelesen.
   if (lastSentAt) detailRows.push({ label: "Versendet am", value: `${deDate(lastSentAt)} · E-Mail` });
+  if (autoSend) {
+    detailRows.push({
+      label: "Automatischer Versand",
+      value: (
+        <span className="block space-y-1 text-right">
+          <span className="block">{autoSend.text}</span>
+          {autoSend.canRetry && <AutoSendRetryButton invoiceId={invoice.id} status={autoSend.status} />}
+        </span>
+      ),
+    });
+  }
   if (paymentMethodName) detailRows.push({ label: "Zahlungsmethode", value: paymentMethodName });
   detailRows.push({ label: "Steuerschema", value: taxSchemeLabel(invoice.taxScheme) });
   if (invoice.customer.vatId) detailRows.push({ label: "USt-IdNr.", value: invoice.customer.vatId });

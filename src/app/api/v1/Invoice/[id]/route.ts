@@ -9,6 +9,7 @@ import { updateInvoiceSchema } from "@/schemas";
 import { prisma } from "@/lib/db";
 import { apiInvoiceUpdateBodyDocSchema, assertGrossPatchDiscount, grossResponseFields, resolvePriceInput } from "@/domain/document/price-input";
 import { NotFoundError } from "@/domain/errors";
+import { loadAutoSendView } from "@/domain/recurring/auto-send-view";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,7 +22,7 @@ export const GET = withApi<{ id: string }>(async (req, ctx) => {
     include: { lines: embed.has("lines"), customer: embed.has("customer"), payments: embed.has("payments") },
   });
   if (!row) throw new NotFoundError("Rechnung nicht gefunden.");
-  return apiData(serializeInvoice(row, embed));
+  return apiData(serializeInvoice(row, embed, await loadAutoSendView(ctx.orgId, row.id)));
 }, { scope: "read" });
 
 export const PATCH = withApi<{ id: string }>(async (_req, ctx) => {

@@ -7,7 +7,7 @@ interface Props {
   allTypes: [string, string][]; // [key, label]
   /** Pflicht-Alarme (Phase 16a): immer aktiv, nicht abwaehlbar. */
   mandatoryTypes: string[];
-  initial: { enabledTypes: string[]; emailDigest: boolean };
+  initial: { enabledTypes: string[]; emailDigest: boolean; alarmEmail: boolean };
 }
 
 /** Task 4: Einstellungen -> Benachrichtigungen — welche Typen erzeugen In-App-
@@ -16,6 +16,7 @@ export function NotificationSettingsForm({ allTypes, mandatoryTypes, initial }: 
   const router = useRouter();
   const [enabled, setEnabled] = useState<Set<string>>(new Set(initial.enabledTypes));
   const [emailDigest, setEmailDigest] = useState(initial.emailDigest);
+  const [alarmEmail, setAlarmEmail] = useState(initial.alarmEmail);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,7 +37,7 @@ export function NotificationSettingsForm({ allTypes, mandatoryTypes, initial }: 
     const res = await fetch("/api/notification-settings", {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ enabledTypes: Array.from(enabled), emailDigest }),
+      body: JSON.stringify({ enabledTypes: Array.from(enabled), emailDigest, alarmEmail }),
     });
     setBusy(false);
     if (!res.ok) {
@@ -52,12 +53,8 @@ export function NotificationSettingsForm({ allTypes, mandatoryTypes, initial }: 
     <div className="space-y-4 rounded-[var(--radius-card)] border border-rule bg-sheet p-5">
       <div className="space-y-2">
         {allTypes.map(([key, label]) => {
-          // Fix-Welle (S4): EMAIL_BOUNCED hat aktuell keinen Erzeuger im laufenden System
-          // (markEmailBounced wird von keiner Route/keinem MCP-Tool aufgerufen — kein
-          // Bounce-Webhook angebunden) — die Checkbox waere ohne Hinweis irrefuehrend
-          // ("aktiviert", aber es passiert nie etwas), deshalb deaktiviert + Hinweistext.
           const mandatory = mandatoryTypes.includes(key);
-          const disabled = key === "EMAIL_BOUNCED" || mandatory;
+          const disabled = mandatory;
           return (
             <label key={key} className={`flex items-center gap-2 text-sm ${disabled && !mandatory ? "text-ink-muted" : "text-ink-soft"}`}>
               <input
@@ -69,7 +66,7 @@ export function NotificationSettingsForm({ allTypes, mandatoryTypes, initial }: 
               />
               {label}
               {mandatory && <span className="text-xs italic text-ink-muted">(immer aktiv — GoBD-Pflicht-Alarm)</span>}
-              {key === "EMAIL_BOUNCED" && <span className="text-xs italic">(noch nicht aktiv — kein Bounce-Empfang angebunden)</span>}
+              {key === "EMAIL_BOUNCED" && <span className="text-xs italic text-ink-muted">(erkannt, wenn Rückläufer im abgerufenen Postfach ankommen)</span>}
             </label>
           );
         })}
@@ -86,6 +83,21 @@ export function NotificationSettingsForm({ allTypes, mandatoryTypes, initial }: 
         />
         Täglichen E-Mail-Digest versenden
       </label>
+      <div className="space-y-1">
+        <label className="flex items-center gap-2 text-sm text-ink-soft">
+          <input
+            type="checkbox"
+            checked={alarmEmail}
+            onChange={(e) => {
+              setAlarmEmail(e.target.checked);
+              setSaved(false);
+            }}
+            className="h-4 w-4 rounded border-rule-strong"
+          />
+          Alarme sofort per E-Mail
+        </label>
+        <p className="pl-6 text-xs text-ink-muted">Empfänger ist die E-Mail-Adresse der Firma (sonst die Absenderadresse). Höchstens eine Mail pro Stunde.</p>
+      </div>
       <div className="flex items-center gap-3">
         <button type="button" onClick={() => void save()} disabled={busy} className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong disabled:opacity-60">
           {busy ? "Speichert…" : "Speichern"}

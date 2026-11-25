@@ -34,8 +34,8 @@ import {
   buildRunLines,
   emitSingleInvoice,
   isRunDue,
-  sendRecurringInvoiceEmail,
 } from "./run-parts";
+import { dispatchAutoSendForInvoice } from "./auto-send";
 import { emitCollective, findFaultyMembers } from "./collective-run";
 import {
   isSkipped,
@@ -125,8 +125,8 @@ export async function emitOne(
   }
 
   if (created.autoSend && outcome.finalized) {
-    const sent = await sendRecurringInvoiceEmail(created.orgId, outcome.invoiceId, provider, created.emailTemplateId);
-    outcome.emailStatus = sent.status;
+    const sent = await dispatchAutoSendForInvoice(outcome.invoiceId, now, provider);
+    outcome.emailStatus = sent.emailStatus;
     outcome.emailError = sent.error;
   }
 

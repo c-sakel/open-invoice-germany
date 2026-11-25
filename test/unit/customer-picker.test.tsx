@@ -13,6 +13,7 @@ function customer(over: Partial<EditorCustomer> & { id: string; name: string }):
   return {
     customerNumber: null,
     email: null,
+    invoiceEmail: null,
     defaultPaymentMethodId: null,
     defaultDiscountPermille: null,
     defaultCurrency: null,

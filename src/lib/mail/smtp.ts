@@ -1,7 +1,7 @@
 /** SMTP-Provider (nodemailer). Fehlertexte werden von Zugangsdaten bereinigt. */
 import nodemailer, { type SendMailOptions } from "nodemailer";
 import type { DecryptedMailSettings } from "@/domain/email/settings";
-import { MailSendError, type MailProvider, type OutgoingMail } from "./provider";
+import { MailSendError, type MailProvider, type MailSendOutcome, type OutgoingMail } from "./provider";
 
 /**
  * Nachricht fuer nodemailer. Reihenfolge der Alternativen: nodemailer legt text vor html
@@ -20,6 +20,56 @@ export function toNodemailerMessage(mail: OutgoingMail): SendMailOptions {
   };
   if (mail.html !== undefined) msg.html = mail.html;
   return msg;
+}
+
+/**
+ * Codes, die nodemailer nur setzt, solange keine Nachricht uebertragen wurde (smtp-connection:
+ * EDNS bei der Namensaufloesung, ETLS nur waehrend des STARTTLS-Upgrades, EAUTH bei Anmeldung/
+ * fehlenden Zugangsdaten, EENVELOPE/EREQUIRETLS/ECONFIG bei Umschlagpruefung vor MAIL FROM).
+ */
+const NOT_SENT_CODES = new Set(["EAUTH", "EDNS", "ETLS", "EREQUIRETLS", "EENVELOPE", "ECONFIG"]);
+/** Befehle, die nur vor dem Nachrichtentext vorkommen (nodemailer setzt command nur dort so). */
+const NOT_SENT_COMMANDS = new Set(["EHLO", "HELO", "STARTTLS", "MAIL FROM", "RCPT TO"]);
+/**
+ * Systemfehler des Verbindungsaufbaus (err.originalCode, nodemailer ueberschreibt code mit ESOCKET):
+ * die Verbindung kam nie zustande.
+ */
+const NOT_SENT_ORIGINAL_CODES = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN"]);
+/** timeoutType der Verbindungsphasen vor der Nachricht; SOCKET_TIMEOUT kann auch nach DATA auftreten. */
+const NOT_SENT_TIMEOUT_TYPES = new Set(["CONNECT_TIMEOUT", "GREETING_TIMEOUT", "UPGRADE_TIMEOUT"]);
+
+/**
+ * Ordnet einen nodemailer-Fehler ein: NOT_SENT nur, wenn sicher belegt ist, dass die Nachricht
+ * nicht angenommen wurde. nodemailer setzt command "CONN" fuer ALLE Laufzeitfehler (auch Socket-
+ * Timeout, ESOCKET, "Connection closed unexpectedly", 421 nach dem Nachrichtentext), deshalb
+ * ist CONN allein nie ein Beleg. Alles Uebrige ist UNKNOWN, damit nie doppelt versendet wird.
+ */
+export function classifySmtpError(err: unknown): MailSendOutcome {
+  if (typeof err !== "object" || err === null) return "UNKNOWN";
+  const f = err as {
+    code?: unknown;
+    originalCode?: unknown;
+    command?: unknown;
+    responseCode?: unknown;
+    timeoutType?: unknown;
+    message?: unknown;
+  };
+  const code = typeof f.code === "string" ? f.code : undefined;
+  const command = typeof f.command === "string" ? f.command : undefined;
+  if (code && NOT_SENT_CODES.has(code)) return "NOT_SENT";
+  if (typeof f.originalCode === "string" && NOT_SENT_ORIGINAL_CODES.has(f.originalCode)) return "NOT_SENT";
+  if (code === "ETIMEDOUT" && typeof f.timeoutType === "string" && NOT_SENT_TIMEOUT_TYPES.has(f.timeoutType)) return "NOT_SENT";
+  // Greeting-Fehler: nodemailer meldet EPROTOCOL/CONN mit dieser Meldung nur vor dem EHLO
+  if (code === "EPROTOCOL" && command === "CONN" && typeof f.message === "string" && f.message.startsWith("Invalid greeting")) {
+    return "NOT_SENT";
+  }
+  if (command && (NOT_SENT_COMMANDS.has(command) || command.startsWith("AUTH"))) return "NOT_SENT";
+  // DATA mit Serverantwort: entweder die Ablehnung des DATA-Befehls (EENVELOPE) oder die Antwort auf das
+  // End-"." der Nachricht (EMESSAGE). Beides ist eine ausdrueckliche 4xx/5xx-Ablehnung, die Nachricht ist
+  // nach RFC 5321 nicht eingereiht. Abbrueche (Socket, Timeout) tragen nie einen responseCode mit DATA.
+  // Teilannahme je Empfaenger gibt es nur bei LMTP, das hier nicht genutzt wird.
+  if (command === "DATA" && typeof f.responseCode === "number") return "NOT_SENT";
+  return "UNKNOWN";
 }
 
 export function createSmtpProvider(s: DecryptedMailSettings): MailProvider {
@@ -44,7 +94,7 @@ export function createSmtpProvider(s: DecryptedMailSettings): MailProvider {
         // Bug im Brief-Code korrigiert (Nachtrag): replaceAll("", ...) wuerde zwischen jedem
         // Zeichen einfuegen. Passwort nur ersetzen, wenn eines gesetzt ist.
         const cleaned = s.password ? raw.split(s.password).join("***") : raw;
-        throw new MailSendError(cleaned);
+        throw new MailSendError(cleaned, classifySmtpError(e));
       }
     },
   };

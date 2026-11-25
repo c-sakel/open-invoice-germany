@@ -47,6 +47,8 @@ import { loadPdfTheme } from "@/domain/settings/theme";
 import { invoiceTypeToLayoutDocType } from "@/domain/settings/layout";
 import { onEInvoiceInvalid } from "@/domain/notifications/hooks";
 import { NotFoundError } from "@/domain/errors";
+import { AutoSendRetryError } from "@/domain/recurring/auto-send";
+import { autoSendLabel, loadAutoSendView, publicAutoSend, retryAutoSendInputSchema, retryInvoiceAutoSend } from "@/domain/recurring/auto-send-view";
 import {
   TaxScheme,
   TaxRate,
@@ -406,6 +408,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
           },
         });
         if (!inv) return ctx.fail("Nicht gefunden.");
+        const autoSend = await loadAutoSendView(org.id, inv.id);
         return ctx.ok(
           JSON.stringify(
             {
@@ -422,6 +425,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
               cardNetwork: inv.cardNetwork ?? null,
               cardHolderName: inv.cardHolderName ?? null,
               directDebit: serializeDirectDebit(inv.directDebitSnapshotJson ?? null),
+              autoSend: autoSend ? { ...publicAutoSend(autoSend), text: autoSendLabel(autoSend) } : null,
               lines: inv.lines.map((l) => ({ description: l.description, qty: l.quantityMilli / 1000, unit: l.unit, net: formatCents(l.lineNetCents) })),
               payments: inv.payments.map((p) => ({
                 id: p.id,
@@ -437,6 +441,34 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
           ),
         );
       } catch (e) {
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
+      }
+    },
+  );
+
+  // ── retry_invoice_auto_send ──────────────────────────────────────────────────
+  // Gleiche Domainfunktion und gleiches Schema wie POST /api/v1/Invoice/{id}/autoSend/retry und die Belegansicht.
+  server.registerTool(
+    "retry_invoice_auto_send",
+    {
+      title: "Automatischen Versand neu starten",
+      description:
+        "Startet den automatischen Versand einer Abo-Rechnung neu (Zustand: Versand unklar, nicht versendet, wartet auf Mailadresse oder unzustellbar) und versucht sofort zu senden. " +
+        "Bei unklarem Ausgang kann die Mail doppelt ankommen: nur mit confirmUnclear=true, nachdem das E-Mail-Protokoll geprüft wurde.",
+      inputSchema: {
+        invoice: z.string().describe("Rechnungs-ID oder -Nummer"),
+        ...retryAutoSendInputSchema.shape,
+      },
+    },
+    async ({ invoice, confirmUnclear }): Promise<Result> => {
+      try {
+        const org = await ctx.requireOrg();
+        const ref = await ctx.resolveInvoice(org.id, invoice);
+        const view = await retryInvoiceAutoSend(org.id, ref.id, "mcp", { confirmUnclear });
+        return ctx.ok(view ? `Automatischer Versand neu gestartet: ${autoSendLabel(view)} (Status ${view.status}).` : "Automatischer Versand neu gestartet.");
+      } catch (e) {
+        if (e instanceof AutoSendRetryError) return ctx.fail(`${e.message} (${e.code})`);
         if (e instanceof ToolError) return ctx.fail(e.message);
         return ctx.failUnknown(e);
       }

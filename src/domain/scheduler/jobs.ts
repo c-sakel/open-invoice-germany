@@ -5,6 +5,7 @@
  * dazu.
  */
 import { runDueRecurring } from "@/domain/recurring/run";
+import { runAutoSendJob } from "@/domain/recurring/auto-send";
 import { runDunningJob } from "@/domain/dunning/auto";
 import { runNotificationsJob } from "@/domain/notifications/job";
 import { runWebhookDeliveries } from "@/domain/webhook/deliver";
@@ -28,6 +29,7 @@ export const jobs: Record<SchedulerJob, (now: Date) => Promise<Record<string, un
     const emptyPeriods = summaries.reduce((n, s) => n + s.skipped.length, 0);
     return { generated, emptyPeriods, abos: summaries };
   },
+  "auto-send": async (now) => ({ ...(await runAutoSendJob(now)) }),
   dunning: async (now) => {
     const result = await runDunningJob(now);
     return { ...result };
