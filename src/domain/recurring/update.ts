@@ -9,7 +9,9 @@ import { resolveLineOssCategories } from "@/domain/product/oss-snapshot";
 import { dbInternal } from "@/lib/db";
 import { itemTaxRates, planLineSync, toRecurringLineRows } from "@/domain/recurring/lines";
 import { lockRow } from "@/lib/db-lock";
-import { normalizeToNoon } from "@/lib/recurring";
+import { addDays, normalizeToNoon, periodRange, type BillingTiming, type RecurInterval } from "@/lib/recurring";
+import { assertTimingFitsLines, resolveFirstSchedule, timingChangeDetails } from "@/domain/recurring/timing";
+import { RecurringTimingChangeError } from "@/domain/recurring/errors";
 import { updateRecurringSchema, resolveLineCategories, type TaxScheme as TaxSchemeValue, type UpdateRecurringInput } from "@/schemas";
 import { NotFoundError, InvalidOperationError } from "@/domain/errors";
 import { RecurringError } from "@/domain/recurring/create";
@@ -34,12 +36,13 @@ export async function updateRecurringInvoice(orgId: string, id: string, raw: unk
         interval: true,
         intervalCount: true,
         anchorDay: true,
+        billingTiming: true,
         nextRunDate: true,
         maxRuns: true,
         taxScheme: true,
         collectiveBilling: true,
         invoiceHeading: true,
-        lines: { select: { taxRate: true, lineType: true } },
+        lines: { select: { id: true, taxRate: true, lineType: true, billing: true } },
       },
     });
     if (!existing) throw new NotFoundError("Abo nicht gefunden.");
@@ -74,18 +77,69 @@ export async function updateRecurringInvoice(orgId: string, id: string, raw: unk
       throw new RecurringError("Enddatum liegt vor dem Startdatum.");
     }
 
-    // nextRunDate NUR mitziehen, wenn noch keine Rechnung erzeugt wurde (issuedCount===0) —
-    // sonst wuerde eine nachtraegliche startDate-Korrektur den bereits fortgeschrittenen
-    // Erzeugungsplan eines laufenden Abos zurueckspulen (Ruling: reine Metadatenkorrektur
-    // fuer bereits aktive Abos, volle Schedule-Uebernahme nur vor dem ersten Lauf, analog
-    // createRecurring()).
-    const nextRunDate = startDate !== undefined && existing.issuedCount === 0 ? startDate : undefined;
+    // Abrechnungsart (R10): Wechsel nur ohne offene Verbraeuche; bei bereits erzeugten Rechnungen nur bestaetigt.
+    const currentTiming = existing.billingTiming as BillingTiming;
+    const effectiveTiming: BillingTiming = input.billingTiming ?? currentTiming;
+    const timingChanged = effectiveTiming !== currentTiming;
+    const effectiveInterval = (input.interval ?? existing.interval) as RecurInterval;
+    const effectiveCount = input.intervalCount ?? existing.intervalCount;
+
+    // Verbrauchspositionen vertragen sich nicht mit Abrechnung im Voraus (Zustand nach dem Zeilenabgleich).
+    const storedBilling = new Map(existing.lines.map((l) => [l.id, l.billing]));
+    const hasUsageLines = input.lines
+      ? input.lines.some((l) => (l.billing ?? (l.id !== undefined ? storedBilling.get(l.id) : undefined)) === "USAGE")
+      : existing.lines.some((l) => l.billing === "USAGE");
+    assertTimingFitsLines(effectiveTiming, hasUsageLines);
+
+    // nextRunDate/Ankertag NUR neu berechnen, wenn noch keine Rechnung erzeugt wurde (issuedCount===0) —
+    // sonst wuerde eine nachtraegliche Aenderung den bereits fortgeschrittenen Erzeugungsplan eines
+    // laufenden Abos zurueckspulen. Vor dem ersten Lauf gilt dieselbe Ableitung wie bei der Anlage.
+    const reschedule = existing.issuedCount === 0 && (startDate !== undefined || timingChanged);
+    let nextRunDate: Date | undefined;
+    let derivedAnchorDay: number | null | undefined;
+    if (reschedule) {
+      const first = resolveFirstSchedule(effectiveTiming, effectiveStartDate, effectiveInterval, effectiveCount, input.anchorDay);
+      nextRunDate = first.stichtag;
+      derivedAnchorDay = first.anchorDay;
+    }
+
+    if (timingChanged) {
+      const openForTiming = await tx.recurringUsage.count({ where: { recurringInvoiceId: id, orgId, invoiceId: null, voidedAt: null } });
+      if (openForTiming > 0) {
+        throw new RecurringError("Die Abrechnungsart kann nicht geändert werden, solange offene Verbräuche existieren. Verbräuche zuerst abrechnen oder stornieren.");
+      }
+      if (existing.issuedCount > 0 && input.acknowledgeTimingChange !== true) {
+        const last = await tx.invoice.findFirst({
+          where: { orgId, recurringInvoiceId: id },
+          orderBy: [{ createdAt: "desc" }],
+          select: { deliveryStart: true, deliveryEnd: true, deliveryDate: true },
+        });
+        let lastBilled: { start: Date; end: Date } | null = null;
+        if (last?.deliveryStart && last.deliveryEnd) {
+          lastBilled = { start: last.deliveryStart, end: last.deliveryEnd };
+        } else if (last?.deliveryDate) {
+          // Bestand ohne Leistungszeitraum: Leistungsdatum = Stichtag (Ende), Beginn = voriger Stichtag + 1 Tag.
+          lastBilled = { start: addDays(periodRange(last.deliveryDate, effectiveInterval, effectiveCount, existing.anchorDay).start, 1), end: last.deliveryDate };
+        }
+        throw new RecurringTimingChangeError(
+          timingChangeDetails(lastBilled, {
+            timing: effectiveTiming,
+            stichtag: existing.nextRunDate,
+            interval: effectiveInterval,
+            count: effectiveCount,
+            anchorDay: input.anchorDay !== undefined ? input.anchorDay : existing.anchorDay,
+            endDate: effectiveEndDate,
+          }),
+        );
+      }
+    }
 
     // Phase 18f: Perioden offener Verbraeuche haengen an Stichtag/Intervall/Anker — Aenderung waere veraltet.
+    const newAnchorDay = derivedAnchorDay !== undefined ? derivedAnchorDay : input.anchorDay;
     const scheduleChanged =
       (input.interval !== undefined && input.interval !== existing.interval) ||
       (input.intervalCount !== undefined && input.intervalCount !== existing.intervalCount) ||
-      (input.anchorDay !== undefined && input.anchorDay !== existing.anchorDay) ||
+      (newAnchorDay !== undefined && newAnchorDay !== existing.anchorDay) ||
       (nextRunDate !== undefined && nextRunDate.getTime() !== existing.nextRunDate.getTime());
     if (scheduleChanged) {
       const openUsage = await tx.recurringUsage.count({ where: { recurringInvoiceId: id, orgId, invoiceId: null, voidedAt: null } });
@@ -154,7 +208,8 @@ export async function updateRecurringInvoice(orgId: string, id: string, raw: unk
         ...(input.title !== undefined ? { title: input.title } : {}),
         ...(input.interval !== undefined ? { interval: input.interval } : {}),
         ...(input.intervalCount !== undefined ? { intervalCount: input.intervalCount } : {}),
-        ...(input.anchorDay !== undefined ? { anchorDay: input.anchorDay } : {}),
+        ...(newAnchorDay !== undefined ? { anchorDay: newAnchorDay } : {}),
+        ...(timingChanged ? { billingTiming: effectiveTiming } : {}),
         ...(startDate !== undefined ? { startDate } : {}),
         ...(nextRunDate !== undefined ? { nextRunDate } : {}),
         ...(endDate !== undefined ? { endDate } : {}),

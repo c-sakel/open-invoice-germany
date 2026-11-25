@@ -2,6 +2,7 @@
  * Sammelrechnung mit Verbrauchsabos: Gruppe wird erst am Berliner Folgetag abgerechnet,
  * leere Verbrauchsperioden, Storno, Idempotenz, maxRuns mit offenem Verbrauch. Eigenes Jahr 2206.
  */
+import { createBestandRecurring } from "../helpers/recurring-bestand";
 import { describe, it, expect, beforeAll } from "vitest";
 import { dbInternal } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
@@ -40,7 +41,7 @@ const fixed = (d: string, cents: number) => ({ lineType: "ITEM", description: d,
 const usageLine = { lineType: "ITEM", description: "Verbrauch", quantityMilli: 0, unit: "C62", unitNetPriceCents: 0, unitNetPriceMilliCents: 200, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0, billing: "USAGE", usageUnitLabel: "Stk" };
 
 async function abo(customerId: string, title: string, lines: Record<string, unknown>[], extra: Record<string, unknown> = {}) {
-  return createRecurring(orgId, createRecurringSchema.parse({ customerId, title, startDate: START, collectiveBilling: true, invoiceHeading: `Block ${title}`, autoFinalize: true, lines, ...extra }));
+  return createBestandRecurring(orgId, createRecurringSchema.parse({ customerId, title, startDate: START, collectiveBilling: true, invoiceHeading: `Block ${title}`, autoFinalize: true, lines, ...extra }));
 }
 
 async function addUsage(rec: { id: string; lines: { id: string; billing: string }[] }, q: number, day = "2206-03-01") {

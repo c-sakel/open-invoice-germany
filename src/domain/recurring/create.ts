@@ -1,12 +1,13 @@
 /**
  * Legt ein Abo / eine wiederkehrende Rechnung an. Die Vorlage selbst ist KEIN
  * Beleg (frei editierbar, kein Hash-Chain-Eintrag) — erst die daraus erzeugten
- * Rechnungen sind GoBD-relevant. `nextRunDate` startet auf `startDate`.
+ * Rechnungen sind GoBD-relevant. `nextRunDate` ist der erste Stichtag (im Voraus = Startdatum).
  */
 import { resolveLineOssCategories } from "@/domain/product/oss-snapshot";
 import { dbInternal } from "@/lib/db";
 import { toRecurringLineRows } from "@/domain/recurring/lines";
-import { normalizeToNoon } from "@/lib/recurring";
+import { normalizeToNoon, type BillingTiming } from "@/lib/recurring";
+import { assertTimingFitsLines, resolveFirstSchedule } from "@/domain/recurring/timing";
 import { loadDocumentSettings } from "@/domain/document/settings";
 import { resolveDocLanguage } from "@/lib/i18n/doc";
 import { assertAllowedTaxRates, ratesOfLines } from "@/domain/settings/tax-rates";
@@ -27,6 +28,13 @@ export async function createRecurring(orgId: string, input: CreateRecurringInput
   // Stichtage auf 12:00 lokal ankern (DST-/Zeitzonen-sichere Tagesanzeige).
   const startDate = normalizeToNoon(input.startDate);
   const endDate = input.endDate ? normalizeToNoon(input.endDate) : null;
+
+  // Abrechnungsart (R1): ohne Angabe im Voraus, bei Verbrauchspositionen nachträglich.
+  const hasUsageLines = input.lines.some((l) => l.billing === "USAGE");
+  const timing: BillingTiming = input.billingTiming ?? (hasUsageLines ? "ARREARS" : "ADVANCE");
+  assertTimingFitsLines(timing, hasUsageLines);
+  // Leistungsbeginn prüfen, dann ersten Stichtag + Ankertag ableiten (R7/R8).
+  const first = resolveFirstSchedule(timing, startDate, input.interval, input.intervalCount, input.anchorDay);
 
   // recurringAutoFinalizeDefault/recurringAutoSendDefault (Phase 7, §33): greifen nur,
   // wenn der Aufrufer die Felder nicht selbst gesetzt hat.
@@ -57,9 +65,10 @@ export async function createRecurring(orgId: string, input: CreateRecurringInput
       status: "ACTIVE",
       interval: input.interval,
       intervalCount: input.intervalCount,
-      anchorDay: input.anchorDay ?? null,
+      anchorDay: first.anchorDay,
+      billingTiming: timing,
       startDate,
-      nextRunDate: startDate,
+      nextRunDate: first.stichtag,
       endDate,
       maxRuns: input.maxRuns ?? null,
       taxScheme: input.taxScheme,

@@ -3,6 +3,7 @@
  * Folgegruppe, maxRuns/Enddatum je Abo, Fehler, Versand und GoBD-Guard. Eigenes Jahr 2205
  * (Invoice.number global eindeutig), eigene Organisation, kein Netz.
  */
+import { createBestandRecurring } from "../helpers/recurring-bestand";
 import { describe, it, expect, beforeAll } from "vitest";
 import { dbInternal, prisma, GobdImmutabilityError } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
@@ -42,7 +43,7 @@ async function customer(email: string | null = "sammel@example.org"): Promise<st
 const item = (description: string, cents: number) => ({ lineType: "ITEM", description, quantityMilli: 1000, unit: "C62", unitNetPriceCents: cents, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 });
 
 async function abo(customerId: string, title: string, cents: number, extra: Record<string, unknown> = {}) {
-  return createRecurring(
+  return createBestandRecurring(
     orgId,
     createRecurringSchema.parse({
       customerId,

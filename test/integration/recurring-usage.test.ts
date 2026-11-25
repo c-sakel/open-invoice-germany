@@ -3,6 +3,7 @@
  * Abo-Zeilen-Sync, Laufrate. Eigenes Jahr 2187 (Invoice.number global eindeutig),
  * eigene Organisation, kein Netz.
  */
+import { createBestandRecurring } from "../helpers/recurring-bestand";
 import { describe, it, expect, beforeAll } from "vitest";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -48,7 +49,7 @@ function input(extra: Record<string, unknown> = {}): CreateRecurringInput {
 }
 
 async function makeAbo(extra: Record<string, unknown> = {}) {
-  const rec = await createRecurring(orgId, input(extra));
+  const rec = await createBestandRecurring(orgId, input(extra));
   const usageLineId = rec.lines.find((l) => l.billing === "USAGE")?.id;
   if (!usageLineId) throw new Error("USAGE-Zeile fehlt");
   const fixedLineId = rec.lines.find((l) => l.billing === "FIXED")?.id ?? "";
@@ -199,7 +200,7 @@ describe("Lauf mit Verbrauch", () => {
   });
 
   it("Abo nur mit Verbrauchszeile und ohne Verbrauch -> uebersprungen, Periode rueckt weiter", async () => {
-    const rec = await createRecurring(orgId, input({ title: "Nur Verbrauch", lines: [usageLine] }));
+    const rec = await createBestandRecurring(orgId, input({ title: "Nur Verbrauch", lines: [usageLine] }));
     const before = await dbInternal.invoice.count({ where: { orgId } });
     const out = await emitRecurringNow(rec.id, { now: RUN });
     expect(isSkipped(out)).toBe(true);
@@ -263,7 +264,7 @@ describe("Fix-Welle 18f-1", () => {
   });
 
   it("Abo ohne Verbrauchszeile (FIXED) behaelt Stichtage und Periodentext wie vor 18f", async () => {
-    const rec = await createRecurring(orgId, input({ title: "Nur fest", startDate: D("2187-01-31"), lines: [fixedLine], showPeriodText: true }));
+    const rec = await createBestandRecurring(orgId, input({ title: "Nur fest", startDate: D("2187-01-31"), lines: [fixedLine], showPeriodText: true }));
     await emitted(rec.id, D("2187-01-31"));
     const second = await emitted(rec.id, D("2187-02-28"));
     const r = await dbInternal.recurringInvoice.findUniqueOrThrow({ where: { id: rec.id }, select: { nextRunDate: true } });
@@ -273,7 +274,7 @@ describe("Fix-Welle 18f-1", () => {
   });
 
   it("Abo ohne ITEM und ohne USAGE (nur Text, direkt angelegt) wird wie vor 18f abgerechnet, nicht uebersprungen", async () => {
-    const rec = await createRecurring(orgId, input({ title: "Nur Text", autoFinalize: false }));
+    const rec = await createBestandRecurring(orgId, input({ title: "Nur Text", autoFinalize: false }));
     await dbInternal.recurringInvoiceLine.deleteMany({ where: { recurringInvoiceId: rec.id } });
     await dbInternal.recurringInvoiceLine.create({
       data: { recurringInvoiceId: rec.id, position: 1, lineType: "TEXT", description: "Hinweis", quantityMilli: 0, unit: "C62", unitNetPriceCents: 0, taxRate: 0, taxCategory: "S" },
@@ -413,7 +414,7 @@ describe("Fix-Welle 18f-3: Stichtag gehoert zur endenden Periode", () => {
   });
 
   it("FIXED-Abo (ohne Verbrauchsposition) bleibt am Stichtag faellig wie bisher", async () => {
-    const rec = await createRecurring(orgId, input({ title: "Fest am Stichtag", lines: [fixedLine] }));
+    const rec = await createBestandRecurring(orgId, input({ title: "Fest am Stichtag", lines: [fixedLine] }));
     const batch = await runDueRecurring({ now: new Date("2187-03-31T13:00:00.000Z"), orgId });
     expect(batch.find((s) => s.recurringId === rec.id)?.emitted).toHaveLength(1);
   });

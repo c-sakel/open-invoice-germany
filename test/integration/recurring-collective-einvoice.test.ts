@@ -2,6 +2,7 @@
  * E-Rechnung und PDF einer Sammelrechnung aus Abos: je Position eine Rechnungszeile, keine
  * Gliederungszeilen im XML, Leistungszeitraum je Position und am Beleg, Storno. Eigenes Jahr 2208.
  */
+import { createBestandRecurring } from "../helpers/recurring-bestand";
 import { describe, it, expect, beforeAll } from "vitest";
 import { dbInternal } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
@@ -37,14 +38,14 @@ beforeAll(async () => {
     select: { id: true },
   });
   customerId = c.id;
-  const a = await createRecurring(
+  const a = await createBestandRecurring(
     orgId,
     createRecurringSchema.parse({
       customerId, title: "INTERNTITEL-WARTUNG", startDate: START, collectiveBilling: true, invoiceHeading: "Wartung", autoFinalize: true, showPeriodText: true,
       lines: [{ lineType: "ITEM", description: "Wartungsvertrag", unitNetPriceCents: 4900, ...base }],
     }),
   );
-  const b = await createRecurring(
+  const b = await createBestandRecurring(
     orgId,
     createRecurringSchema.parse({
       customerId, title: "INTERNTITEL-HOSTING", startDate: START, collectiveBilling: true, invoiceHeading: "Hosting", autoFinalize: true, showPeriodText: true,
@@ -127,21 +128,21 @@ describe("Sammelrechnung — Zeitraum und Hinweise bei unterschiedlichen Rhythme
       select: { id: true },
     });
     const common = { customerId: c.id, startDate: START, collectiveBilling: true, autoFinalize: true, showPeriodText: true };
-    const monthly = await createRecurring(
+    const monthly = await createBestandRecurring(
       orgId,
       createRecurringSchema.parse({
         ...common, title: "INTERNTITEL-MONAT", invoiceHeading: "Wartung", notes: "Bitte Zugang melden",
         lines: [{ lineType: "ITEM", description: "Wartung monatlich", unitNetPriceCents: 1000, ...base }],
       }),
     );
-    const quarterly = await createRecurring(
+    const quarterly = await createBestandRecurring(
       orgId,
       createRecurringSchema.parse({
         ...common, title: "INTERNTITEL-QUARTAL", invoiceHeading: "Lizenz", interval: "QUARTERLY", notes: "Lizenzschluessel per Post",
         lines: [{ lineType: "ITEM", description: "Lizenz Quartal", unitNetPriceCents: 3000, ...base }],
       }),
     );
-    const noNote = await createRecurring(
+    const noNote = await createBestandRecurring(
       orgId,
       createRecurringSchema.parse({
         ...common, title: "INTERNTITEL-OHNE", invoiceHeading: "Support",
