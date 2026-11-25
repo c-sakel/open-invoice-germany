@@ -71,6 +71,36 @@ export async function onRecurringFailed(orgId: string, input: { recurringId: str
   );
 }
 
+/**
+ * Abo-Rechnung wurde nicht (oder unklar) automatisch versendet (auto-send.ts). Pflicht-Alarm: umgeht den
+ * Einstellungsfilter. Text nur aus festen Bausteinen und der Belegnummer, nie mit Servertext.
+ */
+export async function onRecurringNotSent(
+  orgId: string,
+  input: { invoiceId: string; number: string | null; status: "NO_ADDRESS" | "UNCLEAR" | "GAVE_UP"; at: Date },
+): Promise<void> {
+  const what = input.number ? `Rechnung ${input.number}` : "Rechnung";
+  const body =
+    input.status === "NO_ADDRESS"
+      ? `${what}: Der Kunde hat keine E-Mail-Adresse. Der Versand wird bis zu 7 Tage lang erneut geprüft.`
+      : input.status === "UNCLEAR"
+        ? `${what}: Ob die E-Mail angekommen ist, ist unklar. Es wird nicht automatisch erneut gesendet. Bitte prüfen und bei Bedarf manuell senden.`
+        : `${what}: Der automatische Versand wurde aufgegeben. Bitte manuell senden.`;
+  await safeNotify(orgId, "RECURRING_NOT_SENT", () =>
+    createNotification({
+      orgId,
+      type: "RECURRING_NOT_SENT",
+      title: "Abo-Rechnung nicht versendet",
+      body,
+      link: `/rechnungen/${input.invoiceId}`,
+      entityType: "INVOICE",
+      entityId: input.invoiceId,
+      dedupeKey: `RECURRING_NOT_SENT:${input.invoiceId}:${input.status}`,
+      at: input.at,
+    }),
+  );
+}
+
 /** Sammelrechnung nicht moeglich: die Abos der Gruppe wurden einzeln abgerechnet. */
 export async function onCollectiveFallback(orgId: string, input: { recurringId: string; memberCount: number; message: string; at: Date }): Promise<void> {
   await safeNotify(orgId, "RECURRING_FAILED", () =>

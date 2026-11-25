@@ -11,6 +11,7 @@ import { finalizeWithinTx } from "@/domain/invoice/finalize";
 import { linkDocuments } from "@/domain/relations";
 import { prefillEmail } from "@/domain/email/compose";
 import { sendDocumentEmail } from "@/domain/email/send";
+import { MailNotConfiguredError } from "@/domain/email/settings";
 import type { MailProvider } from "@/lib/mail/provider";
 import type { CreateInvoiceInput } from "@/schemas";
 import { MAX_USAGE_QUANTITY_MILLI } from "@/schemas/recurring-usage";
@@ -18,9 +19,13 @@ import { RecurringError } from "./errors";
 import { itemTaxRates, recurringLinesToInvoiceLines } from "./lines";
 import { collectBillableUsage, markUsageBilled } from "./usage";
 import type { EmitOutcome, EmittedInvoice } from "./run-types";
+import { enqueueAutoSendWithinTx } from "./auto-send";
 import { effectiveAnchorDay } from "./usage-period";
 
 export const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Akteur der Mail-Protokolle des automatischen Versands (Abgrenzung zum manuellen Versand). */
+export const AUTO_SEND_ACTOR = "recurring-runner";
 
 export type RecWithLines = Prisma.RecurringInvoiceGetPayload<{ include: { lines: true } }>;
 
@@ -213,6 +218,10 @@ export async function emitSingleInvoice(
     finalized = true;
   }
   const adv = await advanceAfterEmit(tx, rec, periodDate, now, built.anchorDay);
+  // Outbox des automatischen Versands in DERSELBEN Transaktion: Rechnung und Versandauftrag entstehen gemeinsam oder gar nicht.
+  if (rec.autoSend && finalized) {
+    await enqueueAutoSendWithinTx(tx, { orgId: rec.orgId, invoiceId: invoice.id, recurringId: rec.id, now });
+  }
   const result: EmittedInvoice = {
     invoiceId: invoice.id,
     number,
@@ -223,23 +232,38 @@ export async function emitSingleInvoice(
   return { result, ended: adv.ended, autoSend: rec.autoSend, orgId: rec.orgId, emailTemplateId: rec.emailTemplateId };
 }
 
+/** Ergebnis EINES Versandversuchs (interner Baustein von auto-send.ts). */
+export type RecurringMailAttempt =
+  | { status: "SENT"; logId: string }
+  /** Kein Empfaenger ermittelt (Kunde ohne E-Mail). */
+  | { status: "SKIPPED" }
+  /** Das Protokoll existiert und sagt FAILED; `outcome` trennt "sicher nicht angenommen" von "unklar". */
+  | { status: "FAILED"; outcome: "NOT_SENT" | "UNKNOWN"; error?: string }
+  /** Eine Ausnahme beim Vorbereiten/Versenden. `mailNotConfigured`: Mailzugang fehlt. Ob schon ein Protokoll entstand, prueft der Aufrufer. */
+  | { status: "THROWN"; mailNotConfigured: boolean };
+
 /**
- * Versendet die erzeugte Rechnung ueber die Standardvorlage INVOICE — LAEUFT AUSSERHALB jeder
- * Prisma-Transaktion. Ohne Kunden-E-Mail oder Mailkonfiguration: SKIPPED statt eines geworfenen
- * Fehlers, der Lauf der uebrigen Abos darf nicht abbrechen.
+ * Ein Versandversuch der erzeugten Rechnung ueber die Standardvorlage INVOICE — LAEUFT AUSSERHALB jeder
+ * Prisma-Transaktion. NUR von `auto-send.ts` aufzurufen (kein zweiter Versandweg): dort entscheiden
+ * Claim, Wiederholung und Doppelversand-Schutz.
  */
 export async function sendRecurringInvoiceEmail(
   orgId: string,
   invoiceId: string,
   provider: MailProvider | undefined,
   emailTemplateId: string | null,
-): Promise<{ status: "SENT" | "FAILED" | "SKIPPED"; error?: string }> {
+): Promise<RecurringMailAttempt> {
+  let pre: Awaited<ReturnType<typeof prefillEmail>>;
   try {
-    const pre = await prefillEmail(orgId, { docType: "INVOICE", docId: invoiceId, templateId: emailTemplateId ?? undefined });
-    if (pre.to.length === 0) return { status: "SKIPPED" };
+    pre = await prefillEmail(orgId, { docType: "INVOICE", docId: invoiceId, templateId: emailTemplateId ?? undefined });
+  } catch (e) {
+    return { status: "THROWN", mailNotConfigured: e instanceof MailNotConfiguredError };
+  }
+  if (pre.to.length === 0) return { status: "SKIPPED" };
+  try {
     const result = await sendDocumentEmail(
       orgId,
-      "recurring-runner",
+      AUTO_SEND_ACTOR,
       {
         docType: "INVOICE",
         docId: invoiceId,
@@ -257,8 +281,10 @@ export async function sendRecurringInvoiceEmail(
       [],
       provider,
     );
-    return result.status === "SENT" ? { status: "SENT" } : { status: "FAILED", error: result.error };
+    return result.status === "SENT"
+      ? { status: "SENT", logId: result.logId }
+      : { status: "FAILED", outcome: result.outcome ?? "UNKNOWN", error: result.error };
   } catch (e) {
-    return { status: "FAILED", error: e instanceof Error ? e.message : String(e) };
+    return { status: "THROWN", mailNotConfigured: e instanceof MailNotConfiguredError };
   }
 }

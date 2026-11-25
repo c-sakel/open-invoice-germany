@@ -14,6 +14,7 @@ export const NOTIFICATION_TYPES = {
   QUOTE_EXPIRING: "Angebot laeuft bald ab",
   EMAIL_BOUNCED: "E-Mail unzustellbar",
   RECURRING_FAILED: "Wiederkehrende Rechnung fehlgeschlagen",
+  RECURRING_NOT_SENT: "Abo-Rechnung nicht versendet",
   EINVOICE_INVALID: "E-Rechnung ungueltig",
   ARCHIVE_TAMPERED: "Archivierter Beleg fehlt oder wurde veraendert",
   ARCHIVE_FAILED: "Archivierung fehlgeschlagen",
@@ -45,7 +46,7 @@ export const ALL_NOTIFICATION_TYPES = Object.keys(NOTIFICATION_TYPES) as Notific
  * von gespeicherten `enabledTypes` (auch fuer Bestandszeilen, die diese Typen nie kannten),
  * und sind in der Einstellungs-UI nicht abwaehlbar.
  */
-export const MANDATORY_NOTIFICATION_TYPES: readonly NotificationType[] = ["ARCHIVE_TAMPERED", "ARCHIVE_FAILED", "CHAIN_BROKEN", "FX_FETCH_FAILED"];
+export const MANDATORY_NOTIFICATION_TYPES: readonly NotificationType[] = ["ARCHIVE_TAMPERED", "ARCHIVE_FAILED", "CHAIN_BROKEN", "FX_FETCH_FAILED", "RECURRING_NOT_SENT"];
 
 export function isMandatoryNotificationType(type: NotificationType): boolean {
   return MANDATORY_NOTIFICATION_TYPES.includes(type);

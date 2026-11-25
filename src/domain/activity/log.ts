@@ -92,6 +92,9 @@ export const ACTIVITY_TYPES = {
   POSTAL_DRY_RUN: "Postversand (Trockenlauf) protokolliert",
   POSTAL_CANCELLED: "Postversand storniert",
   POSTAL_FAILED: "Postversand fehlgeschlagen",
+  // Automatischer Versand von Abo-Rechnungen (src/domain/recurring/auto-send.ts), entityType INVOICE; Daten nur Status/Code/Zaehler.
+  AUTO_SEND_PROBLEM: "Automatischer Versand gestört",
+  AUTO_SEND_RETRIED: "Automatischer Versand neu gestartet",
   // Phase 18b: CSV-Import von Kunden/Produkten (src/domain/import/run.ts), entityType IMPORT, entityId = Datei-Hash.
   CSV_IMPORTED: "CSV-Import",
   // Phase 18c: Sammel-Storno (src/domain/invoice/bulk-cancel.ts), entityType INVOICE_BATCH, entityId = batchId.

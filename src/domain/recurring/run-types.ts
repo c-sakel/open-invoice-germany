@@ -12,8 +12,12 @@ export interface EmittedInvoice {
   number: string | null;
   periodDate: Date;
   finalized: boolean;
-  /** Ergebnis des automatischen Versands (autoSend) — fehlt, wenn autoSend aus ist. */
-  emailStatus?: "SENT" | "FAILED" | "SKIPPED";
+  /**
+   * Ergebnis des automatischen Versands (autoSend) — fehlt, wenn autoSend aus ist. SKIPPED = kein Empfaenger
+   * (Wartezeit bis 7 Tage), UNCLEAR = Ausgang unklar (kein automatischer Versuch), FAILED = Wiederholung
+   * geplant oder aufgegeben. Der Stand je Rechnung steht in `InvoiceAutoSend`.
+   */
+  emailStatus?: "SENT" | "FAILED" | "SKIPPED" | "UNCLEAR";
   emailError?: string;
   /** Hinweis des Laufs (z. B. Abo bleibt trotz erreichter maxRuns aktiv, weil noch Verbrauch offen ist). */
   notice?: string;

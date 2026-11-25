@@ -35,13 +35,13 @@ import {
   buildRunLines,
   emitSingleInvoice,
   isRunDue,
-  sendRecurringInvoiceEmail,
   type EmitTxResult,
   type RecWithLines,
   type RunLines,
 } from "./run-parts";
 import type { EmitOutcome, EmittedInvoice, SkippedPeriod } from "./run-types";
 import { markUsageBilled } from "./usage";
+import { dispatchAutoSendForInvoice, enqueueAutoSendWithinTx } from "./auto-send";
 
 const CANDIDATE_SELECT = {
   id: true,
@@ -303,6 +303,10 @@ export async function emitCollective(
       number = fin.number;
       finalized = true;
     }
+    // Eine Sammelrechnung = EIN Versandauftrag (Outbox in derselben Transaktion).
+    if (first.autoSend && finalized) {
+      await enqueueAutoSendWithinTx(tx, { orgId, invoiceId: invoice.id, recurringId: first.id, now });
+    }
 
     const notices: string[] = [];
     for (const b of blocks) {
@@ -373,8 +377,8 @@ export async function emitCollective(
     await onInvoiceFinalizedKu(done.orgId, now);
   }
   if (done.autoSend && outcome.finalized) {
-    const sent = await sendRecurringInvoiceEmail(done.orgId, outcome.invoiceId, opts.provider, done.emailTemplateId);
-    outcome.emailStatus = sent.status;
+    const sent = await dispatchAutoSendForInvoice(outcome.invoiceId, now, opts.provider);
+    outcome.emailStatus = sent.emailStatus;
     outcome.emailError = sent.error;
   }
   return { outcome, memberIds: run.memberIds, endedIds: run.endedIds, overflowIds };
