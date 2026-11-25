@@ -1,207 +1,119 @@
 "use client";
 
 /**
- * Kunden-Picker (Phase 11c, Task 3): Suchfeld filtert clientseitig ueber die
- * Kundenliste (Name, Kundennummer, E-Mail), Tastaturbedienung Pfeil/Enter/Escape wie
- * `CommandPalette`, plus „+ Neuen Kunden anlegen" (Inline-Anlage ueber
- * `NewCustomerDialog`). Gewaehlter Kunde wird als Chip mit „aendern" angezeigt.
- *
- * Fix 1 (Task-3-Review): `NewCustomerDialog` haengt IMMER neben dem Suchfeld (wie
- * `ProductPicker`/`NewProductDialog`), nicht innerhalb der `open`-gegateten
- * Dropdown-`<ul>` — sonst unmountet das Schliessen der Dropdown im selben Handler den
- * gerade offenen/gerade geschlossenen Dialog und der Fokus faellt auf `<body>`. Nach der
- * Inline-Anlage wird der Fokus stattdessen explizit auf den „aendern"-Button des neuen
- * Chips gesetzt (Ref + `requestAnimationFrame`, da der Chip erst im naechsten Render
- * existiert).
- *
- * M11 (Abschluss-Review): Suchfeld + Trefferliste folgen jetzt dem ARIA-Combobox-Muster
- * (`role="combobox"`/`aria-expanded`/`aria-controls`/`aria-activedescendant` auf dem
- * Eingabefeld, `role="listbox"`/`role="option"`/`aria-selected` auf Liste/Eintraegen) —
- * vorher bekamen Screenreader-Nutzer die per Pfeiltaste bewegte Cursorposition (`safeCursor`)
- * nicht mitgeteilt.
+ * Kunden-Picker des Belegeditors: serverseitige Suche (`/api/lookup/customers`) ueber
+ * `SearchSelect`, Kundenkontext (Vorgaben, Ansprechpartner, Adressen nur dieses Kunden) wird
+ * erst bei der Auswahl ueber `/api/lookup/customers/<id>` geladen. „+ Neuen Kunden anlegen"
+ * bleibt als eigener Dialog neben dem Feld (der Dialog haengt immer im DOM, damit der Fokus
+ * beim Schliessen nicht verloren geht); nach der Anlage geht der Fokus zurueck ins Feld.
  */
-import { useId, useMemo, useRef, useState } from "react";
-import { NewCustomerDialog, type InlineCustomer } from "./NewCustomerDialog";
-import { inputCls } from "@/components/forms/fields";
+import { useCallback, useRef, useState } from "react";
+import { SearchSelect, type SearchSelectOption } from "@/components/ui/SearchSelect";
+import { NewCustomerDialog } from "./NewCustomerDialog";
+import {
+  customerLookupRowsSchema,
+  editorCustomerContextSchema,
+  type EditorCustomer,
+  type EditorCustomerContext,
+} from "@/schemas/lookup";
 
-export interface CustomerOption {
-  id: string;
-  name: string;
-  customerNumber?: string | null;
-  email?: string | null;
-  defaultPaymentMethodId?: string | null;
-  defaultDiscountPermille?: number | null;
-  /** Fix-Welle 1, M2 (Abschluss-Review Phase 13b): dieselbe Kundenvorgabe wie
-   *  `createDraftInvoice` (`invoice/create.ts:109`, spezifischste Zusage vor
-   *  Zahlungsmethode/Org-Einstellung) — Grundlage fuer `MetaBlock`s Faelligkeits-
-   *  Vorbelegung bei Neuanlage (`resolveDueDays`, `src/lib/editor/draft.ts`). */
-  defaultPaymentTermsDays?: number | null;
-  /** Kundenvorgabe-Waehrung (ISO 4217) — Vorbelegung der Belegwaehrung bei Neuanlage. */
-  defaultCurrency?: string | null;
-  /** Belegsprache des Kunden (ISO 639-1) — Vorbelegung der Belegsprache bei Neuanlage (Phase 16b). */
-  language?: string | null;
+function toOption(c: { id: string; name: string; customerNumber: string | null; city?: string | null; isArchived?: boolean }): SearchSelectOption {
+  const parts = [c.customerNumber, c.city].filter((v): v is string => Boolean(v));
+  if (c.isArchived) parts.push("archiviert");
+  return { id: c.id, label: c.name, subtitle: parts.length > 0 ? parts.join(" · ") : undefined };
 }
 
-const MAX_HITS = 30;
-
-function subtitle(c: CustomerOption): string | null {
-  const parts = [c.customerNumber, c.email].filter((v): v is string => Boolean(v));
-  return parts.length > 0 ? parts.join(" · ") : null;
+async function getJson(url: string, signal?: AbortSignal): Promise<unknown> {
+  const res = await fetch(url, { signal, headers: { accept: "application/json" } });
+  if (!res.ok) throw new Error(`Anfrage fehlgeschlagen (${res.status})`);
+  return res.json();
 }
 
 export function CustomerPicker({
-  customers,
   value,
+  initialCustomer = null,
   onChange,
-  onCreated,
   disabled,
+  label = "Kunde",
 }: {
-  customers: CustomerOption[];
   value: string;
-  onChange: (id: string, customer: CustomerOption | null) => void;
-  onCreated?: (c: CustomerOption) => void;
+  /** Vorbelegter Kunde der Seite (Name wird ohne Abruf angezeigt). */
+  initialCustomer?: EditorCustomer | null;
+  /** Liefert den Kontext des gewaehlten Kunden (Vorgaben, Ansprechpartner, Adressen). */
+  onChange: (ctx: EditorCustomerContext) => void;
   disabled?: boolean;
+  label?: string;
 }) {
-  const [query, setQuery] = useState("");
-  const [open, setOpen] = useState(false);
-  const [cursor, setCursor] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const changeButtonRef = useRef<HTMLButtonElement>(null);
-  const listboxId = useId();
-  const optionId = (id: string) => `${listboxId}-${id}`;
+  const [error, setError] = useState<string | null>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  // Bekannte Beschriftungen (Seite, Anlage, Auswahl) — spart den Abruf beim Anzeigen.
+  const known = useRef(new Map<string, SearchSelectOption>());
 
-  const selected = useMemo(() => customers.find((c) => c.id === value) ?? null, [customers, value]);
+  const search = useCallback(async (q: string, signal: AbortSignal) => {
+    const rows = customerLookupRowsSchema.parse(await getJson(`/api/lookup/customers?q=${encodeURIComponent(q)}`, signal));
+    return rows.map(toOption);
+  }, []);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const list = q
-      ? customers.filter(
-          (c) => c.name.toLowerCase().includes(q) || (c.customerNumber ?? "").toLowerCase().includes(q) || (c.email ?? "").toLowerCase().includes(q),
-        )
-      : customers;
-    return list.slice(0, MAX_HITS);
-  }, [customers, query]);
+  const loadByIds = useCallback(async (ids: string[]) => {
+    const rows = customerLookupRowsSchema.parse(await getJson(`/api/lookup/customers?ids=${encodeURIComponent(ids.join(","))}`));
+    return rows.map(toOption);
+  }, []);
 
-  const safeCursor = filtered.length === 0 ? 0 : Math.min(cursor, filtered.length - 1);
+  const loadSelected = useCallback(
+    async (id: string): Promise<SearchSelectOption | null> => {
+      if (initialCustomer?.id === id) return toOption(initialCustomer);
+      const cached = known.current.get(id);
+      if (cached) return cached;
+      const rows = customerLookupRowsSchema.parse(await getJson(`/api/lookup/customers?ids=${encodeURIComponent(id)}`));
+      return rows[0] ? toOption(rows[0]) : null;
+    },
+    [initialCustomer],
+  );
 
-  function pick(c: CustomerOption) {
-    onChange(c.id, c);
-    setQuery("");
-    setOpen(false);
-  }
-
-  function startSearch() {
-    setOpen(true);
-    setQuery("");
-    setCursor(0);
-    setTimeout(() => inputRef.current?.focus(), 0);
-  }
-
-  function handleCreated(c: InlineCustomer) {
-    const option: CustomerOption = {
-      id: c.id,
-      name: c.name,
-      customerNumber: c.customerNumber,
-      email: c.email,
-      defaultPaymentMethodId: c.defaultPaymentMethodId,
-    };
-    onCreated?.(option);
-    onChange(option.id, option);
-    setQuery("");
-    setOpen(false);
-    // Der Chip mit dem "aendern"-Button existiert erst im naechsten Render (selected
-    // wechselt erst, wenn `value` beim Aufrufer aktualisiert wurde) — requestAnimationFrame
-    // statt eines synchronen Fokus-Aufrufs.
-    requestAnimationFrame(() => changeButtonRef.current?.focus());
-  }
-
-  function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setCursor((c) => Math.min(c + 1, Math.max(filtered.length - 1, 0)));
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setCursor((c) => Math.max(c - 1, 0));
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      const hit = filtered[safeCursor];
-      if (hit) pick(hit);
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      // CommandPalette-Verhalten: Escape schliesst immer die Dropdown, unabhaengig davon,
-      // ob bereits ein Kunde gewaehlt ist. Der Fokus bleibt auf dem Eingabefeld (kein
-      // blur() mehr) — nur wenn bereits ein Kunde gewaehlt ist, wechselt die Ansicht beim
-      // naechsten Render zurueck zum Chip.
-      setOpen(false);
+  async function pick(id: string | null, option: SearchSelectOption | null) {
+    if (!id || id === value) return;
+    setError(null);
+    try {
+      const ctx = editorCustomerContextSchema.parse(await getJson(`/api/lookup/customers/${encodeURIComponent(id)}`));
+      known.current.set(id, option ?? toOption(ctx.customer));
+      onChange(ctx);
+    } catch {
+      setError("Der Kunde konnte nicht geladen werden. Bitte erneut wählen.");
     }
   }
 
-  if (selected && !open) {
-    const sub = subtitle(selected);
-    return (
-      <div className="flex items-center gap-2 rounded-md border border-rule bg-paper px-3 py-2 text-sm">
+  return (
+    <div ref={wrapRef} className="space-y-1">
+      <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
-          <div className="truncate font-medium text-ink">{selected.name}</div>
-          {sub && <div className="truncate text-xs text-ink-muted">{sub}</div>}
+          <SearchSelect
+            label={label}
+            placeholder="Kunde suchen…"
+            value={value === "" ? null : value}
+            disabled={disabled}
+            search={search}
+            loadSelected={loadSelected}
+            loadByIds={loadByIds}
+            recentKey="customer"
+            onChange={(id, option) => void pick(id, option)}
+          />
         </div>
         {!disabled && (
-          <button ref={changeButtonRef} type="button" className="shrink-0 text-xs font-medium text-pen hover:underline" onClick={startSearch}>
-            ändern
-          </button>
+          <NewCustomerDialog
+            onCreated={(customer) => {
+              known.current.set(customer.id, toOption(customer));
+              setError(null);
+              onChange({ customer, contacts: [], addresses: [] });
+              requestAnimationFrame(() => wrapRef.current?.querySelector<HTMLInputElement>('input[role="combobox"]')?.focus());
+            }}
+          />
         )}
       </div>
-    );
-  }
-
-  return (
-    <div className="relative">
-      <div className="flex items-center gap-2">
-        <input
-          ref={inputRef}
-          className={`${inputCls} w-full`}
-          placeholder="Kunde suchen…"
-          value={query}
-          disabled={disabled}
-          role="combobox"
-          aria-expanded={open}
-          aria-controls={listboxId}
-          aria-autocomplete="list"
-          aria-activedescendant={open && filtered[safeCursor] ? optionId(filtered[safeCursor].id) : undefined}
-          onFocus={() => setOpen(true)}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setOpen(true);
-            setCursor(0);
-          }}
-          onKeyDown={onKeyDown}
-        />
-        {!disabled && <NewCustomerDialog onCreated={handleCreated} />}
-      </div>
-      {open && !disabled && (
-        <ul id={listboxId} role="listbox" aria-label="Kundenvorschläge" className="absolute z-10 mt-1 max-h-72 w-full overflow-y-auto rounded-md border border-rule bg-sheet text-sm shadow-lg">
-          {filtered.length === 0 ? (
-            <li className="px-3 py-2 text-ink-muted">Keine Treffer</li>
-          ) : (
-            filtered.map((c, i) => (
-              <li key={c.id} id={optionId(c.id)} role="option" aria-selected={i === safeCursor}>
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  onMouseDown={(e) => e.preventDefault()}
-                  className={`block w-full px-3 py-1.5 text-left ${i === safeCursor ? "bg-pen-wash text-pen" : "hover:bg-paper"}`}
-                  onClick={() => pick(c)}
-                >
-                  <span className="font-medium">{c.name}</span>
-                  {subtitle(c) && <span className="ml-2 text-xs text-ink-muted">{subtitle(c)}</span>}
-                </button>
-              </li>
-            ))
-          )}
-        </ul>
+      {error && (
+        <p role="alert" className="text-xs text-seal">
+          {error}
+        </p>
       )}
-      {/* M11 (Abschluss-Review): kein `aria-hidden` mehr — siehe Kommentar in
-          `LineRowMenu.tsx` (dasselbe Overlay-Klick-aussen-schliesst-Muster). */}
-      {open && !disabled && <button type="button" className="fixed inset-0 z-0 cursor-default" onClick={() => setOpen(false)} tabIndex={-1} />}
     </div>
   );
 }

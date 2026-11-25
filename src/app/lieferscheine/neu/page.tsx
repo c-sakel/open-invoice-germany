@@ -18,19 +18,13 @@ export default async function NeuerLieferscheinPage() {
     return <NeedOrgNotice />;
   }
 
-  const [customers, products, contactRows, addressRows, docSettings] = await Promise.all([
-    dbInternal.customer.findMany({
-      where: { orgId, isArchived: false },
-      select: { id: true, name: true, customerNumber: true, email: true, addressLine1: true, postalCode: true, city: true, countryCode: true },
-      orderBy: { name: "asc" },
-    }),
+  const [customerCount, products, docSettings] = await Promise.all([
+    dbInternal.customer.count({ where: { orgId, isArchived: false } }),
     dbInternal.product.findMany({
       where: { orgId, isArchived: false },
       select: { id: true, name: true, unit: true, netPriceCents: true, taxRate: true, articleNumber: true },
       orderBy: { name: "asc" },
     }),
-    dbInternal.contactPerson.findMany({ where: { orgId }, orderBy: { lastName: "asc" } }),
-    dbInternal.customerAddress.findMany({ where: { orgId }, orderBy: { label: "asc" } }),
     // M14 (Abschluss-Review): dieselbe Quelle wie `createDeliveryNoteWithinTx`/
     // `buildDeliveryNotePreview` (`preview-draft.ts`) — ohne sie startete jeder neue
     // Lieferschein-Entwurf hart mit showPrices:false/showArticleNumber:true/
@@ -38,25 +32,7 @@ export default async function NeuerLieferscheinPage() {
     loadDocumentSettings(orgId),
   ]);
 
-  const contacts = contactRows.map((c) => ({
-    id: c.id,
-    customerId: c.customerId,
-    name: `${c.firstName} ${c.lastName}${c.role ? ` (${c.role})` : ""}`,
-    isDefault: c.isDefault,
-  }));
-  // Nit (Fix-Welle): eine Lieferadresse ist SHIPPING oder OTHER — BILLING-Adressen
-  // gehoeren nicht in die Lieferadress-Auswahl (create.ts lehnt sie serverseitig ab).
-  const addresses = addressRows
-    .filter((a) => a.type === "SHIPPING" || a.type === "OTHER")
-    .map((a) => ({
-      id: a.id,
-      customerId: a.customerId,
-      type: a.type as "BILLING" | "SHIPPING" | "OTHER",
-      isDefault: a.isDefault,
-      label: a.label ? `${a.label} — ${a.addressLine1}, ${a.postalCode} ${a.city}` : `${a.addressLine1}, ${a.postalCode} ${a.city}`,
-    }));
-
-  if (customers.length === 0) {
+  if (customerCount === 0) {
     return (
       <div className="rounded-lg border border-seal/30 bg-seal/10 p-6 text-sm text-seal">
         Noch keine Kunden angelegt. Lege zuerst einen{" "}
@@ -77,11 +53,9 @@ export default async function NeuerLieferscheinPage() {
         showDeliveryAddress: docSettings.dnShowDeliveryAddress,
         allowedTaxRates: docSettings.taxRates,
       })}
-      customers={customers}
+      customers={[]}
       products={products}
       taxRates={docSettings.taxRates}
-      contacts={contacts}
-      addresses={addresses}
       layouts={listLayouts()}
       backHref="/lieferscheine"
       title="Neuer Lieferschein"

@@ -1,7 +1,7 @@
 /** Phase 22a T4 — Kunden-/Produkt-Lookup und Editor-Kontext. Org-Scope, Archiv, Praefix-Rang. */
 import { beforeAll, describe, expect, it } from "vitest";
 import { dbInternal } from "@/lib/db";
-import { lookupCustomers, loadCustomerForEditor } from "@/domain/customer/lookup";
+import { lookupCustomers, loadCustomerForEditor, loadEditorCustomerBootstrap } from "@/domain/customer/lookup";
 import { lookupProducts } from "@/domain/product/lookup";
 import { formatAddressLabel, formatContactLabel } from "@/domain/customer/editor-labels";
 import { NotFoundError } from "@/domain/errors";
@@ -45,13 +45,17 @@ describe("lookupCustomers", () => {
     expect(r).toHaveLength(5);
     expect(r[0]?.name).toBe("Abele-Berg");
   });
-  it("ids: nur eigene aktive Kunden", async () => {
+  it("ids: nur eigene Kunden, Archivierte mit isArchived (Label bleibt aufloesbar), Suche q nie", async () => {
     const r = await lookupCustomers(orgA, { ids: `${foreignId},${archivedId},${beckerId}` });
-    expect(r.map((x) => x.id)).toEqual([beckerId]);
+    expect(r.map((x) => [x.id, x.isArchived])).toEqual([
+      [archivedId, true],
+      [beckerId, false],
+    ]);
+    expect((await lookupCustomers(orgA, { q: "Becker Archiv" })).map((x) => x.id)).toEqual([]);
   });
   it("liefert genau die Schluessel id, name, customerNumber, city, email", async () => {
     const [row] = await lookupCustomers(orgA, { q: "Becker GmbH" });
-    expect(Object.keys(row ?? {}).sort()).toEqual(["city", "customerNumber", "email", "id", "name"]);
+    expect(Object.keys(row ?? {}).sort()).toEqual(["city", "customerNumber", "email", "id", "isArchived", "name"]);
   });
   it("lehnt zu langes q und limit > 20 ab", async () => {
     await expect(lookupCustomers(orgA, { q: "x".repeat(101) })).rejects.toThrow();
@@ -69,6 +73,12 @@ describe("loadCustomerForEditor", () => {
     expect(r.customer).not.toHaveProperty("notes");
     expect(r.customer).not.toHaveProperty("datevAccount");
   });
+  it("archivierter Kunde bleibt ladbar (Entwurf mit archiviertem Kunden) und traegt isArchived", async () => {
+    const r = await loadCustomerForEditor(orgA, archivedId);
+    expect(r.customer.isArchived).toBe(true);
+    expect(r.customer.name).toBe("Becker Archiv");
+    expect((await loadCustomerForEditor(orgA, beckerId)).customer.isArchived).toBe(false);
+  });
   it("fremde Org und unbekannte Id -> NotFoundError", async () => {
     await expect(loadCustomerForEditor(orgA, foreignId)).rejects.toBeInstanceOf(NotFoundError);
     await expect(loadCustomerForEditor(orgA, "gibt-es-nicht")).rejects.toBeInstanceOf(NotFoundError);
@@ -81,7 +91,33 @@ describe("lookupProducts", () => {
     expect(byName.map((p) => p.name)).toEqual(["Beratung"]);
     const byNo = await lookupProducts(orgA, { q: "ART-77" });
     expect(byNo).toHaveLength(1);
-    expect(Object.keys(byNo[0] ?? {}).sort()).toEqual(["articleNumber", "id", "name", "netPriceCents", "taxRate", "unit"]);
+    expect(Object.keys(byNo[0] ?? {}).sort()).toEqual(["articleNumber", "id", "isArchived", "name", "netPriceCents", "taxRate", "unit"]);
     expect((await lookupProducts(orgA, { q: "Alt" })).length).toBe(0);
+  });
+  it("ids loest auch archivierte eigene Produkte auf, nie fremde", async () => {
+    const all = await dbInternal.product.findMany({ where: { name: { in: ["Alt", "Beratung Fremd"] } }, select: { id: true, orgId: true, name: true } });
+    const alt = all.find((p) => p.name === "Alt" && p.orgId === orgA);
+    const fremd = all.find((p) => p.name === "Beratung Fremd");
+    const r = await lookupProducts(orgA, { ids: `${alt?.id},${fremd?.id}` });
+    expect(r.map((p) => [p.name, p.isArchived])).toEqual([["Alt", true]]);
+  });
+});
+
+describe("loadEditorCustomerBootstrap", () => {
+  it("ohne Vorbelegung: keine Kundendaten", async () => {
+    const r = await loadEditorCustomerBootstrap(orgA, undefined, false);
+    expect(r).toEqual({ customers: [], contacts: [], addresses: [] });
+  });
+  it("Vorbelegung: genau ein Kunde mit seinen Kontakten/Adressen (customerId gesetzt)", async () => {
+    const r = await loadEditorCustomerBootstrap(orgA, beckerId, false);
+    expect(r.customers.map((c) => c.id)).toEqual([beckerId]);
+    expect(r.contacts.every((c) => c.customerId === beckerId)).toBe(true);
+    expect(r.addresses).toHaveLength(1);
+  });
+  it("fremde/unbekannte Id leer; Archivierte nur bei allowArchived (Bearbeiten eines Entwurfs)", async () => {
+    expect((await loadEditorCustomerBootstrap(orgA, foreignId, true)).customers).toEqual([]);
+    expect((await loadEditorCustomerBootstrap(orgA, "gibt-es-nicht", true)).customers).toEqual([]);
+    expect((await loadEditorCustomerBootstrap(orgA, archivedId, false)).customers).toEqual([]);
+    expect((await loadEditorCustomerBootstrap(orgA, archivedId, true)).customers.map((c) => c.isArchived)).toEqual([true]);
   });
 });

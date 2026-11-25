@@ -4,6 +4,7 @@ import { dbInternal } from "@/lib/db";
 import { DocumentEditor } from "@/components/editor/DocumentEditor";
 import { draftFromInvoice, localDateOnly, type InvoiceInitialLike } from "@/lib/editor/draft";
 import { listPaymentMethods } from "@/domain/payment-method/manage";
+import { loadEditorCustomerBootstrap } from "@/domain/customer/lookup";
 import { loadDocumentSettings } from "@/domain/document/settings";
 import { listAttachments } from "@/domain/attachment/manage";
 import { loadPrintSettings, effectivePrintOptions } from "@/domain/settings/print";
@@ -26,47 +27,21 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
   // Nur Entwuerfe sind bearbeitbar (GoBD, Lastenheft 51).
   if (inv.status !== "DRAFT") redirect(`/rechnungen/${id}`);
 
-  const [customers, products, paymentMethods, contactRows, addressRows, attachments, documentSettings] = await Promise.all([
-    dbInternal.customer.findMany({
-      where: { orgId: org.id, isArchived: false },
-      select: {
-        id: true,
-        name: true,
-        customerNumber: true,
-        email: true,
-        defaultPaymentMethodId: true,
-        defaultDiscountPermille: true,
-        defaultCurrency: true,
-        language: true,
-        addressLine1: true,
-        postalCode: true,
-        city: true,
-        countryCode: true,
-        vatId: true,
-      },
-      orderBy: { name: "asc" },
-    }),
+  const [bootstrap, products, paymentMethods, attachments, documentSettings] = await Promise.all([
+    // Nur der Kunde des Entwurfs (auch archiviert) samt Kontakten/Adressen.
+    loadEditorCustomerBootstrap(org.id, inv.customerId, true),
     dbInternal.product.findMany({
       where: { orgId: org.id, isArchived: false },
       select: { id: true, name: true, unit: true, netPriceCents: true, taxRate: true, articleNumber: true },
       orderBy: { name: "asc" },
     }),
     listPaymentMethods(org.id),
-    dbInternal.contactPerson.findMany({ where: { orgId: org.id }, orderBy: { lastName: "asc" } }),
-    dbInternal.customerAddress.findMany({ where: { orgId: org.id }, orderBy: { label: "asc" } }),
     listAttachments(org.id, "INVOICE", inv.id),
     loadDocumentSettings(org.id),
   ]);
 
   const paymentMethodOptions = paymentMethods.filter((m) => m.isActive && m.code !== "SKONTO").map((m) => ({ id: m.id, name: m.name, paymentTermsDays: m.paymentTermsDays, untdidCode: m.untdidCode }));
-  const contacts = contactRows.map((c) => ({ id: c.id, customerId: c.customerId, name: `${c.firstName} ${c.lastName}${c.role ? ` (${c.role})` : ""}`, isDefault: c.isDefault }));
-  const addresses = addressRows.map((a) => ({
-    id: a.id,
-    customerId: a.customerId,
-    type: a.type as "BILLING" | "SHIPPING" | "OTHER",
-    isDefault: a.isDefault,
-    label: a.label ? `${a.label} — ${a.addressLine1}, ${a.postalCode} ${a.city}` : `${a.addressLine1}, ${a.postalCode} ${a.city}`,
-  }));
+  const { customers, contacts, addresses } = bootstrap;
 
   const invoiceInitial: InvoiceInitialLike = {
     id: inv.id,

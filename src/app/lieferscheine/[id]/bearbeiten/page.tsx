@@ -3,6 +3,7 @@ import { getActiveOrg } from "@/lib/org";
 import { dbInternal } from "@/lib/db";
 import { DocumentEditor } from "@/components/editor/DocumentEditor";
 import { draftFromDeliveryNote, localDateOnly, type DeliveryNoteInitialLike } from "@/lib/editor/draft";
+import { loadEditorCustomerBootstrap } from "@/domain/customer/lookup";
 import { loadDocumentSettings } from "@/domain/document/settings";
 import { listAttachments } from "@/domain/attachment/manage";
 import { listLayouts } from "@/lib/pdf/layouts/registry";
@@ -21,47 +22,19 @@ export default async function LieferscheinBearbeitenPage({ params }: { params: P
   // Nur Entwuerfe sind bearbeitbar (GoBD): erstellte Lieferscheine sind festgeschrieben.
   if (dn.status !== "DRAFT") redirect(`/lieferscheine/${id}`);
 
-  const [customers, products, contactRows, addressRows, attachments, docSettings] = await Promise.all([
-    dbInternal.customer.findMany({
-      where: { orgId: org.id, isArchived: false },
-      select: { id: true, name: true, customerNumber: true, email: true, addressLine1: true, postalCode: true, city: true, countryCode: true },
-      orderBy: { name: "asc" },
-    }),
+  const [bootstrap, products, attachments, docSettings] = await Promise.all([
+    // Nur der Kunde des Entwurfs (auch archiviert) samt Kontakten/Adressen.
+    loadEditorCustomerBootstrap(org.id, dn.customerId, true),
     dbInternal.product.findMany({
       where: { orgId: org.id, isArchived: false },
       select: { id: true, name: true, unit: true, netPriceCents: true, taxRate: true, articleNumber: true },
       orderBy: { name: "asc" },
     }),
-    dbInternal.contactPerson.findMany({
-      where: { orgId: org.id },
-      select: { id: true, customerId: true, firstName: true, lastName: true, role: true, isDefault: true },
-      orderBy: { lastName: "asc" },
-    }),
-    dbInternal.customerAddress.findMany({
-      where: { orgId: org.id },
-      select: { id: true, customerId: true, type: true, isDefault: true, label: true, addressLine1: true, postalCode: true, city: true },
-      orderBy: { label: "asc" },
-    }),
     listAttachments(org.id, "DELIVERY_NOTE", dn.id),
     loadDocumentSettings(org.id),
   ]);
 
-  const contacts = contactRows.map((c) => ({
-    id: c.id,
-    customerId: c.customerId,
-    name: `${c.firstName} ${c.lastName}${c.role ? ` (${c.role})` : ""}`,
-    isDefault: c.isDefault,
-  }));
-  // Lieferadresse ist SHIPPING oder OTHER (BILLING lehnt die Domain ab).
-  const addresses = addressRows
-    .filter((a) => a.type === "SHIPPING" || a.type === "OTHER")
-    .map((a) => ({
-      id: a.id,
-      customerId: a.customerId,
-      type: a.type as "BILLING" | "SHIPPING" | "OTHER",
-      isDefault: a.isDefault,
-      label: a.label ? `${a.label} — ${a.addressLine1}, ${a.postalCode} ${a.city}` : `${a.addressLine1}, ${a.postalCode} ${a.city}`,
-    }));
+  const { customers, contacts, addresses } = bootstrap;
 
   const initial: DeliveryNoteInitialLike = {
     id: dn.id,

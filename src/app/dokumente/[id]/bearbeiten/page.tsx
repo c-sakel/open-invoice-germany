@@ -3,6 +3,7 @@ import { getActiveOrg } from "@/lib/org";
 import { dbInternal } from "@/lib/db";
 import { DocumentEditor } from "@/components/editor/DocumentEditor";
 import { draftFromDocument, type DocumentInitialLike } from "@/lib/editor/draft";
+import { loadEditorCustomerBootstrap } from "@/domain/customer/lookup";
 import { loadDocumentSettings } from "@/domain/document/settings";
 import { listAttachments } from "@/domain/attachment/manage";
 import { loadPrintSettings, effectivePrintOptions } from "@/domain/settings/print";
@@ -23,43 +24,19 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
   if (!q) notFound();
   if (q.status !== "DRAFT") redirect(`/dokumente/${id}`);
 
-  const [customers, products, contactRows, addressRows, attachments, documentSettings] = await Promise.all([
-    dbInternal.customer.findMany({
-      where: { orgId: org.id, isArchived: false },
-      select: {
-        id: true,
-        name: true,
-        customerNumber: true,
-        email: true,
-        defaultDiscountPermille: true,
-        defaultCurrency: true,
-        language: true,
-        addressLine1: true,
-        postalCode: true,
-        city: true,
-        countryCode: true,
-      },
-      orderBy: { name: "asc" },
-    }),
+  const [bootstrap, products, attachments, documentSettings] = await Promise.all([
+    // Nur der Kunde des Entwurfs (auch archiviert) samt Kontakten/Adressen.
+    loadEditorCustomerBootstrap(org.id, q.customerId, true),
     dbInternal.product.findMany({
       where: { orgId: org.id, isArchived: false },
       select: { id: true, name: true, unit: true, netPriceCents: true, taxRate: true, articleNumber: true },
       orderBy: { name: "asc" },
     }),
-    dbInternal.contactPerson.findMany({ where: { orgId: org.id }, orderBy: { lastName: "asc" } }),
-    dbInternal.customerAddress.findMany({ where: { orgId: org.id }, orderBy: { label: "asc" } }),
     listAttachments(org.id, "QUOTE", q.id),
     loadDocumentSettings(org.id),
   ]);
 
-  const contacts = contactRows.map((c) => ({ id: c.id, customerId: c.customerId, name: `${c.firstName} ${c.lastName}${c.role ? ` (${c.role})` : ""}`, isDefault: c.isDefault }));
-  const addresses = addressRows.map((a) => ({
-    id: a.id,
-    customerId: a.customerId,
-    type: a.type as "BILLING" | "SHIPPING" | "OTHER",
-    isDefault: a.isDefault,
-    label: a.label ? `${a.label} — ${a.addressLine1}, ${a.postalCode} ${a.city}` : `${a.addressLine1}, ${a.postalCode} ${a.city}`,
-  }));
+  const { customers, contacts, addresses } = bootstrap;
 
   const documentInitial: DocumentInitialLike = {
     id: q.id,

@@ -12,3 +12,44 @@ export const lookupQuerySchema = z.object({
     .pipe(z.array(z.string().min(1).max(64)).max(20).optional()),
 });
 export type LookupQuery = z.infer<typeof lookupQuerySchema>;
+
+/** Treffer der Kundensuche (`GET /api/lookup/customers`). */
+export const customerLookupRowSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  customerNumber: z.string().nullable(),
+  city: z.string(),
+  email: z.string().nullable(),
+  isArchived: z.boolean(),
+});
+export const customerLookupRowsSchema = z.array(customerLookupRowSchema);
+
+/** Kunde mit allen Vorgaben, die der Belegeditor braucht (Vorbelegung, Anschriftsvorschau). */
+export const editorCustomerSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  customerNumber: z.string().nullable(),
+  email: z.string().nullable(),
+  defaultPaymentMethodId: z.string().nullable(),
+  defaultDiscountPermille: z.number().nullable(),
+  defaultCurrency: z.string().nullable(),
+  language: z.string().nullable(),
+  defaultPaymentTermsDays: z.number().nullable(),
+  addressLine1: z.string().nullable(),
+  postalCode: z.string().nullable(),
+  city: z.string().nullable(),
+  countryCode: z.string().nullable(),
+  vatId: z.string().nullable(),
+  isArchived: z.boolean(),
+});
+export type EditorCustomer = z.infer<typeof editorCustomerSchema>;
+
+/** Kontext eines Kunden fuer den Editor: Kunde samt seinen Ansprechpartnern und Adressen. */
+export const editorCustomerContextSchema = z.object({
+  customer: editorCustomerSchema,
+  contacts: z.array(z.object({ id: z.string(), name: z.string(), isDefault: z.boolean() })),
+  addresses: z.array(
+    z.object({ id: z.string(), type: z.enum(["BILLING", "SHIPPING", "OTHER"]), isDefault: z.boolean(), label: z.string() }),
+  ),
+});
+export type EditorCustomerContext = z.infer<typeof editorCustomerContextSchema>;

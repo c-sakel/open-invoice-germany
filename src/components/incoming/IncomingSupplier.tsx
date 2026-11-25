@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createContactFromIncomingAction, updateIncomingAction } from "@/app/eingang/actions";
-import { CustomerPicker, type CustomerOption } from "@/components/editor/CustomerPicker";
+import { CustomerPicker } from "@/components/editor/CustomerPicker";
 import { Button } from "@/components/ui/Button";
 import { inputCls } from "@/components/forms/fields";
 import { CONTACT_FIELD_LABELS } from "./incoming-ui";
@@ -26,15 +26,13 @@ interface Props {
   editable: boolean;
   contact: SupplierContactView | null;
   suggestions: SupplierSuggestionView[];
-  customers: CustomerOption[];
 }
 
 const FIELD_ORDER = ["name", "addressLine1", "postalCode", "city", "countryCode", "email", "vatId"] as const;
 
 /** Lieferant: Zuordnung zu einem Kontakt, Vorschläge (USt-IdNr., dann Name), Suche und Anlegen aus den Angaben der Rechnung. */
-export function IncomingSupplier({ id, editable, contact, suggestions, customers: initialCustomers }: Props) {
+export function IncomingSupplier({ id, editable, contact, suggestions }: Props) {
   const router = useRouter();
-  const [customers, setCustomers] = useState(initialCustomers);
   const [pick, setPick] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -125,13 +123,7 @@ export function IncomingSupplier({ id, editable, contact, suggestions, customers
 
           <div className="space-y-2">
             <p className="font-medium text-ink-soft">Kontakt suchen</p>
-            <CustomerPicker
-              customers={customers}
-              value={pick}
-              onChange={(cid) => setPick(cid)}
-              onCreated={(c) => setCustomers((list) => [...list, c])}
-              disabled={busy}
-            />
+            <CustomerPicker label="Kontakt suchen" value={pick} onChange={(ctx) => setPick(ctx.customer.id)} disabled={busy} />
             <div className="flex flex-wrap gap-2">
               <Button variant="primary" disabled={busy || pick === ""} onClick={() => void assign(pick)}>
                 Gewählten Kontakt zuordnen

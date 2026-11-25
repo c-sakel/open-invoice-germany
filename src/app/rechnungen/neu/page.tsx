@@ -6,7 +6,7 @@ import { NeedOrgNotice } from "@/components/NeedOrgNotice";
 import { listPaymentMethods } from "@/domain/payment-method/manage";
 import { loadDocumentSettings } from "@/domain/document/settings";
 import { listLayouts } from "@/lib/pdf/layouts/registry";
-import { formatAddressLabel, formatContactLabel } from "@/domain/customer/editor-labels";
+import { loadEditorCustomerBootstrap } from "@/domain/customer/lookup";
 import { emptyDraft } from "@/lib/editor/draft";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +15,7 @@ export default async function NewInvoicePage({ searchParams }: { searchParams: P
   // Phase 13c, Task 4: "Neue Rechnung" aus der Belegseite eines Kunden (Kopfzeile,
   // Primaeraktion "bezahlt" -> "Neue Rechnung") verlinkt mit ?customerId= — belegt im
   // Editor-Draft nur den Empfaenger vor, kein automatisches Speichern. Ungueltige/fremde
-  // IDs (customers-Liste unten ist bereits orgId-gefiltert) werden stillschweigend
+  // IDs (der Kundenkontext wird org-gescoped geladen) werden stillschweigend
   // ignoriert statt einen Fehler zu zeigen — der Nutzer waehlt dann einfach selbst.
   const { customerId } = await searchParams;
 
@@ -27,55 +27,26 @@ export default async function NewInvoicePage({ searchParams }: { searchParams: P
     return <NeedOrgNotice />;
   }
 
-  const [customers, products, paymentMethods, contactRows, addressRows] = await Promise.all([
-    prisma.customer.findMany({
-      where: { orgId, isArchived: false },
-      select: {
-        id: true,
-        name: true,
-        customerNumber: true,
-        email: true,
-        defaultPaymentMethodId: true,
-        defaultDiscountPermille: true,
-        defaultCurrency: true,
-        language: true,
-        // Fix-Welle 1, M2 (Abschluss-Review Phase 13b): Grundlage fuer MetaBlocks
-        // Faelligkeits-Vorbelegung (resolveDueDays) — dieselbe Kundenvorgabe wie
-        // createDraftInvoice (invoice/create.ts:109).
-        defaultPaymentTermsDays: true,
-        addressLine1: true,
-        postalCode: true,
-        city: true,
-        countryCode: true,
-        vatId: true,
-      },
-      orderBy: { name: "asc" },
-    }),
+  const [customerCount, products, paymentMethods, bootstrap, documentSettings] = await Promise.all([
+    prisma.customer.count({ where: { orgId, isArchived: false } }),
     prisma.product.findMany({
       where: { orgId, isArchived: false },
       select: { id: true, name: true, unit: true, netPriceCents: true, taxRate: true, articleNumber: true },
       orderBy: { name: "asc" },
     }),
     listPaymentMethods(orgId),
-    prisma.contactPerson.findMany({ where: { orgId }, orderBy: { lastName: "asc" } }),
-    prisma.customerAddress.findMany({ where: { orgId }, orderBy: { label: "asc" } }),
+    // Nur der vorgewaehlte Kunde samt Kontakten/Adressen; archivierte werden ignoriert.
+    loadEditorCustomerBootstrap(orgId, customerId, false),
+    loadDocumentSettings(orgId),
   ]);
-  const documentSettings = await loadDocumentSettings(orgId);
-  const contacts = contactRows.map((c) => ({ id: c.id, customerId: c.customerId, name: formatContactLabel(c), isDefault: c.isDefault }));
-  const addresses = addressRows.map((a) => ({
-    id: a.id,
-    customerId: a.customerId,
-    type: a.type as "BILLING" | "SHIPPING" | "OTHER",
-    isDefault: a.isDefault,
-    label: formatAddressLabel(a),
-  }));
+  const { customers, contacts, addresses } = bootstrap;
   // SKONTO ist ein reiner Systemcode fuer die automatische Skontobuchung
   // (detectSkonto) — im Rechnungs-Editor nie manuell waehlbar.
   const paymentMethodOptions = paymentMethods
     .filter((m) => m.isActive && m.code !== "SKONTO")
     .map((m) => ({ id: m.id, name: m.name, paymentTermsDays: m.paymentTermsDays, untdidCode: m.untdidCode }));
 
-  if (customers.length === 0) {
+  if (customerCount === 0) {
     return (
       <div className="rounded-lg border border-seal/30 bg-seal/10 p-6 text-sm text-seal">
         Noch keine Kunden angelegt. Lege zuerst einen{" "}
@@ -93,7 +64,7 @@ export default async function NewInvoicePage({ searchParams }: { searchParams: P
   // autoDeliveryDate })), nur mit vorbelegtem customerId.
   // Kundenwaehrung (Kette Kunde > Einstellung > EUR) wird mit vorbelegt, damit die Anzeige
   // im Editor der spaeter gespeicherten Waehrung entspricht.
-  const presetCustomer = customerId ? customers.find((c) => c.id === customerId) : undefined;
+  const presetCustomer = customers[0];
   const initial = presetCustomer
     ? emptyDraft("INVOICE", {
         customerId: presetCustomer.id,
