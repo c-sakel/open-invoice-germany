@@ -261,6 +261,10 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
 
   const meta: KopfMetaRow[] = [{ label: t.meta.invoiceDate, value: docDate(data.issueDate, lang) }];
   if (data.deliveryDate) meta.push({ label: t.meta.deliveryDate, value: docDate(data.deliveryDate, lang) });
+  // BG-14: Leistungszeitraum im Kopf (Abo-Rechnungen tragen nur den Zeitraum, kein Leistungsdatum).
+  if (data.deliveryStart && data.deliveryEnd) {
+    meta.push({ label: t.meta.servicePeriod, value: `${docDate(data.deliveryStart, lang)}\u00A0–\u00A0${docDate(data.deliveryEnd, lang)}` }); // geschuetzte Leerzeichen: Zeitraum bricht nie mittendrin um
+  }
   if (data.dueDate) meta.push({ label: t.meta.dueDate, value: docDate(data.dueDate, lang) });
   // Fix-Welle (Abschluss-Review Phase 11b, Block 3 — Referenzbeleg RE-2026-0001): nach den
   // Nummer-/Datumszeilen, fuer ALLE Layouts (die `meta`-Zeilen werden von jedem
@@ -439,7 +443,14 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
       // Rabattzeile und die ersten zwei Zeilen des Langtexts muessen mit auf die Seite passen.
       // Phase 18f: Leistungszeitraum (BG-26) als eigener Absatz unter dem Langtext.
       const periodText =
-        line.servicePeriodStart && line.servicePeriodEnd
+        line.servicePeriodStart &&
+        line.servicePeriodEnd &&
+        !(
+          data.deliveryStart &&
+          data.deliveryEnd &&
+          formatDocDate(line.servicePeriodStart, lang) === formatDocDate(data.deliveryStart, lang) &&
+          formatDocDate(line.servicePeriodEnd, lang) === formatDocDate(data.deliveryEnd, lang)
+        )
           ? t.lines.servicePeriod(formatDocDate(line.servicePeriodStart, lang), formatDocDate(line.servicePeriodEnd, lang))
           : "";
       // Ohne Beschreibungsspalte entfaellt der Langtext, der Leistungszeitraum bleibt (Pflichtangabe BG-26).

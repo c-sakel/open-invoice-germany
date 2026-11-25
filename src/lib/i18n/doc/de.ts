@@ -42,6 +42,7 @@ export const de: DocStrings = {
     invoiceDate: "Rechnungsdatum",
     date: "Datum",
     deliveryDate: "Leistungsdatum",
+    servicePeriod: "Leistungszeitraum",
     deliveryNoteDate: "Lieferdatum",
     shippingDate: "Versanddatum",
     dueDate: "Fällig am",

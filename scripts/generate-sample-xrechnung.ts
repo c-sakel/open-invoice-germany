@@ -790,6 +790,21 @@ const sammelrechnungAbo = () =>
     ],
   });
 
+// Abo im Voraus: Leistungszeitraum am Beleg (BG-14) und je Position (BG-26), kein Leistungsdatum (BT-72). Testjahr 2262.
+const aboImVoraus = () =>
+  buildSample({
+    number: "RE-2262-0001",
+    issueDate: new Date("2262-11-25"),
+    dueDate: new Date("2262-12-09"),
+    deliveryStart: new Date("2262-11-25"),
+    deliveryEnd: new Date("2263-11-24"),
+    lines: [
+      { description: "Leistungen", quantityMilli: 0, unit: "C62", unitNetPriceCents: 0, taxRate: 0, taxCategory: "S", lineType: "HEADING" },
+      { description: "Hosting Jahresbeitrag", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 12000, taxRate: 19, taxCategory: "S", ...P("2262-11-25", "2263-11-24") },
+      { description: "Wartung Jahresbeitrag", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 6000, taxRate: 19, taxCategory: "S", ...P("2262-11-25", "2263-11-24") },
+    ],
+  });
+
 // Online-Bezahllink: Satz am Ende von BT-20, nach den Skonto-Zeilen; BT-81 bleibt 58 mit BG-17.
 const onlineZahlungBt20 = () =>
   buildSample({
@@ -862,6 +877,7 @@ const SAMPLES: Record<string, () => EInvoiceData> = {
   "abo-verbrauch-subcent": aboVerbrauchSubcent,
   "abo-verbrauch-subcent-storno": aboVerbrauchSubcentStorno,
   "sammelrechnung-abo": sammelrechnungAbo,
+  "abo-im-voraus": aboImVoraus,
   "online-zahlung-bt20": onlineZahlungBt20,
   "online-68": online68,
   "verbraucher-verzugshinweis": verbraucherVerzugshinweis,

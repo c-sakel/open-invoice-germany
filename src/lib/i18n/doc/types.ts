@@ -58,6 +58,8 @@ export interface DocStrings {
     /** Datum bei Mahnung/Lieferschein. */
     date: string;
     deliveryDate: string;
+    /** Leistungszeitraum (BG-14) im Kopf. */
+    servicePeriod: string;
     /** Lieferdatum (Lieferschein). */
     deliveryNoteDate: string;
     shippingDate: string;

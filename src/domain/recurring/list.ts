@@ -46,6 +46,8 @@ export interface RecurringInvoiceRow {
   status: string;
   issueDate: Date;
   deliveryDate: Date | null;
+  deliveryStart: Date | null;
+  deliveryEnd: Date | null;
   grossTotalCents: number;
   currency: string;
 }
@@ -63,7 +65,7 @@ export async function listRecurringInvoices(orgId: string, recurringId: string):
   return prisma.invoice.findMany({
     where: { orgId, OR: [{ recurringInvoiceId: recurringId }, ...(viaRelation.length > 0 ? [{ id: { in: viaRelation } }] : [])] },
     orderBy: [{ issueDate: "desc" }, { createdAt: "desc" }],
-    select: { id: true, number: true, status: true, issueDate: true, deliveryDate: true, grossTotalCents: true, currency: true },
+    select: { id: true, number: true, status: true, issueDate: true, deliveryDate: true, deliveryStart: true, deliveryEnd: true, grossTotalCents: true, currency: true },
   });
 }
 

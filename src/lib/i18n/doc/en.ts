@@ -45,6 +45,7 @@ export const en: DocStrings = {
     invoiceDate: "Invoice date",
     date: "Date",
     deliveryDate: "Date of supply",
+    servicePeriod: "Service period",
     deliveryNoteDate: "Delivery date",
     shippingDate: "Shipping date",
     dueDate: "Due date",

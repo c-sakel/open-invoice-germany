@@ -366,4 +366,30 @@ describe("Kurs-Snapshot beim Festschreiben", () => {
       expect(await loadDeductedTaxEurCents(dbInternal, dp1.id)).toBeNull();
     });
   });
+
+  describe("Vorausrechnung (Leistungszeitraum in der Zukunft)", () => {
+    it("manueller Fremdwaehrungsentwurf mit deliveryEnd nach dem Rechnungsdatum: Kursdatum = Rechnungsdatum", async () => {
+      const d = await createDraftInvoice(
+        orgId,
+        createInvoiceSchema.parse({
+          customerId,
+          type: "INVOICE",
+          taxScheme: "REGULAR",
+          currency: "USD",
+          issueDate: NOW,
+          deliveryStart: new Date("2109-03-20T12:00:00.000Z"),
+          deliveryEnd: new Date("2110-03-19T12:00:00.000Z"),
+          fxOverrideRate: "1,25",
+          paymentTerms: "Zahlbar innerhalb von 14 Tagen.",
+          lines: [{ description: "Abo", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 }],
+        }),
+        { now: NOW },
+      );
+      await finalizeInvoice(d.id, { now: NOW });
+      const fx = await fxOf(d.id);
+      expect(fx.fxRateSource).toBe("MANUAL");
+      expect(fx.fxRateMicros).toBe(1250000);
+      expect(fx.fxRateDate?.toISOString()).toBe(NOW.toISOString());
+    });
+  });
 });

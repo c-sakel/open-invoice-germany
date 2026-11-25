@@ -206,7 +206,7 @@ export default async function AboDetail({ params }: { params: Promise<{ id: stri
                 <tr>
                   <th className="px-4 py-2">Nummer / Entwurf</th>
                   <th className="px-4 py-2">Rechnungsdatum</th>
-                  <th className="px-4 py-2">Leistungsdatum</th>
+                  <th className="px-4 py-2">Leistungszeitraum</th>
                   <th className="px-4 py-2">Status</th>
                   <th className="px-4 py-2 text-right">Brutto</th>
                 </tr>
@@ -220,7 +220,7 @@ export default async function AboDetail({ params }: { params: Promise<{ id: stri
                       </Link>
                     </td>
                     <td className="px-4 py-2 text-ink-soft">{deDate(inv.issueDate)}</td>
-                    <td className="px-4 py-2 text-ink-soft">{deDate(inv.deliveryDate)}</td>
+                    <td className="px-4 py-2 text-ink-soft">{inv.deliveryStart && inv.deliveryEnd ? `${deDate(inv.deliveryStart)} – ${deDate(inv.deliveryEnd)}` : deDate(inv.deliveryDate)}</td>
                     <td className="px-4 py-2">
                       <StatusBadge status={inv.status} />
                     </td>

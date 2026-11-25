@@ -134,6 +134,7 @@ const SAMPLE_NAMES = [
   "abo-verbrauch-subcent", // Phase 18f: BT-146 mit 5 Nachkommastellen, BG-26 Leistungszeitraum je Position
   "abo-verbrauch-subcent-storno", // Phase 18f: Storno dazu (CreditNote, positive Preise)
   "sammelrechnung-abo", // Sammelrechnung aus Abos: Bloecke, BG-26 je Position, BG-14 am Beleg
+  "abo-im-voraus", // Abo im Voraus: BG-14 + BG-26 ohne BT-72
   "online-zahlung-bt20", // Online-Bezahllink: Satz am Ende von BT-20 nach den Skonto-Zeilen, BT-81 58 mit BG-17
   "online-68", // Zahlungsart ONLINE: BT-81 68 ohne BG-17
   "verbraucher-verzugshinweis", // Verzugshinweis (§ 286 Abs. 3 BGB) als letzte Zeile von BT-20 nach den Skonto-Zeilen

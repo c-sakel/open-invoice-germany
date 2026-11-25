@@ -43,12 +43,19 @@ export function drawMetaRows(frame: LayoutFrame, rows: { label: string; value: s
   const { doc, right } = frame;
   doc.font("Helvetica").fontSize(size).fillColor(color);
   let first = true;
+  const width = right - x;
   for (const row of rows) {
-    if (first) {
-      doc.text(`${row.label}: ${row.value}`, x, y, { width: right - x, align: "right" });
-      first = false;
-    } else {
-      doc.text(`${row.label}: ${row.value}`, { width: right - x, align: "right" });
+    // Passt "Bezeichnung: Wert" nicht in eine Zeile, steht der Wert geschlossen auf der Folgezeile
+    // (ein Zeitraum bricht sonst mitten im Datumspaar um).
+    const line = `${row.label}: ${row.value}`;
+    const parts = doc.widthOfString(line) > width && !row.value.includes("\n") ? [`${row.label}:`, row.value] : [line];
+    for (const part of parts) {
+      if (first) {
+        doc.text(part, x, y, { width, align: "right" });
+        first = false;
+      } else {
+        doc.text(part, { width, align: "right" });
+      }
     }
   }
   return doc.y;

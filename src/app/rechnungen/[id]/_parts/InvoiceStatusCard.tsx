@@ -159,7 +159,9 @@ export function InvoiceStatusCard({
         </span>
       ),
     },
-    { label: "Leistungsdatum", value: deDate(invoice.deliveryDate) },
+    invoice.deliveryStart && invoice.deliveryEnd
+      ? { label: "Leistungszeitraum", value: `${deDate(invoice.deliveryStart)} – ${deDate(invoice.deliveryEnd)}` }
+      : { label: "Leistungsdatum", value: deDate(invoice.deliveryDate) },
   ];
   // S6 (Fix-Welle 1): "Kanal" ist bislang immer E-Mail (einziger Versandweg), daher statisch
   // angehaengt statt aus einem eigenen Feld gelesen.
