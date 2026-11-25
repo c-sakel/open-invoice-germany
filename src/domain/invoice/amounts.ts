@@ -55,7 +55,11 @@ export function skontoTermsForInvoice(invoice: SkontoInvoice, openBeforeCents: n
     skonto2Days: invoice.skonto2Days,
   });
   if (base <= payableBaseCents(invoice)) return terms;
-  return terms.map((t) => ({ ...t, payableCents: openBeforeCents - t.amountCents }));
+  // Nie ein negativer Zahlbetrag: ist der offene Rest (z. B. nach Teilzahlung) kleiner als der Skontobetrag,
+  // gibt es fuer diese Frist keinen Skonto-Vorschlag.
+  return terms
+    .map((t) => ({ ...t, payableCents: openBeforeCents - t.amountCents }))
+    .filter((t) => t.payableCents >= 0);
 }
 
 /** Offener Rest (brutto) = Bemessungsgrundlage minus bereits erfasste Zahlungen. */

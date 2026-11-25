@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { skontoBaseCents } from "@/domain/invoice/amounts";
+import { skontoBaseCents, skontoTermsForInvoice } from "@/domain/invoice/amounts";
 import { skontoTerms, xrechnungSkontoNote } from "@/lib/pricing/skonto";
 import { parseSkontoTerms } from "@/domain/incoming/skonto";
 
@@ -55,5 +55,24 @@ describe("xrechnungSkontoNote mit Basisbetrag", () => {
     expect(parsed.terms[0].basisCents).toBe(1190000);
     expect(parsed.terms[0].percentBp).toBe(200);
     expect(parsed.freeText).toBe("Zahlbar netto.");
+  });
+});
+
+describe("skontoTermsForInvoice (Bestand mit eingefrorener Basis)", () => {
+  const inv = {
+    grossTotalCents: 1190000, payableCents: 595000, skontoBaseCents: 1190000, issueDate,
+    skonto1Permille: 20, skonto1Days: 7, skonto2Permille: null, skonto2Days: null,
+  };
+  it("ohne Teilzahlung: Zahlbetrag = offener Rest minus Skontobetrag", () => {
+    const [t] = skontoTermsForInvoice(inv, 595000);
+    expect(t.amountCents).toBe(23800);
+    expect(t.payableCents).toBe(571200);
+  });
+  it("Teilzahlung, offener Rest kleiner als Skontobetrag: kein Vorschlag, nie negativ", () => {
+    expect(skontoTermsForInvoice(inv, 20000)).toEqual([]);
+  });
+  it("Teilzahlung, Rest groesser als Skontobetrag: Zahlbetrag nicht negativ", () => {
+    const [t] = skontoTermsForInvoice(inv, 100000);
+    expect(t.payableCents).toBe(76200);
   });
 });
