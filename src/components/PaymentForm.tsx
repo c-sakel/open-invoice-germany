@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatCents, parseDecimalInput } from "@/lib/money";
+import { berlinDateKey } from "@/lib/berlin-time";
 
 interface SkontoSuggestion {
   permille: number;
@@ -14,7 +15,7 @@ interface SkontoSuggestion {
 }
 
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  return berlinDateKey(new Date());
 }
 
 interface PaymentMethodOption {
