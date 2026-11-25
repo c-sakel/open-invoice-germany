@@ -17,8 +17,33 @@ describe("classifySmtpError", () => {
   it("Anmeldung fehlgeschlagen -> NOT_SENT", () => {
     expect(classifySmtpError(err({ code: "EAUTH", command: "AUTH PLAIN" }))).toBe("NOT_SENT");
   });
-  it("Verbindungsaufbau -> NOT_SENT", () => {
-    expect(classifySmtpError(err({ code: "ECONNECTION", command: "CONN" }))).toBe("NOT_SENT");
+  it("Verbindung verweigert / Name unbekannt (originalCode) -> NOT_SENT", () => {
+    expect(classifySmtpError(err({ code: "ESOCKET", originalCode: "ECONNREFUSED", command: "CONN" }))).toBe("NOT_SENT");
+    expect(classifySmtpError(err({ code: "ESOCKET", originalCode: "ENOTFOUND", command: "CONN" }))).toBe("NOT_SENT");
+    expect(classifySmtpError(err({ code: "ESOCKET", originalCode: "EAI_AGAIN", command: "CONN" }))).toBe("NOT_SENT");
+  });
+  it("Verbindungs-, Greeting- und Upgrade-Timeout -> NOT_SENT", () => {
+    for (const timeoutType of ["CONNECT_TIMEOUT", "GREETING_TIMEOUT", "UPGRADE_TIMEOUT"]) {
+      expect(classifySmtpError(err({ code: "ETIMEDOUT", command: "CONN", timeoutType }))).toBe("NOT_SENT");
+    }
+  });
+  it("Greeting-Protokollfehler -> NOT_SENT", () => {
+    expect(
+      classifySmtpError(err({ message: "Invalid greeting. response=554 no", code: "EPROTOCOL", command: "CONN", responseCode: 554 })),
+    ).toBe("NOT_SENT");
+  });
+  it("EHLO 421 -> NOT_SENT", () => {
+    expect(classifySmtpError(err({ code: "ECONNECTION", command: "EHLO", responseCode: 421 }))).toBe("NOT_SENT");
+  });
+  it("CONN-Laufzeitfehler (auch nach DATA moeglich) -> UNKNOWN", () => {
+    expect(classifySmtpError(err({ code: "ETIMEDOUT", command: "CONN", timeoutType: "SOCKET_TIMEOUT" }))).toBe("UNKNOWN");
+    expect(classifySmtpError(err({ code: "ETIMEDOUT", command: "CONN" }))).toBe("UNKNOWN");
+    expect(classifySmtpError(err({ code: "ESOCKET", command: "CONN" }))).toBe("UNKNOWN");
+    expect(classifySmtpError(err({ code: "ESOCKET", originalCode: "ECONNRESET", command: "CONN" }))).toBe("UNKNOWN");
+    expect(classifySmtpError(err({ code: "ECONNECTION", command: "CONN" }))).toBe("UNKNOWN");
+    expect(classifySmtpError(err({ code: "ECONNECTION", command: "CONN", responseCode: 421 }))).toBe("UNKNOWN");
+    expect(classifySmtpError(err({ code: "EPROTOCOL", command: "CONN", message: "Unexpected Response" }))).toBe("UNKNOWN");
+    expect(classifySmtpError(err({ code: "ESTREAM", command: "API" }))).toBe("UNKNOWN");
   });
   it("Empfaenger abgelehnt -> NOT_SENT", () => {
     expect(classifySmtpError(err({ code: "EENVELOPE", command: "RCPT TO", responseCode: 550 }))).toBe("NOT_SENT");
