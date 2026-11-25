@@ -60,6 +60,8 @@ Name, Anschrift, Typ (B2B/B2C). Die USt-IdNr. ist nur bei innergemeinschaftliche
 
 Viele Kunden auf einmal: `Kunden → Importieren` (siehe „Export und Import (CSV)“ unten).
 
+**Kundenliste und Suche:** Die Liste zeigt 50 Kunden je Seite; unten blätterst du weiter. Das Suchfeld durchsucht Name, Kundennummer, E-Mail, Ort und USt-IdNr. ohne Beachtung der Groß-/Kleinschreibung. **Kundenauswahl in Formularen:** Im Belegeditor, beim neuen Abo, in den Listenfiltern (Kunde) und beim Zuordnen eines Lieferanten zu einer Eingangsrechnung tippst du einen Teil von Name, Nummer, E-Mail oder Ort; die Treffer kommen beim Tippen vom Server (höchstens 20). Mit Pfeil runter/hoch wählst du, `Enter` übernimmt, `Esc` schließt, `Pos1`/`Ende` springen an Anfang und Ende. Bei leerem Feld erscheinen zuletzt verwendete Einträge (nur in diesem Browser gespeichert). Auf dem Handy öffnet sich die Auswahl am unteren Bildrand. Unter SQLite (Solo-Betrieb) unterscheidet die Suche bei Umlauten die Schreibweise, unter PostgreSQL nicht (siehe LIMITATIONEN).
+
 ### Schritt 3 — (optional) Produkte anlegen (`Produkte`)
 Ein Katalog spart Tipparbeit — du kannst Positionen aber auch direkt in der Rechnung eintippen. Eine Produktliste lässt sich per `Produkte → Importieren` als CSV einlesen (siehe „Export und Import (CSV)“ unten).
 
