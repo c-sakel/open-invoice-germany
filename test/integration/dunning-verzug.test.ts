@@ -275,6 +275,20 @@ describe("Pauschale und Mahnkosten nur bei eingetretenem Verzug", () => {
     });
   });
 
+  it("10: Mahnung zunaechst SENT, danach per Rueckläufer BOUNCED -> kein Verzug mehr (B2C ohne Hinweis: NONE, keine Zinsen)", async () => {
+    const inv = await makeInvoice("CONSUMER");
+    await mail("INVOICE", inv.id, "SENT", D(3, 2));
+    const r0 = await dunn(inv.id, D(3, 10));
+    await mail("DUNNING", r0.dunning.id, "SENT", D(3, 10));
+    const vorher = await dunn(inv.id, D(4, 1));
+    expect(vorher.dunning.interestBasis).toBe("MAHNUNG");
+    await dbInternal.emailLog.updateMany({ where: { orgId, docType: "DUNNING", docId: r0.dunning.id }, data: { status: "BOUNCED" } });
+    const r2 = await dunn(inv.id, D(4, 2));
+    expect(r2.dunning.interestBasis).toBe("NONE");
+    expect(r2.dunning.interestFrom).toBeNull();
+    expect(r2.dunning.interestAmountCents).toBe(0);
+  });
+
   it("9: B2B mit eingetretenem Verzug (30-Tage-Regel) -> Pauschale genau einmal, Mahnkosten ab Stufe 2", async () => {
     await withStage2Fee(async () => {
       const inv = await makeInvoice("BUSINESS");
