@@ -162,19 +162,17 @@ export async function finishEmailLog(input: FinishEmailLogInput): Promise<void> 
 }
 
 /**
- * Markiert ein bereits versendetes EmailLog als unzustellbar (BOUNCED). Es gibt aktuell
- * KEINEN Provider-Webhook, der diese Funktion aufruft (kein SMTP-Bounce-Handling ist Teil
- * dieses Programms, siehe Modulkommentar `send.ts`) — die Funktion ist der vorbereitete
- * Einstiegspunkt fuer einen kuenftigen Webhook (Route/Task 4), damit `onEmailBounced`
- * (`src/domain/notifications/hooks.ts`) und die BOUNCED-Aktivitaet dann nicht an zwei
- * Stellen dupliziert werden muessen.
+ * Markiert ein versendetes EmailLog als unzustellbar (BOUNCED). Aufrufer ist `applyBounce`
+ * (domain/email/bounce.ts) fuer Zustellberichte aus dem Postfach-Abruf. Wirkt nur auf Status SENT
+ * (atomar, idempotent: ein zweiter Bericht aendert nichts). Liefert, ob der Status geaendert wurde.
  */
-export async function markEmailBounced(orgId: string, logId: string, actor = "system", now: Date = new Date()): Promise<void> {
+export async function markEmailBounced(orgId: string, logId: string, actor = "system", now: Date = new Date()): Promise<boolean> {
   const log = await dbInternal.emailLog.findFirst({ where: { id: logId, orgId } });
-  if (!log) return;
+  if (!log || log.status !== "SENT") return false;
 
-  await dbInternal.$transaction(async (tx) => {
-    await tx.emailLog.update({ where: { id: logId }, data: { status: "BOUNCED" } });
+  const changed = await dbInternal.$transaction(async (tx) => {
+    const upd = await tx.emailLog.updateMany({ where: { id: logId, orgId, status: "SENT" }, data: { status: "BOUNCED" } });
+    if (upd.count !== 1) return false;
     await appendChangeLog(tx, {
       orgId,
       entity: "EMAIL",
@@ -188,10 +186,13 @@ export async function markEmailBounced(orgId: string, logId: string, actor = "sy
     if (entityType) {
       await logActivity(tx, { orgId, entityType, entityId: log.docId, type: "BOUNCED", actor, at: now });
     }
+    return true;
   });
+  if (!changed) return false;
 
   const to = (JSON.parse(log.toJson) as string[])[0];
   await onEmailBounced(orgId, { logId, docType: log.docType, docId: log.docId, to });
+  return true;
 }
 
 

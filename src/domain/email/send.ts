@@ -4,8 +4,8 @@
  * Versands ein Log existiert; Ergebnis danach in EINER Transaktion mit dem ChangeLog-
  * Eintrag verbuchen. Kein SMTP-Aufruf innerhalb einer Prisma-Transaktion (SQLite-Sperre).
  *
- * Statuswerte hier nur QUEUED/SENT/FAILED — DELIVERED/BOUNCED setzt kein Provider-Webhook
- * (nicht Teil dieses Programms).
+ * Statuswerte hier nur QUEUED/SENT/FAILED — BOUNCED setzt spaeter ein Zustellbericht aus dem
+ * Postfach-Abruf (bounce.ts); DELIVERED gibt es nicht.
  */
 import { createHash } from "node:crypto";
 import { dbInternal } from "@/lib/db";

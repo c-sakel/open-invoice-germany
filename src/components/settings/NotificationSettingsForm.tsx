@@ -53,12 +53,8 @@ export function NotificationSettingsForm({ allTypes, mandatoryTypes, initial }: 
     <div className="space-y-4 rounded-[var(--radius-card)] border border-rule bg-sheet p-5">
       <div className="space-y-2">
         {allTypes.map(([key, label]) => {
-          // Fix-Welle (S4): EMAIL_BOUNCED hat aktuell keinen Erzeuger im laufenden System
-          // (markEmailBounced wird von keiner Route/keinem MCP-Tool aufgerufen — kein
-          // Bounce-Webhook angebunden) — die Checkbox waere ohne Hinweis irrefuehrend
-          // ("aktiviert", aber es passiert nie etwas), deshalb deaktiviert + Hinweistext.
           const mandatory = mandatoryTypes.includes(key);
-          const disabled = key === "EMAIL_BOUNCED" || mandatory;
+          const disabled = mandatory;
           return (
             <label key={key} className={`flex items-center gap-2 text-sm ${disabled && !mandatory ? "text-ink-muted" : "text-ink-soft"}`}>
               <input
@@ -70,7 +66,7 @@ export function NotificationSettingsForm({ allTypes, mandatoryTypes, initial }: 
               />
               {label}
               {mandatory && <span className="text-xs italic text-ink-muted">(immer aktiv — GoBD-Pflicht-Alarm)</span>}
-              {key === "EMAIL_BOUNCED" && <span className="text-xs italic">(noch nicht aktiv — kein Bounce-Empfang angebunden)</span>}
+              {key === "EMAIL_BOUNCED" && <span className="text-xs italic text-ink-muted">(erkannt, wenn Rückläufer im abgerufenen Postfach ankommen)</span>}
             </label>
           );
         })}

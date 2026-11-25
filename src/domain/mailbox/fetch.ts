@@ -11,6 +11,7 @@ import { decryptSecret, INBOUND_MAIL_PASSWORD_PURPOSE } from "@/lib/crypto/secre
 import { createImapClient } from "@/lib/mailbox/imap-client";
 import { MailboxError, type MailboxClient, type MailboxSession } from "@/lib/mailbox/client";
 import { parseMailIsolated } from "@/lib/mailbox/parse-mail";
+import { applyBounce } from "@/domain/email/bounce";
 import { createNotification } from "@/domain/notifications/create";
 import { loadNotificationSettings } from "@/domain/notifications/settings";
 import { sanitizeFileName } from "@/domain/import/types";
@@ -413,6 +414,13 @@ export async function fetchMailboxForOrg(
       senderDomain: mail.senderDomain,
       subject: mail.subject ? mail.subject.slice(0, MAX_SUBJECT_CHARS) : null,
     };
+    // Zustellbericht (RFC 3464): vor der Absenderpruefung, denn Ruecklaeufer kommen vom Mailserver des Empfaengers,
+    // nicht von einem erlaubten Rechnungsabsender. Die Zuordnung laeuft nur ueber die Message-Id der eigenen Mail;
+    // eine Faelschung ohne bekannte zufaellige Message-Id ordnet nichts zu. Keine Anlagen in der Sichtung.
+    if (mail.dsn !== null) {
+      const outcome = await applyBounce(orgId, mail.dsn, now);
+      return commit(uid, { ...head, result: `BOUNCE_${outcome}` }, []);
+    }
     // Die Message-Id stammt vom Absender und dient nur als Hinweis im Protokoll, nie zum Verwerfen:
     // Doppelte Abrufe erkennt die Position (Konto, UIDVALIDITY, UID), doppelte Belege der Datei-Hash.
     if (!senderAllowed(mail.senderDomain, allowed)) return commit(uid, { ...head, result: "SENDER_NOT_ALLOWED" }, []);

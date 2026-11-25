@@ -124,8 +124,8 @@ async function loadRow(id: string) {
   return dbInternal.invoiceAutoSend.findUnique({ where: { id }, select: AUTO_ROW });
 }
 
-type ProblemStatus = "NO_ADDRESS" | "UNCLEAR" | "GAVE_UP";
-const isProblem = (s: string): s is ProblemStatus => s === "NO_ADDRESS" || s === "UNCLEAR" || s === "GAVE_UP";
+type ProblemStatus = "NO_ADDRESS" | "UNCLEAR" | "GAVE_UP" | "BOUNCED";
+const isProblem = (s: string): s is ProblemStatus => s === "NO_ADDRESS" || s === "UNCLEAR" || s === "GAVE_UP" || s === "BOUNCED";
 
 /**
  * Pflicht-Benachrichtigung + Aktivitaet fuer einen Problemzustand, in der Transaktion des Statuswechsels.
@@ -391,12 +391,30 @@ async function resolveStaleManual(now: Date): Promise<void> {
   }
 }
 
+/**
+ * Ein Zustellbericht meldet die versendete Abo-Mail als unzustellbar: SENT -> BOUNCED (wirkt nur auf SENT, idempotent)
+ * mit Pflicht-Benachrichtigung in derselben Transaktion. Liefert, ob eine Zeile geaendert wurde.
+ */
+export async function markAutoSendBounced(orgId: string, emailLogId: string, at: Date): Promise<boolean> {
+  return dbInternal.$transaction(async (tx) => {
+    const row = await tx.invoiceAutoSend.findFirst({ where: { orgId, emailLogId, status: "SENT" }, select: { id: true } });
+    if (!row) return false;
+    const upd = await tx.invoiceAutoSend.updateMany({
+      where: { id: row.id, status: "SENT" },
+      data: { status: "BOUNCED", lastError: "BOUNCED", claimToken: null },
+    });
+    if (upd.count !== 1) return false;
+    await reportWithinTx(tx, row.id, "BOUNCED", "BOUNCED", at);
+    return true;
+  });
+}
+
 /** Holt verpasste Pflicht-Benachrichtigungen nach (Absturz zwischen Statuswechsel und Meldung); idempotent ueber `notifiedStatus`. */
 async function sweepUnreported(now: Date): Promise<void> {
   const rows = await dbInternal.invoiceAutoSend.findMany({
     // Nur Zeilen, deren Zustand noch nicht gemeldet ist (terminale, bereits gemeldete Zeilen verdraengen den Sweep nicht).
     where: {
-      OR: (["NO_ADDRESS", "UNCLEAR", "GAVE_UP"] as const).map((s) => ({ status: s, OR: [{ notifiedStatus: null }, { notifiedStatus: { not: s } }] })),
+      OR: (["NO_ADDRESS", "UNCLEAR", "GAVE_UP", "BOUNCED"] as const).map((s) => ({ status: s, OR: [{ notifiedStatus: null }, { notifiedStatus: { not: s } }] })),
     },
     select: { id: true, status: true, lastError: true, notifiedStatus: true },
     orderBy: { updatedAt: "asc" },

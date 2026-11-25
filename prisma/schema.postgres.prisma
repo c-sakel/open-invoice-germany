@@ -2275,7 +2275,7 @@ model InboundMailMessage {
   size          Int
   senderDomain  String?
   subject       String? // max. 200, nach 180 Tagen NULL
-  result        String // STAGED | NO_ATTACHMENT | TOO_LARGE | PARSE_FAILED | DUPLICATE_MESSAGE | SENDER_NOT_ALLOWED
+  result        String // STAGED | NO_ATTACHMENT | TOO_LARGE | PARSE_FAILED | DUPLICATE_MESSAGE | SENDER_NOT_ALLOWED | BOUNCE_MATCHED | BOUNCE_UNMATCHED | BOUNCE_IGNORED
   attachments   InboundMailAttachment[]
   createdAt     DateTime                @default(now())
 
