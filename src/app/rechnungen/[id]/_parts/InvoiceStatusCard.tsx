@@ -159,10 +159,14 @@ export function InvoiceStatusCard({
         </span>
       ),
     },
-    invoice.deliveryStart && invoice.deliveryEnd
-      ? { label: "Leistungszeitraum", value: `${deDate(invoice.deliveryStart)} – ${deDate(invoice.deliveryEnd)}` }
-      : { label: "Leistungsdatum", value: deDate(invoice.deliveryDate) },
   ];
+  // Wie im PDF: Leistungsdatum (falls gesetzt) und Zeitraum (BG-14) nebeneinander; Abo-Rechnungen haben nur den Zeitraum.
+  if (invoice.deliveryDate || !(invoice.deliveryStart && invoice.deliveryEnd)) {
+    detailRows.push({ label: "Leistungsdatum", value: deDate(invoice.deliveryDate) });
+  }
+  if (invoice.deliveryStart && invoice.deliveryEnd) {
+    detailRows.push({ label: "Leistungszeitraum", value: `${deDate(invoice.deliveryStart)}\u00A0–\u00A0${deDate(invoice.deliveryEnd)}` });
+  }
   // S6 (Fix-Welle 1): "Kanal" ist bislang immer E-Mail (einziger Versandweg), daher statisch
   // angehaengt statt aus einem eigenen Feld gelesen.
   if (lastSentAt) detailRows.push({ label: "Versendet am", value: `${deDate(lastSentAt)} · E-Mail` });

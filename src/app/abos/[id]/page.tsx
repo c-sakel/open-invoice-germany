@@ -201,7 +201,7 @@ export default async function AboDetail({ params }: { params: Promise<{ id: stri
                   <li key={p.runDate.getTime()} className="flex justify-between gap-2">
                     <span>Rechnung am {deDate(p.runDate)}</span>
                     <span className="tabular">
-                      {deDate(p.start)} – {deDate(p.end)}
+                      {`${deDate(p.start)}\u00A0–\u00A0${deDate(p.end)}`}
                       {p.clippedByEndDate ? " (gekürzt)" : ""}
                     </span>
                   </li>
