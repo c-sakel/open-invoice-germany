@@ -8,6 +8,8 @@
  * Belegnummern-Logik (src/domain/numbering.ts).
  */
 
+import { berlinParts } from "@/lib/berlin-time";
+
 // Phase 8b (§43): DAY ergaenzt WEEKLY/MONTHLY/QUARTERLY/YEARLY um "+intervalCount Tage".
 export type RecurInterval = "DAY" | "WEEKLY" | "MONTHLY" | "QUARTERLY" | "YEARLY";
 
@@ -47,7 +49,9 @@ export function intervalLabel(interval: string, count = 1): string {
  * zeigen denselben Kalendertag).
  */
 export function normalizeToNoon(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0, 0);
+  // Berliner Kalendertag des Zeitpunkts (nicht der Serverzeit), danach 12:00 lokal.
+  const { year, month, day } = berlinParts(d);
+  return new Date(year, month - 1, day, 12, 0, 0, 0);
 }
 
 export function advanceDate(from: Date, interval: RecurInterval, count = 1, anchorDay?: number | null): Date {
@@ -76,6 +80,9 @@ export function advanceDate(from: Date, interval: RecurInterval, count = 1, anch
  * Periodenbeginn ist folgerichtig GENAU ein Intervall VOR diesem Stichtag — `advanceDate` mit
  * negativem `intervalCount` liefert das (dieselbe Monats-/Wochenklemmung wie beim Vorwärts-
  * schieben, siehe `advanceDate`-Kommentar), keine zweite Datumsrechnung.
+ *
+ * Nur fuer die Verbrauchszuordnung (usage-period.ts, Speichersemantik: Beginn exklusiv).
+ * Der Leistungszeitraum eines Belegs (inklusive Grenzen) kommt aus `billingPeriod`.
  */
 export function periodRange(
   periodEnd: Date,
@@ -85,4 +92,109 @@ export function periodRange(
 ): { start: Date; end: Date } {
   const start = advanceDate(periodEnd, interval, -intervalCount, anchorDay);
   return { start, end: periodEnd };
+}
+
+// ---------------------------------------------------------------------------
+// Leistungszeitraum (inklusive Grenzen): im Voraus (ADVANCE) oder nachtraeglich (ARREARS).
+// ---------------------------------------------------------------------------
+
+export type BillingTiming = "ADVANCE" | "ARREARS";
+
+const isMonthBased = (i: RecurInterval): boolean => i === "MONTHLY" || i === "QUARTERLY" || i === "YEARLY";
+
+/** Kalendertage addieren (12:00-normalisiert, zeitzonen- und DST-sicher). */
+export function addDays(d: Date, n: number): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n, 12, 0, 0, 0);
+}
+
+/** Naechster Stichtag nach `stichtag` (= advanceDate, mit Ankertag ohne Drift). */
+export function nextStichtag(stichtag: Date, interval: RecurInterval, count: number, anchorDay: number | null): Date {
+  return advanceDate(stichtag, interval, count, anchorDay);
+}
+
+/**
+ * Leistungszeitraum (beide Grenzen inklusive) zum Stichtag `stichtag`.
+ * ADVANCE: [S, adv(S) - 1 Tag]; ARREARS: [adv(S, -I) + 1 Tag, S].
+ * `endDate` (letzter Leistungstag) kuerzt nur ADVANCE; ARREARS-Laeufe enden mit dem Stichtag.
+ */
+export function billingPeriod(
+  timing: BillingTiming,
+  stichtag: Date,
+  interval: RecurInterval,
+  count: number,
+  anchorDay: number | null,
+  endDate?: Date | null,
+): { start: Date; end: Date; clippedByEndDate: boolean } {
+  if (timing === "ARREARS") {
+    const start = addDays(advanceDate(stichtag, interval, -count, anchorDay), 1);
+    return { start, end: stichtag, clippedByEndDate: false };
+  }
+  const start = stichtag;
+  let end = addDays(advanceDate(stichtag, interval, count, anchorDay), -1);
+  let clipped = false;
+  if (endDate && endDate.getTime() < end.getTime()) {
+    end = endDate;
+    clipped = true;
+  }
+  return { start, end, clippedByEndDate: clipped };
+}
+
+/**
+ * Erster Stichtag und Ankertag eines NEUEN Abos aus dem Leistungsbeginn.
+ * ADVANCE: Stichtag = Beginn, Anker = Tag des Beginns. ARREARS: Stichtag = adv(L) - 1 Tag,
+ * Anker = Tag dieses Stichtags (Beginn am 1. -> 31 = Monatsletzter). DAY/WEEKLY: kein Anker.
+ */
+export function firstStichtag(
+  timing: BillingTiming,
+  leistungsbeginn: Date,
+  interval: RecurInterval,
+  count: number,
+): { stichtag: Date; anchorDay: number | null } {
+  const l = new Date(leistungsbeginn.getFullYear(), leistungsbeginn.getMonth(), leistungsbeginn.getDate(), 12, 0, 0, 0);
+  const monthBased = isMonthBased(interval);
+  if (timing === "ADVANCE") {
+    return { stichtag: l, anchorDay: monthBased ? l.getDate() : null };
+  }
+  const stichtag = addDays(advanceDate(l, interval, count, monthBased ? l.getDate() : null), -1);
+  if (!monthBased) return { stichtag, anchorDay: null };
+  return { stichtag, anchorDay: l.getDate() === 1 ? 31 : stichtag.getDate() };
+}
+
+/** Meldung, wenn der Leistungsbeginn bei nachtraeglicher Abrechnung nicht moeglich ist (R8), sonst null. */
+export function validateLeistungsbeginn(timing: BillingTiming, start: Date, interval: RecurInterval): string | null {
+  if (timing === "ARREARS" && isMonthBased(interval) && start.getDate() >= 29) {
+    return "Bei nachträglicher Abrechnung muss der Leistungsbeginn zwischen dem 1.–28. eines Monats liegen.";
+  }
+  return null;
+}
+
+export type PreviewInput = {
+  billingTiming: BillingTiming;
+  nextRunDate: Date;
+  interval: RecurInterval;
+  intervalCount: number;
+  anchorDay: number | null;
+  endDate: Date | null;
+  status: string;
+  maxRuns: number | null;
+  issuedCount: number;
+};
+
+/** Die naechsten Laeufe mit Leistungszeitraum (Vorschau); beachtet Status, endDate und maxRuns. */
+export function previewPeriods(
+  rec: PreviewInput,
+  n = 6,
+): { runDate: Date; start: Date; end: Date; clippedByEndDate: boolean }[] {
+  if (rec.status !== "ACTIVE") return [];
+  let limit = n;
+  if (rec.maxRuns !== null) limit = Math.min(limit, Math.max(0, rec.maxRuns - rec.issuedCount));
+  const out: { runDate: Date; start: Date; end: Date; clippedByEndDate: boolean }[] = [];
+  let s = rec.nextRunDate;
+  while (out.length < limit) {
+    if (rec.endDate && s.getTime() > rec.endDate.getTime()) break;
+    const p = billingPeriod(rec.billingTiming, s, rec.interval, rec.intervalCount, rec.anchorDay, rec.endDate);
+    out.push({ runDate: s, ...p });
+    s = nextStichtag(s, rec.interval, rec.intervalCount, rec.anchorDay);
+  }
+  return out;
 }
