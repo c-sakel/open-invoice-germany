@@ -3,7 +3,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { CsvLink } from "@/components/ui/CsvLink";
 import { getActiveOrg } from "@/lib/org";
 import { ensureCustomerNumbers } from "@/domain/numbering/ranges";
-import { archiveCustomer } from "@/app/actions/masterdata";
+import { ArchiveCustomerButton } from "./ArchiveCustomerButton";
 import { Pagination } from "@/components/list/Pagination";
 import { CUSTOMER_LIST_PAGE_SIZE, listCustomersPage } from "@/domain/customer/list";
 import { customerListPageSchema } from "@/schemas/customer-list";
@@ -97,10 +97,7 @@ export default async function KundenPage({ searchParams }: { searchParams: Promi
               align: "right",
               mobile: "meta",
               cell: (c) => (
-                <form action={archiveCustomer} className="inline">
-                  <input type="hidden" name="id" value={c.id} />
-                  <button className="inline-flex min-h-8 items-center text-xs text-ink-muted hover:text-stamp">Archivieren</button>
-                </form>
+                <ArchiveCustomerButton id={c.id} name={c.name} />
               ),
             },
           ]}
