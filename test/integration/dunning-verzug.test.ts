@@ -17,6 +17,7 @@ import { dbInternal } from "@/lib/db";
 import { createDraftInvoice } from "@/domain/invoice/create";
 import { finalizeInvoice } from "@/domain/invoice/finalize";
 import { createDunning } from "@/domain/dunning/create";
+import { buildDunningPdfData } from "@/lib/pdf/dunning-data";
 import { upsertBaseRate, loadBaseRates } from "@/domain/dunning/base-rate";
 import { listDunningStages, updateDunningStage } from "@/domain/dunning/stages";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
@@ -138,24 +139,64 @@ describe("Verzugsbeginn in der Mahnung", () => {
     });
   });
 
-  it("4: unzustellbare Mail ist kein Versandnachweis -> Erstellungstag + 3", async () => {
+  it("4: unzustellbare Mail ist kein Versandnachweis -> Mahnung begruendet keinen Verzug, 30-Tage-Weg", async () => {
     const inv = await makeInvoice("BUSINESS");
     const r0 = await dunn(inv.id, D(3, 10));
     await mail("DUNNING", r0.dunning.id, "BOUNCED", D(3, 10));
     const r1 = await dunn(inv.id, D(4, 1));
-    expect(r1.dunning.interestBasis).toBe("MAHNUNG");
-    expect(iso(r1.dunning.interestFrom)).toBe("2282-03-13");
+    expect(r1.dunning.interestBasis).toBe("ENTGELT_30_LEISTUNG");
+    expect(iso(r1.dunning.interestFrom)).toBe("2282-03-31");
   });
 
-  it("5: Post-Mahnung LIVE eingereicht -> Einreichtag + 3; Entwurf/Testlauf zaehlt nicht", async () => {
+  it("4b: unzustellbare Rechnungs-Mail ist kein Zugangsnachweis -> ENTGELT_30_LEISTUNG statt ENTGELT_30", async () => {
+    const inv = await makeInvoice("BUSINESS");
+    await mail("INVOICE", inv.id, "BOUNCED", D(3, 2));
+    await withInterestOnStage0(async () => {
+      const r = await dunn(inv.id, D(4, 15));
+      expect(r.dunning.interestBasis).toBe("ENTGELT_30_LEISTUNG");
+      expect(iso(r.dunning.interestFrom)).toBe("2282-03-31");
+    });
+  });
+
+  it("5: Post-Mahnung nur QUEUED/DONE LIVE zaehlt -> Einreichtag + 3; Entwurf, Testlauf, HOLD, PENDING, UNKNOWN, FAILED nicht", async () => {
     const inv = await makeInvoice("BUSINESS");
     const r0 = await dunn(inv.id, D(3, 10));
     const base = { orgId, docType: "DUNNING", docId: r0.dunning.id, invoiceId: inv.id, docNumber: "x", trigger: "USER", pages: 1, color: "1", duplex: false, shipping: "national", pdfSha256: "a", base64Md5: "a", createdBy: "t" };
-    await dbInternal.postalJob.create({ data: { ...base, mode: "DRY_RUN", status: "DRY_RUN", filename: `v5-a-${n}.pdf`, submittedAt: D(3, 11) } });
-    await dbInternal.postalJob.create({ data: { ...base, mode: "LIVE", status: "FAILED", filename: `v5-b-${n}.pdf`, submittedAt: D(3, 11) } });
-    await dbInternal.postalJob.create({ data: { ...base, mode: "LIVE", status: "QUEUED", filename: `v5-c-${n}.pdf`, submittedAt: D(3, 12) } });
+    let k = 0;
+    const job = (mode: string, status: string, at: Date) =>
+      dbInternal.postalJob.create({ data: { ...base, mode, status, filename: `v5-${n}-${(k += 1)}.pdf`, submittedAt: at } });
+    await job("DRY_RUN", "DRY_RUN", D(3, 11));
+    await job("LIVE", "FAILED", D(3, 11));
+    await job("LIVE", "DRAFT", D(3, 11));
+    await job("LIVE", "HOLD", D(3, 11));
+    await job("LIVE", "PENDING", D(3, 11));
+    await job("LIVE", "UNKNOWN", D(3, 11));
+    await job("LIVE", "QUEUED", D(3, 12));
     const r1 = await dunn(inv.id, D(4, 1));
     expect(iso(r1.dunning.interestFrom)).toBe("2282-03-15");
+  });
+
+  it("5b: nur nicht zaehlende Post-Auftraege -> kein Mahnungsverzug", async () => {
+    const inv = await makeInvoice("BUSINESS");
+    const r0 = await dunn(inv.id, D(3, 10));
+    const base = { orgId, docType: "DUNNING", docId: r0.dunning.id, invoiceId: inv.id, docNumber: "x", trigger: "USER", pages: 1, color: "1", duplex: false, shipping: "national", pdfSha256: "a", base64Md5: "a", createdBy: "t" };
+    await dbInternal.postalJob.create({ data: { ...base, mode: "LIVE", status: "HOLD", filename: `v5b-${n}.pdf`, submittedAt: D(3, 11) } });
+    const r1 = await dunn(inv.id, D(4, 1));
+    expect(r1.dunning.interestBasis).toBe("ENTGELT_30_LEISTUNG");
+  });
+
+  it("5c: PDF-Einzelzeile zaehlt Zinstage ab interestFrom", async () => {
+    const inv = await makeInvoice("BUSINESS");
+    const r0 = await dunn(inv.id, D(3, 10));
+    await mail("DUNNING", r0.dunning.id, "SENT", D(3, 10));
+    const r1 = await dunn(inv.id, D(4, 1));
+    await dbInternal.dunning.update({ where: { id: r1.dunning.id }, data: { sentAt: D(4, 1) } });
+    const row = await dbInternal.dunning.findUniqueOrThrow({
+      where: { id: r1.dunning.id },
+      include: { invoice: { include: { org: true, customer: true } }, stage: true },
+    });
+    expect(iso(row.interestFrom)).toBe("2282-03-11");
+    expect(buildDunningPdfData(row, row.invoice).daysOverdue).toBe(21); // 11.03. -> 01.04.
   });
 
   it("6: Bestandsmahnung (Spalten NULL) bleibt unveraendert, ChangeLog-Kette gueltig", async () => {

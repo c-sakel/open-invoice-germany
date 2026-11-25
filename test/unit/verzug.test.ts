@@ -105,10 +105,11 @@ describe("verzugStart", () => {
     }
   });
 
-  it("8: Mahnung ohne Versandnachweis am 20.03. -> 23.03.", () => {
+  it("8: Mahnung ohne Versandnachweis zählt nicht -> 30-Tage-Weg", () => {
     const r = verzugStart(input({ priorDunnings: [{ createdAt: d(3, 20), dispatches: [] }] }));
-    expect(iso(r.from)).toBe("2281-03-23");
-    expect(r.basis).toBe("MAHNUNG");
+    expect(r.basis).not.toBe("MAHNUNG");
+    const ohne = verzugStart(input({}));
+    expect(r).toEqual(ohne);
   });
 
   it("9: from = heute oder später -> NONE", () => {

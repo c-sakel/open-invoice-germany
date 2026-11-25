@@ -71,13 +71,19 @@ async function backdate(dunningId: string, at: Date) {
   await dbInternal.dunning.update({ where: { id: dunningId }, data: { createdAt: at } });
 }
 
+/** Versandnachweis der Mahnung (E-Mail SENT); ohne Nachweis begruendet eine Mahnung keinen Verzug. */
+async function markDunningMailed(dunningId: string, at: Date) {
+  await dbInternal.emailLog.create({ data: { orgId, docType: "DUNNING", docId: dunningId, subject: "x", bodySnapshot: "x", status: "SENT", sentAt: at } });
+}
+
 describe("Phase 6 — Mahn-Engine (create.ts, state.ts, send.ts, snapshot.ts)", () => {
   it("B2C: 5 Prozentpunkte Verzugszins, KEINE 40-€-Pauschale", async () => {
     const customerId = await makeCustomer("CONSUMER");
     const fin = await makeFinalizedInvoice(customerId); // brutto 238,00 €
     const r0 = await createDunning(fin.id, { now: FIX_DATE }); // order 0
     await backdate(r0.dunning.id, FIX_DATE);
-    // Verzug erst durch Zugang der Zahlungserinnerung (Erstellung 09.06. + 3 Tage = 12.06.); Zinsen ab dort.
+    await markDunningMailed(r0.dunning.id, FIX_DATE);
+    // Verzug erst durch Zugang der versendeten Zahlungserinnerung (Versand + 1 Tag); Zinsen ab dort.
     const r1 = await createDunning(fin.id, { now: new Date("2050-06-20T10:00:00.000Z"), force: true }); // order 1
     expect(r1.stage.order).toBe(1);
     expect(r1.dunning.interestBasis).toBe("MAHNUNG");
@@ -119,6 +125,7 @@ describe("Phase 6 — Mahn-Engine (create.ts, state.ts, send.ts, snapshot.ts)", 
 
     const r0 = await createDunning(fin.id, { now: FIX_DATE }); // order 0
     await backdate(r0.dunning.id, FIX_DATE);
+    await markDunningMailed(r0.dunning.id, FIX_DATE);
     const r1Now = new Date("2050-06-20T10:00:00.000Z");
     const r1 = await createDunning(fin.id, { now: r1Now, force: true }); // order 1
     expect(r1.openAmountCents).toBe(60000); // 600,00 €
@@ -127,7 +134,7 @@ describe("Phase 6 — Mahn-Engine (create.ts, state.ts, send.ts, snapshot.ts)", 
     const settings = await saveDunningSettings(orgId, {}); // Default-Basiszins
     const expected = computeDunning({
       openAmountCents: 60000,
-      // Verzugsbeginn: Zugang der Zahlungserinnerung (09.06. + 3 = 12.06.), nicht die Faelligkeit.
+      // Verzugsbeginn: Zugang der versendeten Zahlungserinnerung (Versand + 1 Tag), nicht die Faelligkeit.
       daysOverdue: daysBetween(r1.dunning.interestFrom!, r1Now),
       isConsumer: false,
       baseRateBp: settings.baseInterestRateBp,

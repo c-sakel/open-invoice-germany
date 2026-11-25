@@ -186,7 +186,9 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
         orgId: inv.orgId,
         mode: "LIVE",
         submittedAt: { not: null },
-        status: { notIn: ["CANCELLED", "FAILED"] },
+        // Positivliste: nur nachweislich eingereichte/zugestellte Auftraege (nicht DRAFT, HOLD,
+        // PENDING, SUBMITTING, UNKNOWN, CANCELLED, FAILED). Lieber zu spaet als zu frueh verzinsen.
+        status: { in: ["QUEUED", "DONE"] },
         OR: [
           { docType: "INVOICE", docId: invoiceId },
           ...(priorIds.length ? [{ docType: "DUNNING", docId: { in: priorIds } }] : []),

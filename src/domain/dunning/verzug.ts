@@ -2,7 +2,7 @@ import { berlinCalendarDay } from "@/lib/berlin-time";
 
 /**
  * Verzugsbeginn (§ 286 BGB) als reine Funktion. Alle Daten sind Berliner Kalendertage (UTC-Mitternacht).
- * Zugangsannahmen (konservativ): E-Mail = Versandtag + 1, Post und fehlender Nachweis = Versandtag + 3.
+ * Zugangsannahmen (konservativ): E-Mail = Versandtag + 1, Post = Versandtag + 3. Eine Mahnung ohne Versandnachweis begründet keinen Verzug.
  */
 export type Dispatch = { channel: "EMAIL" | "POST" | "NONE"; at: Date };
 
@@ -35,7 +35,7 @@ function earliest(days: Date[]): Date | null {
   return min;
 }
 
-/** Berliner Kalendertag des Versands + 1 (E-Mail) bzw. + 3 (Post, ohne Nachweis). */
+/** Berliner Kalendertag des Versands + 1 (E-Mail) bzw. + 3 (Post). */
 export function zugangDay(dispatch: Dispatch): Date {
   return addDays(berlinCalendarDay(dispatch.at), dispatch.channel === "EMAIL" ? 1 : 3);
 }
@@ -51,9 +51,10 @@ export function verzugStart(i: VerzugInput): { from: Date | null; basis: VerzugB
   const dunningZugang: Date[] = [];
   for (const dun of i.priorDunnings) {
     if (berlinCalendarDay(dun.createdAt).getTime() <= dueDay.getTime()) continue;
-    const z =
-      earliest(dun.dispatches.map(zugangDay)) ?? zugangDay({ channel: "NONE", at: dun.createdAt });
-    dunningZugang.push(z);
+    // Nur nachweislich versendete Mahnungen begruenden Verzug (Ruling 9); ohne Versandnachweis
+    // (nie versendet, Mail BOUNCED/FAILED, Post nicht eingereicht) zaehlt die Mahnung nicht.
+    const z = earliest(dun.dispatches.map(zugangDay));
+    if (z) dunningZugang.push(z);
   }
   const a = earliest(dunningZugang);
 
