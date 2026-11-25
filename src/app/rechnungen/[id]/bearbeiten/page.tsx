@@ -1,3 +1,4 @@
+import { PRODUCT_OPTIONS_LIMIT } from "@/lib/editor/constants";
 import { notFound, redirect } from "next/navigation";
 import { getActiveOrg } from "@/lib/org";
 import { dbInternal } from "@/lib/db";
@@ -34,6 +35,7 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
       where: { orgId: org.id, isArchived: false },
       select: { id: true, name: true, unit: true, netPriceCents: true, taxRate: true, articleNumber: true },
       orderBy: { name: "asc" },
+      take: PRODUCT_OPTIONS_LIMIT,
     }),
     listPaymentMethods(org.id),
     listAttachments(org.id, "INVOICE", inv.id),

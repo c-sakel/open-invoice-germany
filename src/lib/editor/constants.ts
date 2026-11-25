@@ -22,6 +22,9 @@ export const LINE_TYPE_LABEL: Record<"ITEM" | "HEADING" | "TEXT" | "SUBTOTAL", s
 /** Phase 12c — die Auswahl kommt aus DocumentSettings.taxRates (Server-Prop bis in die
  *  Zeile), nicht mehr aus einer festen Union. `FALLBACK_TAX_RATES` deckt nur den Fall ab,
  *  dass eine Seite die Liste (noch) nicht durchreicht. */
+/** Ab dieser Produktanzahl sucht der Produkt-Picker serverseitig; die Seiten laden hoechstens so viele. */
+export const PRODUCT_OPTIONS_LIMIT = 50;
+
 export const FALLBACK_TAX_RATES: readonly number[] = [19, 7, 0];
 
 export function taxRateOptions(rates: readonly number[]): { value: number; label: string }[] {

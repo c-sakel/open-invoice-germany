@@ -108,22 +108,42 @@ export function SearchSelect({
       setLoading(false);
       setRemote([]);
       const ids = recent.reload();
-      if (!loadByIds || ids.length === 0) {
-        setRecentOptions([]);
-        return;
-      }
       const controller = new AbortController();
       abortRef.current = controller;
+      // Ohne zuletzt verwendete Eintraege: die ersten Treffer der Suche (leerer Suchtext).
+      const firstEntries = () => {
+        if (!search) {
+          setLoading(false);
+          return;
+        }
+        setLoading(true);
+        search("", controller.signal)
+          .then((found) => {
+            if (controller.signal.aborted) return;
+            setRemote(found);
+            setLoading(false);
+          })
+          .catch(() => {
+            if (!controller.signal.aborted) setLoading(false);
+          });
+      };
+      if (!loadByIds || ids.length === 0) {
+        setRecentOptions([]);
+        firstEntries();
+        return;
+      }
       setLoading(true);
       loadByIds(ids)
         .then((found) => {
           if (controller.signal.aborted) return;
           const byId = new Map(found.map((o) => [o.id, o]));
-          setRecentOptions(ids.map((id) => byId.get(id)).filter((o): o is Option => o !== undefined));
-          setLoading(false);
+          const list = ids.map((id) => byId.get(id)).filter((o): o is Option => o !== undefined);
+          setRecentOptions(list);
+          if (list.length === 0) firstEntries();
+          else setLoading(false);
         })
         .catch(() => {
-          if (!controller.signal.aborted) setLoading(false);
+          if (!controller.signal.aborted) firstEntries();
         });
       return;
     }
@@ -156,7 +176,8 @@ export function SearchSelect({
   const shown: Option[] = useMemo(() => {
     if (q === "") {
       if (recentOptions.length > 0) return recentOptions;
-      return (options ?? []).slice(0, MAX_LOCAL_HITS);
+      if (options) return options.slice(0, MAX_LOCAL_HITS);
+      return remote;
     }
     if (options) return options.filter((o) => matches(o, q)).slice(0, MAX_LOCAL_HITS);
     return remote;

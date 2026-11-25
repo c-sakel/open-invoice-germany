@@ -53,3 +53,15 @@ export const editorCustomerContextSchema = z.object({
   ),
 });
 export type EditorCustomerContext = z.infer<typeof editorCustomerContextSchema>;
+
+/** Treffer der Produktsuche (`GET /api/lookup/products`). */
+export const productLookupRowSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  unit: z.string(),
+  netPriceCents: z.number().int(),
+  taxRate: z.number(),
+  articleNumber: z.string().nullable(),
+  isArchived: z.boolean(),
+});
+export const productLookupRowsSchema = z.array(productLookupRowSchema);

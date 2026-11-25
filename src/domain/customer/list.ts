@@ -76,6 +76,17 @@ export async function applyCustomerComboFilter(orgId: string, rawFilter: Record<
   if (!rawFilter.q) rawFilter.q = raw;
 }
 
+/**
+ * Der nach `applyCustomerComboFilter` gewaehlte Kunde (Id + Name) fuer die Filterleiste —
+ * eine Einzelabfrage statt einer Kundenliste. Nur Kunden der Organisation.
+ */
+export async function loadComboCustomer(orgId: string, rawFilter: Record<string, unknown>): Promise<{ id: string; label: string } | undefined> {
+  const id = rawFilter.customerId;
+  if (typeof id !== "string" || !id) return undefined;
+  const row = await prisma.customer.findFirst({ where: { orgId, id }, select: { id: true, name: true } });
+  return row ? { id: row.id, label: row.name } : undefined;
+}
+
 export const CUSTOMER_LIST_PAGE_SIZE = 50;
 
 /** Where-Bedingung der Kundenliste (rein): Org-Scope, Archiv, Suche ohne Groß-/Kleinschreibung. */

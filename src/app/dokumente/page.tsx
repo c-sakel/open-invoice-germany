@@ -2,11 +2,10 @@ import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { CsvLink } from "@/components/ui/CsvLink";
 import { getActiveOrg } from "@/lib/org";
-import { dbInternal } from "@/lib/db";
 import { listQuotes, quoteStatusTabCounts, quoteListHeadline, type QuoteListResult, type QuoteListHeadline } from "@/domain/document/list";
 import { availableActions, convertTargets } from "@/domain/document/actions";
 import { billingStateIndex, billingFilterIds } from "@/domain/document/billing-state";
-import { applyCustomerComboFilter } from "@/domain/customer/list";
+import { applyCustomerComboFilter, loadComboCustomer } from "@/domain/customer/list";
 import { listTags } from "@/domain/tag/manage";
 import { tagsForDocuments } from "@/domain/tag/list";
 import { TagChips } from "@/components/tags/TagChips";
@@ -85,18 +84,16 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
   // Fix-Welle M2: `customerId` kann seit Fix M2 ein getippter Kundenname statt einer Id
   // sein (JS-freier Rueckfall/`FilterBar` bilden nicht mehr selbst ab) — hier auf einen
   // exakten Treffer aufloesen, sonst faellt der Rohtext auf `q` zurueck (Spec-Zusage).
-  // Laeuft parallel zu `billingStateIndex`/`customerOptions` (unabhaengige Abfragen).
 
   // billingStateIndex laeuft VOR der Liste, weil er fuer zwei Dinge gebraucht wird: die
   // `id`-Liste fuer "?status=billed"/"?status=partially-billed" (Task-5-Kommentar zu
   // `quoteStatusWhere`) und den Zeilen-Chip (Phase 17c: ohne Obergrenze, beide Tabs immer) — `cache()` memoisiert ihn je Request, ein zweiter Aufruf innerhalb von
   // `quoteStatusTabCounts` unten kostet also keine zusaetzliche Abfrage.
-  const [index, customerOptions, , tags] = await Promise.all([
+  await applyCustomerComboFilter(org.id, rawFilter);
+  const [index, comboCustomer, tags] = await Promise.all([
     billingStateIndex(org.id),
-    // Fix-Welle S3: `take: 500` (Spec: „bis zu 500 Kunden") — ohne Begrenzung laedt jeder
-    // Seitenaufruf ALLE nicht archivierten Kunden der Organisation in die <datalist>.
-    dbInternal.customer.findMany({ where: { orgId: org.id, isArchived: false }, select: { id: true, name: true }, orderBy: { name: "asc" }, take: 500 }),
-    applyCustomerComboFilter(org.id, rawFilter),
+    // Nur der gewaehlte Kunde (Anzeige); die Auswahl sucht serverseitig.
+    loadComboCustomer(org.id, rawFilter),
     // Phase 13d, Task 4: Tag-Filteroptionen (FilterBar-Feld "tag").
     listTags(org.id),
   ]);
@@ -144,10 +141,7 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
       type: "combo",
       name: "customerId",
       label: "Kunde",
-      options: customerOptions.map((c) => ({ value: c.id, label: c.name })),
-      // Fix-Welle S2: zeigt den Kundennamen statt der rohen Id, wenn `?customerId=<cuid>`
-      // ueber einen Link/ein Lesezeichen vorbelegt wurde.
-      displayValue: customerOptions.find((c) => c.id === values.customerId)?.name,
+      selected: comboCustomer,
     },
     {
       type: "select",

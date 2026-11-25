@@ -1,3 +1,4 @@
+import { PRODUCT_OPTIONS_LIMIT } from "@/lib/editor/constants";
 import Link from "next/link";
 import { getActiveOrg } from "@/lib/org";
 import { dbInternal } from "@/lib/db";
@@ -24,6 +25,7 @@ export default async function NeuerLieferscheinPage() {
       where: { orgId, isArchived: false },
       select: { id: true, name: true, unit: true, netPriceCents: true, taxRate: true, articleNumber: true },
       orderBy: { name: "asc" },
+      take: PRODUCT_OPTIONS_LIMIT,
     }),
     // M14 (Abschluss-Review): dieselbe Quelle wie `createDeliveryNoteWithinTx`/
     // `buildDeliveryNotePreview` (`preview-draft.ts`) — ohne sie startete jeder neue

@@ -1,3 +1,4 @@
+import { PRODUCT_OPTIONS_LIMIT } from "@/lib/editor/constants";
 import Link from "next/link";
 import { dbInternal } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
@@ -24,6 +25,7 @@ export default async function NeuesDokumentPage() {
       where: { orgId, isArchived: false },
       select: { id: true, name: true, unit: true, netPriceCents: true, taxRate: true, articleNumber: true },
       orderBy: { name: "asc" },
+      take: PRODUCT_OPTIONS_LIMIT,
     }),
     loadDocumentSettings(orgId),
   ]);

@@ -55,16 +55,28 @@ describe("SearchSelect", () => {
     });
     render(<Harness search={search} />);
     fireEvent.focus(input());
-    fireEvent.change(input(), { target: { value: "be" } });
-    await advance(199);
-    expect(search).not.toHaveBeenCalled();
-    await advance(1);
+    // Leere Eingabe: erste Einträge (Suchtext leer), ohne Verzögerung.
     expect(search).toHaveBeenCalledTimes(1);
-    expect(search.mock.calls[0]?.[0]).toBe("be");
-    fireEvent.change(input(), { target: { value: "bec" } });
+    expect(search.mock.calls[0]?.[0]).toBe("");
+    fireEvent.change(input(), { target: { value: "be" } });
     expect(signals[0]?.aborted).toBe(true);
-    await advance(200);
+    await advance(199);
+    expect(search).toHaveBeenCalledTimes(1);
+    await advance(1);
     expect(search).toHaveBeenCalledTimes(2);
+    expect(search.mock.calls[1]?.[0]).toBe("be");
+    fireEvent.change(input(), { target: { value: "bec" } });
+    expect(signals[1]?.aborted).toBe(true);
+    await advance(200);
+    expect(search).toHaveBeenCalledTimes(3);
+  });
+
+  it("zeigt bei leerer Eingabe ohne zuletzt Verwendete die ersten Treffer der Suche", async () => {
+    const search = vi.fn(async () => [{ id: "z", label: "Zeta", subtitle: "K-9" }]);
+    render(<Harness search={search} />);
+    fireEvent.focus(input());
+    await advance(0);
+    expect(screen.getByText("Zeta")).toBeTruthy();
   });
 
   it("Pfeil runter x2 + Enter wählt die zweite Option, activedescendant folgt", () => {
