@@ -282,21 +282,19 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
       key: "status",
       header: "Status",
       mobile: "meta",
-      cell: (inv) => (
-        <>
-          <span className={inv.type === "CREDIT_NOTE" ? undefined : "hidden sm:inline"}>
-            <StatusBadge status={inv.effectiveStatus} partiallyPaid={inv.partiallyPaid} />
-          </span>
-          <span className={inv.type === "CREDIT_NOTE" ? "hidden" : "sm:hidden"}>
-            <BelegStreckeMini
-              status={inv.status}
-              sent={inv.hasEmailLog}
-              paidAmountCents={inv.paidAmountCents}
-              payableCents={inv.payableCents ?? inv.grossTotalCents}
-            />
-          </span>
-        </>
-      ),
+      // Tabelle (ab sm): Badge. Karte (mobil): Belegstrecke, bei Gutschriften ebenfalls das Badge.
+      cell: (inv) => <StatusBadge status={inv.effectiveStatus} partiallyPaid={inv.partiallyPaid} />,
+      mobileCell: (inv) =>
+        inv.type === "CREDIT_NOTE" ? (
+          <StatusBadge status={inv.effectiveStatus} partiallyPaid={inv.partiallyPaid} />
+        ) : (
+          <BelegStreckeMini
+            status={inv.status}
+            sent={inv.hasEmailLog}
+            paidAmountCents={inv.paidAmountCents}
+            payableCents={inv.payableCents ?? inv.grossTotalCents}
+          />
+        ),
     },
     { key: "gross", header: "Brutto", mobile: "amount", cell: (inv) => <span className="font-medium">{formatCents(inv.grossTotalCents, inv.currency)}</span> },
     {
@@ -304,14 +302,9 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
       header: "Offen",
       align: "right",
       mobile: "meta",
-      cell: (inv) => (
-        <>
-          <span className="hidden text-ink-soft sm:inline">{formatCents(inv.openCents, inv.currency)}</span>
-          {inv.openCents !== inv.grossTotalCents && inv.type !== "CREDIT_NOTE" && (
-            <span className="sm:hidden">Offen {formatCents(inv.openCents, inv.currency)}</span>
-          )}
-        </>
-      ),
+      cell: (inv) => <span className="text-ink-soft">{formatCents(inv.openCents, inv.currency)}</span>,
+      mobileCell: (inv) =>
+        inv.openCents !== inv.grossTotalCents && inv.type !== "CREDIT_NOTE" ? <span>Offen {formatCents(inv.openCents, inv.currency)}</span> : null,
     },
     {
       key: "actions",

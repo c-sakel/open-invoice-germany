@@ -2,9 +2,10 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { berlinDateKey } from "@/lib/berlin-time";
 
 function isoInDays(days: number): string {
-  return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  return berlinDateKey(new Date(Date.now() + days * 24 * 60 * 60 * 1000));
 }
 
 /**

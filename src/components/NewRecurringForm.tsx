@@ -13,6 +13,7 @@ import { PRICE_FIELD_ERROR, toPrice } from "@/lib/editor/parse";
 import { SearchSelect } from "@/components/ui/SearchSelect";
 import { loadActiveCustomersByIds, loadCustomerById, searchCustomers } from "@/components/ui/customer-lookup";
 import { editorCustomerContextSchema } from "@/schemas/lookup";
+import { berlinDateKey } from "@/lib/berlin-time";
 import { ConfirmDialog, type ConfirmDialogHandle } from "@/components/ui/ConfirmDialog";
 import {
   firstStichtag,
@@ -69,7 +70,7 @@ interface ProductOption {
   taxRate: number;
 }
 function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  return berlinDateKey(new Date());
 }
 
 interface EmailTemplateOption {

@@ -7,6 +7,7 @@ import { formatDateTimeDe } from "@/domain/audit/export-csv";
 import { AUDIT_EXPORT_MAX_PENDING } from "@/domain/audit/export";
 import { Card } from "@/components/ui/Card";
 import { DataTable } from "@/components/ui/DataTable";
+import { berlinDateKey } from "@/lib/berlin-time";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,7 @@ export default async function PruefungSettingsPage() {
     dbInternal.invoice.count({ where: issued }),
     dbInternal.invoice.count({ where: { ...issued, archivedDocuments: { some: {} } } }),
   ]);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = berlinDateKey(new Date());
   const yearStart = `${new Date().getUTCFullYear()}-01-01`;
 
   return (
