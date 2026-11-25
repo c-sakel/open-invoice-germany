@@ -10,6 +10,7 @@ import { maskIban } from "@/lib/iban";
 import { directDebitSnapshotSchema, buyerSnapshotSchema } from "@/schemas";
 import { grossEurCentsOf, isSmallAmountInvoice, issueDeadline } from "@/domain/invoice/checks";
 import { berlinDateKey } from "@/lib/berlin-time";
+import { publicAutoSend, type AutoSendView } from "@/domain/recurring/auto-send-public";
 
 /** Lastschrift-Snapshot (BG-19) fuer die Ausgabe: nur Referenz, Glaeubiger-ID und maskierte IBAN. */
 export function serializeDirectDebit(json: string | null): { mandateReference: string; creditorId: string; debtorIbanMasked: string } | null {
@@ -44,7 +45,11 @@ export function buyerOf(inv: InvoiceWithOptionalRelations): { countryCode: strin
 
 export type InvoiceWithOptionalRelations = Invoice & { lines?: InvoiceLine[]; customer?: Customer; payments?: Payment[] };
 
-export function serializeInvoice(inv: InvoiceWithOptionalRelations, embed: Set<string>) {
+/**
+ * `autoSend`: nur die Lese-Routen reichen den Zustand des automatischen Versands durch (`null` = kein Auftrag);
+ * ohne Argument (Webhooks, Schreibantworten) fehlt das Feld.
+ */
+export function serializeInvoice(inv: InvoiceWithOptionalRelations, embed: Set<string>, autoSend?: AutoSendView | null) {
   return {
     objectName: "Invoice" as const,
     id: inv.id,
@@ -123,6 +128,7 @@ export function serializeInvoice(inv: InvoiceWithOptionalRelations, embed: Set<s
     consumerDefaultNotice: inv.status === "DRAFT" ? (inv.consumerDefaultNotice ?? null) : inv.consumerDefaultNotice === true,
     createdAt: iso(inv.createdAt),
     updatedAt: iso(inv.updatedAt),
+    ...(autoSend !== undefined ? { autoSend: publicAutoSend(autoSend) } : {}),
     ...(embed.has("customer") && inv.customer ? { customerName: inv.customer.name } : {}),
     ...(embed.has("lines") ? { lines: (inv.lines ?? []).map(serializeInvoiceLine) } : {}),
     ...(embed.has("payments") ? { payments: (inv.payments ?? []).map(serializePayment) } : {}),
@@ -219,6 +225,16 @@ export const invoiceSchema = z.object({
   dunningStateNote: z.string().nullable(),
   createdAt: z.string().nullable(),
   updatedAt: z.string().nullable(),
+  autoSend: z
+    .object({
+      status: z.string().describe("PENDING | SENDING | RETRY | NO_ADDRESS | SENT | UNCLEAR | GAVE_UP | DONE_MANUAL | CANCELLED | BOUNCED | MANUAL_PENDING"),
+      attempts: z.number().int(),
+      nextAttemptAt: z.string().nullable(),
+      lastError: z.string().nullable().describe("Fester Code (z. B. SMTP_REJECTED, NO_ADDRESS, UNCLEAR_OUTCOME), nie Servertext."),
+    })
+    .nullable()
+    .optional()
+    .describe("Automatischer Versand der Abo-Rechnung (Lesefeld, nur bei Einzelabruf und Liste). null = kein automatischer Versand."),
   customerName: z.string().optional(),
   lines: z.array(invoiceLineSchema).optional(),
   payments: z.array(paymentSchema).optional(),

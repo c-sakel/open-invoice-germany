@@ -34,6 +34,7 @@ import { RecurringMissedPeriodsError, RecurringTimingChangeError } from "@/domai
 import { AttachmentValidationError } from "@/lib/attachments/storage";
 import { PricingError } from "@/lib/pricing/errors";
 import { AutoSendRunningError } from "@/domain/recurring/auto-send-guard";
+import { AutoSendRetryError } from "@/domain/recurring/auto-send";
 import { MailNotConfiguredError } from "@/domain/email/settings";
 import { TaxRateNotAllowedError } from "@/domain/settings/tax-rates";
 import { VatCheckDisabledError, VatCheckRateLimitError } from "@/domain/customer/vat-check";
@@ -234,6 +235,11 @@ export function mapApiError(e: unknown): { status: number; body: ApiErrorBody } 
     if (e.code === "NOT_FOUND") return { status: 404, body: { error: { code: "NOT_FOUND", message: e.message } } };
     if (e.code === "RATE_LIMITED") return { status: 429, body: { error: { code: "RATE_LIMITED", message: e.message } } };
     return { status: 422, body: { error: { code: "UNPROCESSABLE", message: e.message, reason: e.code } } };
+  }
+  // Neustart des automatischen Versands: feste Codes in `reason` (CONFIRM_REQUIRED = unklarer Ausgang braucht Bestaetigung).
+  if (e instanceof AutoSendRetryError) {
+    if (e.code === "NO_AUTO_SEND") return { status: 404, body: { error: { code: "NOT_FOUND", message: e.message, reason: e.code } } };
+    return { status: 409, body: { error: { code: "CONFLICT", message: e.message, reason: e.code } } };
   }
   // Phase 16d: Postversand. Feste Texte, nie die Meldung des Anbieters (kein Schluessel in Antworten).
   if (e instanceof PostalConflictError) {

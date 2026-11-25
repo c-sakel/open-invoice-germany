@@ -22,7 +22,7 @@ export default async function AboBearbeitenPage({ params }: { params: Promise<{ 
 
   const rec = await dbInternal.recurringInvoice.findFirst({
     where: { id, orgId: org.id },
-    include: { customer: { select: { name: true } }, lines: { orderBy: { position: "asc" } } },
+    include: { customer: { select: { name: true, email: true } }, lines: { orderBy: { position: "asc" } } },
   });
   if (!rec) notFound();
 
@@ -91,6 +91,7 @@ export default async function AboBearbeitenPage({ params }: { params: Promise<{ 
         mode="edit"
         recurringId={id}
         customerName={rec.customer.name}
+        customerEmail={rec.customer.email}
         products={products}
         emailTemplates={emailTemplates}
         defaultAutoFinalize={docSettings.recurringAutoFinalizeDefault}

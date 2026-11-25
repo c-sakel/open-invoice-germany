@@ -113,6 +113,7 @@ export function NewRecurringForm({
   mode = "create",
   recurringId,
   customerName,
+  customerEmail: customerEmailProp,
   initial,
   taxRates,
   defaultCurrency = "EUR",
@@ -139,6 +140,8 @@ export function NewRecurringForm({
   recurringId?: string;
   /** Nur bei `mode="edit"` angezeigt (read-only, kein Kundenwechsel). */
   customerName?: string;
+  /** Nur bei `mode="edit"`: E-Mail des Kunden (`null` = keine) fuer den Hinweis beim automatischen Versand. */
+  customerEmail?: string | null;
   /** Vorbelegung bei `mode="edit"` aus dem bestehenden Abo. */
   initial?: RecurringInitialValues;
   /** Org-eigene Steuersatz-Liste (Phase 12c, Fix-Welle I2) — dieselbe Quelle
@@ -154,6 +157,8 @@ export function NewRecurringForm({
   const [title, setTitle] = useState(initial?.title ?? "");
   // Kunde: serverseitige Suche (kein Kundenlisten-Prop); die Waehrungsvorgabe kommt beim Wahlen.
   const [customerId, setCustomerId] = useState("");
+  // undefined = noch unbekannt (kein Hinweis); null/leer = Kunde ohne Mailadresse.
+  const [customerEmail, setCustomerEmail] = useState<string | null | undefined>(customerEmailProp);
   const customerPick = useRef(0);
   const [interval, setInterval] = useState(initial?.interval ?? "MONTHLY");
   const [intervalCount, setIntervalCount] = useState(String(initial?.intervalCount ?? 1));
@@ -240,6 +245,7 @@ export function NewRecurringForm({
 
   async function selectCustomer(id: string | null) {
     setCustomerId(id ?? "");
+    setCustomerEmail(undefined);
     const pick = ++customerPick.current;
     if (!currencyTouched) changeCurrency(defaultCurrency);
     if (!id) return;
@@ -253,6 +259,7 @@ export function NewRecurringForm({
         setError("Archivierte Kunden können keinem neuen Abo zugeordnet werden.");
         return;
       }
+      setCustomerEmail(ctx.customer.email);
       // Manuelle Waehrungswahl bleibt erhalten.
       if (!currencyTouched) changeCurrency(ctx.customer.defaultCurrency ?? defaultCurrency);
     } catch {
@@ -600,6 +607,11 @@ export function NewRecurringForm({
             {autoSend && <span className="block text-xs text-ink-muted">Versand setzt Festschreibung voraus.</span>}
           </span>
         </label>
+        {autoSend && customerEmail !== undefined && !(customerEmail ?? "").trim() && (
+          <p role="status" className="rounded-md border border-seal/40 bg-seal/10 p-2 text-sm text-seal sm:col-span-2">
+            Dieser Kunde hat keine E-Mail-Adresse. Die Rechnung wird erzeugt, aber nicht versendet; sie wartet bis zu 7 Tage auf eine Adresse und meldet sich dann in der Glocke.
+          </p>
+        )}
         {autoSend && emailTemplates.length > 0 && (
           <label className="flex flex-col gap-1 text-sm">
             <span className="font-medium text-ink-soft">E-Mail-Vorlage (optional)</span>

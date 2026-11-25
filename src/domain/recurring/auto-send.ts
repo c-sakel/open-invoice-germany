@@ -463,11 +463,25 @@ export async function runAutoSendJob(now: Date, provider?: MailProvider): Promis
   return res;
 }
 
+/** Feste Codes (REST: 404 bzw. 409 mit `reason`, MCP/UI: fester Text). */
+export type AutoSendRetryCode = "NO_AUTO_SEND" | "NOT_RETRYABLE" | "CONFIRM_REQUIRED" | "STATE_CHANGED";
+
 export class AutoSendRetryError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    readonly code: AutoSendRetryCode = "NOT_RETRYABLE",
+  ) {
     super(message);
     this.name = "AutoSendRetryError";
   }
+}
+
+/** Zustaende, aus denen der Bediener den automatischen Versand neu starten darf. */
+export const AUTO_SEND_RETRYABLE: readonly AutoSendStatus[] = ["UNCLEAR", "GAVE_UP", "NO_ADDRESS", "BOUNCED"];
+
+/** Ende der Wartezeit auf eine Mailadresse (danach `GAVE_UP`). */
+export function noAddressDeadline(createdAt: Date): Date {
+  return new Date(createdAt.getTime() + NO_ADDRESS_LIMIT_MS);
 }
 
 /**
@@ -483,12 +497,12 @@ export async function retryAutoSend(
   provider?: MailProvider,
 ): Promise<AutoSendStatus> {
   const row = await dbInternal.invoiceAutoSend.findFirst({ where: { orgId, invoiceId }, select: { id: true, status: true } });
-  if (!row) throw new AutoSendRetryError("Kein automatischer Versand für diese Rechnung.");
-  if (!["UNCLEAR", "GAVE_UP", "NO_ADDRESS", "BOUNCED"].includes(row.status)) {
-    throw new AutoSendRetryError("Der automatische Versand kann in diesem Zustand nicht neu gestartet werden.");
+  if (!row) throw new AutoSendRetryError("Kein automatischer Versand für diese Rechnung.", "NO_AUTO_SEND");
+  if (!(AUTO_SEND_RETRYABLE as readonly string[]).includes(row.status)) {
+    throw new AutoSendRetryError("Der automatische Versand kann in diesem Zustand nicht neu gestartet werden.", "NOT_RETRYABLE");
   }
   if (row.status === "UNCLEAR" && !opts.confirmUnclear) {
-    throw new AutoSendRetryError("Der Ausgang des Versands ist unklar; die E-Mail kann doppelt ankommen. Bitte ausdrücklich bestätigen.");
+    throw new AutoSendRetryError("Der Ausgang des Versands ist unklar; die E-Mail kann doppelt ankommen. Bitte ausdrücklich bestätigen.", "CONFIRM_REQUIRED");
   }
   const upd = await dbInternal.invoiceAutoSend.updateMany({
     where: { id: row.id, status: row.status },
@@ -504,7 +518,7 @@ export async function retryAutoSend(
       confirmUnclear: row.status === "UNCLEAR",
     },
   });
-  if (upd.count === 0) throw new AutoSendRetryError("Der Zustand hat sich inzwischen geändert.");
+  if (upd.count === 0) throw new AutoSendRetryError("Der Zustand hat sich inzwischen geändert.", "STATE_CHANGED");
   await logActivity(dbInternal, {
     orgId,
     entityType: "INVOICE",
