@@ -135,7 +135,7 @@ export function DocumentSettingsForm({ settings, paymentMethods = [] }: { settin
       <section className="space-y-4 rounded-[var(--radius-card)] border border-rule bg-sheet p-5">
         <h2 className="font-semibold text-ink">Wiederkehrende Rechnungen</h2>
         <CheckboxField
-          label="Abrechnungszeitraum-Kopftext automatisch einfügen"
+          label="Leistungszeitraum-Kopftext automatisch einfügen"
           name="recurringInsertPeriodText"
           defaultChecked={settings.recurringInsertPeriodText}
         />

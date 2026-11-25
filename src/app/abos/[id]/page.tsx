@@ -5,7 +5,7 @@ import { getActiveOrg } from "@/lib/org";
 import { formatCents } from "@/lib/money";
 import { computeLineNet } from "@/lib/pricing/line";
 import { LineItemsTable } from "@/components/LineItemsTable";
-import { intervalLabel } from "@/lib/recurring";
+import { intervalLabel, previewPeriods, type BillingTiming, type RecurInterval } from "@/lib/recurring";
 import { StatusBadge } from "@/components/StatusBadge";
 import { RecurringActions } from "@/components/RecurringActions";
 import { listUsage } from "@/domain/recurring/usage";
@@ -62,6 +62,22 @@ export default async function AboDetail({ params }: { params: Promise<{ id: stri
   const hasUsage = rec.lines.some((l) => l.billing === "USAGE");
   const usage = hasUsage ? await listUsage(org.id, rec.id, { limit: USAGE_PAGE_SIZE }) : null;
   const net = tableLines.reduce((sum, l) => sum + l.lineNetCents, 0);
+  const timing: BillingTiming = rec.billingTiming === "ADVANCE" ? "ADVANCE" : "ARREARS";
+  const periods = previewPeriods(
+    {
+      billingTiming: timing,
+      nextRunDate: rec.nextRunDate,
+      interval: rec.interval as RecurInterval,
+      intervalCount: rec.intervalCount,
+      anchorDay: rec.anchorDay,
+      endDate: rec.endDate,
+      status: rec.status,
+      maxRuns: rec.maxRuns,
+      issuedCount: rec.issuedCount,
+    },
+    3,
+  );
+  const arrearsHint = timing === "ARREARS" && !hasUsage;
   const s = STATUS_LABEL[rec.status] ?? { text: rec.status, cls: "bg-well text-ink-soft" };
 
   // Phase 14a, Task 1 (R1/R2): rein darstellender Block "Aus den Kundenvorgaben
@@ -134,11 +150,15 @@ export default async function AboDetail({ params }: { params: Promise<{ id: stri
           <dl className="grid grid-cols-2 gap-y-1 text-ink-soft">
             <dt>Rhythmus</dt>
             <dd className="text-right">{intervalLabel(rec.interval, rec.intervalCount)}</dd>
-            <dt>Start</dt>
+            <dt>Abrechnungsart</dt>
+            <dd className="text-right">{timing === "ADVANCE" ? "im Voraus" : "nachträglich"}</dd>
+            <dt>Leistungsbeginn</dt>
             <dd className="text-right">{deDate(rec.startDate)}</dd>
             <dt>Nächste Rechnung</dt>
-            <dd className="text-right font-medium text-ink">{rec.status === "ENDED" ? "—" : deDate(rec.nextRunDate)}</dd>
-            <dt>Ende</dt>
+            <dd className="text-right font-medium text-ink">
+              {rec.status === "ENDED" ? "—" : rec.status === "PAUSED" ? "pausiert" : deDate(rec.nextRunDate)}
+            </dd>
+            <dt>Vertragsende</dt>
             <dd className="text-right">{deDate(rec.endDate)}</dd>
             <dt>Zahlungsziel</dt>
             <dd className="text-right">{rec.paymentTermsDays} Tage</dd>
@@ -147,6 +167,27 @@ export default async function AboDetail({ params }: { params: Promise<{ id: stri
             <dt>Versand</dt>
             <dd className="text-right">{rec.autoSend ? "automatisch" : "manuell"}</dd>
           </dl>
+          {periods.length > 0 && (
+            <div className="mt-3 border-t border-rule pt-2">
+              <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-muted">Nächste Zeiträume</h3>
+              <ul className="space-y-0.5 text-xs text-ink-soft">
+                {periods.map((p) => (
+                  <li key={p.runDate.getTime()} className="flex justify-between gap-2">
+                    <span>Rechnung am {deDate(p.runDate)}</span>
+                    <span className="tabular">
+                      {deDate(p.start)} – {deDate(p.end)}
+                      {p.clippedByEndDate ? " (gekürzt)" : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {arrearsHint && (
+            <p className="mt-3 text-xs text-ink-muted">
+              Abrechnung nachträglich: Der Zeitraum endet am Abrechnungstag. Für Vorauszahlung auf „im Voraus“ umstellen.
+            </p>
+          )}
         </div>
       </div>
 
