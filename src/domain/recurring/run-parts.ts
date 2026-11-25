@@ -11,7 +11,7 @@ import { createDraftInvoiceWithinTx } from "@/domain/invoice/create";
 import { finalizeWithinTx } from "@/domain/invoice/finalize";
 import { linkDocuments } from "@/domain/relations";
 import { prefillEmail } from "@/domain/email/compose";
-import { sendDocumentEmail } from "@/domain/email/send";
+import { sendDocumentEmail, SendOwnershipLostError } from "@/domain/email/send";
 import { MailNotConfiguredError } from "@/domain/email/settings";
 import type { MailProvider } from "@/lib/mail/provider";
 import type { CreateInvoiceInput } from "@/schemas";
@@ -252,7 +252,9 @@ export type RecurringMailAttempt =
   /** Das Protokoll existiert und sagt FAILED; `outcome` trennt "sicher nicht angenommen" von "unklar". */
   | { status: "FAILED"; outcome: "NOT_SENT" | "UNKNOWN"; error?: string }
   /** Eine Ausnahme beim Vorbereiten/Versenden. `mailNotConfigured`: Mailzugang fehlt. Ob schon ein Protokoll entstand, prueft der Aufrufer. */
-  | { status: "THROWN"; mailNotConfigured: boolean };
+  | { status: "THROWN"; mailNotConfigured: boolean }
+  /** Der Besitz ging vor dem Anlegen des Protokolls verloren: nichts angelegt, nichts gesendet. */
+  | { status: "NOT_OWNED" };
 
 /**
  * Ein Versandversuch der erzeugten Rechnung ueber die Standardvorlage INVOICE — LAEUFT AUSSERHALB jeder
@@ -264,6 +266,8 @@ export async function sendRecurringInvoiceEmail(
   invoiceId: string,
   provider: MailProvider | undefined,
   emailTemplateId: string | null,
+  /** Bestaetigt/erneuert den Besitz unmittelbar vor dem QUEUED-Protokoll (nach Vorbereitung, PDF/XML, Anhaengen). */
+  confirmOwnership?: () => Promise<boolean>,
 ): Promise<RecurringMailAttempt> {
   let pre: Awaited<ReturnType<typeof prefillEmail>>;
   try {
@@ -292,11 +296,13 @@ export async function sendRecurringInvoiceEmail(
       },
       [],
       provider,
+      confirmOwnership,
     );
     return result.status === "SENT"
       ? { status: "SENT", logId: result.logId }
       : { status: "FAILED", outcome: result.outcome ?? "UNKNOWN", error: result.error };
   } catch (e) {
+    if (e instanceof SendOwnershipLostError) return { status: "NOT_OWNED" };
     return { status: "THROWN", mailNotConfigured: e instanceof MailNotConfiguredError };
   }
 }

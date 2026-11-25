@@ -1,5 +1,5 @@
 /**
- * Rueckslaeufer ueber den Postfach-Abruf. Testjahr 2271. Nie ein echtes Netz (Attrappe).
+ * Rueckslaeufer ueber den Postfach-Abruf. Testjahr 2274. Nie ein echtes Netz (Attrappe).
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
@@ -13,7 +13,7 @@ import { fetchMailboxForOrg } from "@/domain/mailbox/fetch";
 import { buildMail, pdfBytes } from "../helpers/mail-fixtures";
 import { FakeMailboxClient, type FakeMail } from "../helpers/fake-mailbox-client";
 
-const NOW = new Date("2271-03-01T10:00:00.000Z");
+const NOW = new Date("2274-03-01T10:00:00.000Z");
 const DAY = 24 * 60 * 60 * 1000;
 const fixture = (name: string): Buffer => fs.readFileSync(path.resolve(__dirname, "../fixtures/mail", name));
 
@@ -27,7 +27,7 @@ let seq = 0;
 async function mkOrg(name: string): Promise<string> {
   const orgId = (await dbInternal.organization.create({ data: { legalName: `Rueckl ${name} GmbH`, addressLine1: "Weg 1", postalCode: "12345", city: "Teststadt" }, select: { id: true } })).id;
   // Allowlist enthaelt NUR eine fremde Domain: der Mailserver des Empfaengers steht nicht darauf.
-  await saveMailboxSettings(orgId, { host: "imap.example.org", port: 993, security: "TLS", username: "rechnungen@example.org", password: "Geheim-Passwort-2271", folder: "INBOX", fetchSince: "2271-02-20", allowedSenderDomains: ["lieferant.example.org"] }, "tester", NOW);
+  await saveMailboxSettings(orgId, { host: "imap.example.org", port: 993, security: "TLS", username: "rechnungen@example.org", password: "Geheim-Passwort-2274", folder: "INBOX", fetchSince: "2274-02-20", allowedSenderDomains: ["lieferant.example.org"] }, "tester", NOW);
   await dbInternal.inboundMailboxSettings.update({ where: { orgId }, data: { enabled: true, lastTestOk: true, lastTestAt: NOW }, select: { id: true } });
   return orgId;
 }
@@ -79,7 +79,7 @@ describe("Rueckslaeufer im Postfach", () => {
     expect(await dbInternal.inboundMailAttachment.count({ where: { orgId } })).toBe(0);
 
     await run(orgId, [mail("2", "dsn-postfix-failed.eml")]);
-    expect(await results(orgId)).toEqual(["1:BOUNCE_MATCHED", "2:BOUNCE_UNMATCHED"]);
+    expect(await results(orgId)).toEqual(["1:BOUNCE_MATCHED", "2:BOUNCE_MATCHED"]);
     expect(await dbInternal.changeLog.count({ where: { orgId, entity: "EMAIL", entityId: logId, action: "BOUNCED" } })).toBe(1);
     expect(await dbInternal.notification.count({ where: { orgId, type: "EMAIL_BOUNCED" } })).toBe(1);
   });
@@ -144,7 +144,7 @@ describe("Rueckslaeufer im Postfach", () => {
     expect(await dbInternal.notification.count({ where: { orgId, type: "RECURRING_NOT_SENT" } })).toBe(1);
     expect(await dbInternal.notification.count({ where: { orgId, type: "EMAIL_BOUNCED" } })).toBe(1);
     await run(orgId, [mail("2", "dsn-postfix-failed.eml")]);
-    expect(await results(orgId)).toEqual(["1:BOUNCE_MATCHED", "2:BOUNCE_UNMATCHED"]);
+    expect(await results(orgId)).toEqual(["1:BOUNCE_MATCHED", "2:BOUNCE_MATCHED"]);
     expect(await dbInternal.notification.count({ where: { orgId, type: "EMAIL_BOUNCED" } })).toBe(1);
   });
 

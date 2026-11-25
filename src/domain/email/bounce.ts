@@ -43,12 +43,13 @@ export async function applyBounce(orgId: string, dsn: ParsedDsn, now: Date): Pro
   if (!hit) return "UNMATCHED";
   const logDomains = new Set([...domainsOf(hit.toJson), ...domainsOf(hit.ccJson), ...domainsOf(hit.bccJson)]);
   if (!dsn.finalRecipientDomains.some((d) => logDomains.has(d))) return "UNMATCHED";
-  const logChanged = await markEmailBounced(orgId, hit.id, BOUNCE_ACTOR, now);
-  const outboxChanged = await markAutoSendBounced(orgId, hit.id, now);
+  // Idempotent: ein wiederholter Bericht zu einem bereits als unzustellbar markierten Protokoll bleibt zugeordnet (MATCHED).
+  await markEmailBounced(orgId, hit.id, BOUNCE_ACTOR, now);
+  await markAutoSendBounced(orgId, hit.id, now);
   // Meldung nachholen, falls ein frueherer Lauf nach dem Statuswechsel abbrach (dedupeKey macht sie idempotent).
   const first = parseAddresses(hit.toJson)[0];
   await onEmailBounced(orgId, { logId: hit.id, docType: hit.docType, docId: hit.docId, to: first || undefined });
-  return logChanged || outboxChanged ? "MATCHED" : "UNMATCHED";
+  return "MATCHED";
 }
 
 function parseAddresses(json: string): string[] {

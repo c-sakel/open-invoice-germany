@@ -10,6 +10,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { sendDocumentEmail, EmailAttachmentsTooLargeError } from "@/domain/email/send";
+import { AutoSendRunningError } from "@/domain/recurring/auto-send-guard";
 import { DocumentNotFoundError } from "@/domain/email/context";
 import { resolveStandardAttachmentSelection, StandardAttachmentSelectionError } from "@/domain/email/attachments";
 import { MailNotConfiguredError } from "@/domain/email/settings";
@@ -76,6 +77,7 @@ export function registerEmailTools(server: McpServer, ctx: McpToolsContext): voi
         if (e instanceof MailNotConfiguredError) return ctx.fail(e.message);
         if (e instanceof EmailAttachmentsTooLargeError) return ctx.fail(e.message);
         if (e instanceof StandardAttachmentSelectionError) return ctx.fail(e.message);
+        if (e instanceof AutoSendRunningError) return ctx.fail(e.message);
         if (e instanceof ToolError) return ctx.fail(e.message);
         return ctx.failUnknown(e);
       }

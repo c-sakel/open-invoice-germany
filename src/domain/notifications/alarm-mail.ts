@@ -66,6 +66,8 @@ export async function sendAlarmMailIfDue(orgId: string, now: Date, provider?: Ma
   });
   if (claimed.length === 0) return 0;
 
+  // Erst ab dem SMTP-Aufruf ist ein Ausgang unklar; jede Ausnahme davor (Lookup, Branding, HTML-Teil, Provider) heisst: nichts gesendet.
+  let sending = false;
   try {
     const org = await dbInternal.organization.findUnique({ where: { id: orgId }, select: { email: true } });
     const to = org?.email || mailSettings.fromEmail;
@@ -79,22 +81,22 @@ export async function sendAlarmMailIfDue(orgId: string, now: Date, provider?: Ma
       return `- ${label}${n > 1 ? ` (${n}x)` : ""}`;
     });
     const linkLine = base ? `\n\nDetails: ${base}/benachrichtigungen` : "";
-    await prov.send(
-      await withHtmlPart(orgId, mailSettings, {
-        from: { name: mailSettings.fromName, address: mailSettings.fromEmail },
-        to: [to],
-        cc: [],
-        bcc: [],
-        replyTo: mailSettings.replyTo ?? undefined,
-        subject: `Alarm: ${claimed.length} Meldung(en) – ${brand.appName}`,
-        text: `${claimed.length} neue Alarm-Meldung(en):\n\n${lines.join("\n")}${linkLine}`,
-        attachments: [],
-      }),
-    );
+    const mail = await withHtmlPart(orgId, mailSettings, {
+      from: { name: mailSettings.fromName, address: mailSettings.fromEmail },
+      to: [to],
+      cc: [],
+      bcc: [],
+      replyTo: mailSettings.replyTo ?? undefined,
+      subject: `Alarm: ${claimed.length} Meldung(en) – ${brand.appName}`,
+      text: `${claimed.length} neue Alarm-Meldung(en):\n\n${lines.join("\n")}${linkLine}`,
+      attachments: [],
+    });
+    sending = true;
+    await prov.send(mail);
     return claimed.length;
   } catch (e) {
     console.error("Alarm-Mail: Versand fehlgeschlagen", e instanceof Error ? e.name : "Fehler");
-    if (e instanceof MailSendError && e.outcome === "NOT_SENT") await releaseClaim(orgId, claimed.map((c) => c.id), now, previousSlot);
+    if (!sending || (e instanceof MailSendError && e.outcome === "NOT_SENT")) await releaseClaim(orgId, claimed.map((c) => c.id), now, previousSlot);
     return 0;
   }
 }

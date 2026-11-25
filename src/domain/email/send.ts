@@ -40,12 +40,22 @@ export class EmailAttachmentsTooLargeError extends Error {
   }
 }
 
+/** Der Aufrufer hat den Besitz am Versandversuch verloren (`beforeQueue` lieferte false); es wurde nichts angelegt oder gesendet. */
+export class SendOwnershipLostError extends Error {
+  constructor() {
+    super("Versandversuch nicht mehr im Besitz des Aufrufers");
+    this.name = "SendOwnershipLostError";
+  }
+}
+
 export async function sendDocumentEmail(
   orgId: string,
   actor: string,
   rawInput: SendEmailRawInput,
   extra: Attachment[],
   provider?: MailProvider,
+  /** Optional: unmittelbar vor dem QUEUED-Protokoll aufgerufen; `false` bricht ab (SendOwnershipLostError). */
+  beforeQueue?: () => Promise<boolean>,
 ): Promise<SendDocumentEmailResult> {
   // Die Domain validiert selbst (G5, Lastenheft 55: kein Bypass ueber MCP oder eine
   // zukuenftige zweite Route). Die HTTP-Route parst zusaetzlich fuer eine fruehe 400-
@@ -129,7 +139,7 @@ export async function sendDocumentEmail(
   // (laeuft die Automatik fuer diese Rechnung, wird abgelehnt; die Automatik kann die gesperrte Zeile nicht claimen).
   const autoLock = input.docType === "INVOICE" && actor !== AUTO_SEND_ACTOR ? await acquireManualSendLock(orgId, input.docId) : null;
   let lockReleased = false;
-  const releaseLock = async (outcome: "SENT" | "NOT_SENT") => {
+  const releaseLock = async (outcome: "SENT" | "NOT_SENT" | "UNCLEAR") => {
     if (!autoLock || lockReleased) return;
     lockReleased = true;
     try {
@@ -138,6 +148,10 @@ export async function sendDocumentEmail(
       console.error("sendDocumentEmail: Sperre nicht freigegeben", e instanceof Error ? e.name : "unknown");
     }
   };
+  if (beforeQueue && !(await beforeQueue().catch(() => false))) {
+    await releaseLock("NOT_SENT");
+    throw new SendOwnershipLostError();
+  }
   const log = await createQueuedEmailLog({
     orgId,
     docType: input.docType,
@@ -201,10 +215,11 @@ export async function sendDocumentEmail(
     attachmentsMeta,
     htmlSha256,
   }).catch(async (e: unknown) => {
-    await releaseLock(status === "SENT" ? "SENT" : "NOT_SENT");
+    // Protokoll konnte nicht abgeschlossen werden: Ausgang nicht gesichert, nie automatisch wiederholen.
+    await releaseLock("UNCLEAR");
     throw e;
   });
-  await releaseLock(status === "SENT" ? "SENT" : "NOT_SENT");
+  await releaseLock(status === "SENT" ? "SENT" : outcome === "NOT_SENT" ? "NOT_SENT" : "UNCLEAR");
 
   // SENT-Hook (Addendum Task 4): erfolgreicher Versand setzt bei Angebot/AB/Proforma
   // (Status DRAFT/EXPIRED) bzw. Lieferschein (Status CREATED) automatisch SENT. Laeuft

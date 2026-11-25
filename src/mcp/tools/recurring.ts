@@ -121,7 +121,7 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
           `Abo angelegt: "${rec.title}" für ${customer.name} · ${intervalLabel(rec.interval, rec.intervalCount)} · ` +
             `erste Rechnung ab ${rec.nextRunDate.toISOString().slice(0, 10)}${rec.autoFinalize ? " (auto-festschreiben)" : ""}.\n` +
             `ID: ${rec.id}. Erzeugen: run_recurring (alle fälligen) oder warten auf den Cron-Lauf.` +
-            (rec.autoSend && !(customer.email ?? "").trim() ? NO_MAIL_HINT : ""),
+            (rec.autoSend && !(customer.invoiceEmail ?? customer.email ?? "").trim() ? NO_MAIL_HINT : ""),
         );
       } catch (e) {
         // Fix 2 (Re-Review Phase 12c): sonst unter failUnknown ("Unerwarteter Fehler")
@@ -258,8 +258,8 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
         const org = await ctx.requireOrg();
         const { recurring, ...patch } = args;
         const updated = await updateRecurringInvoice(org.id, recurring, patch, "mcp");
-        const cust = updated.autoSend ? await dbInternal.customer.findFirst({ where: { id: updated.customerId, orgId: org.id }, select: { email: true } }) : null;
-        return ctx.ok(`Abo aktualisiert: ${updated.title} (${updated.status}).` + (updated.autoSend && cust && !(cust.email ?? "").trim() ? NO_MAIL_HINT : ""));
+        const cust = updated.autoSend ? await dbInternal.customer.findFirst({ where: { id: updated.customerId, orgId: org.id }, select: { email: true, invoiceEmail: true } }) : null;
+        return ctx.ok(`Abo aktualisiert: ${updated.title} (${updated.status}).` + (updated.autoSend && cust && !(cust.invoiceEmail ?? cust.email ?? "").trim() ? NO_MAIL_HINT : ""));
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
         if (e instanceof NotFoundError) return ctx.fail(e.message);

@@ -29,8 +29,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import type { MailProvider } from "@/lib/mail/provider";
 import { logActivity } from "@/domain/activity/log";
-import { notifyRecurringNotSentWithinTx } from "@/domain/notifications/hooks";
-import { AUTO_SEND_ACTOR } from "./auto-send-guard";
+import { AUTO_SEND_ACTOR, reportAutoSendProblemWithinTx as reportWithinTx } from "./auto-send-guard";
 import { sendRecurringInvoiceEmail } from "./run-parts";
 
 export type AutoSendStatus = "PENDING" | "SENDING" | "RETRY" | "NO_ADDRESS" | "SENT" | "UNCLEAR" | "GAVE_UP" | "DONE_MANUAL" | "CANCELLED" | "BOUNCED" | "MANUAL_PENDING";
@@ -122,37 +121,6 @@ const AUTO_ROW = {
 
 async function loadRow(id: string) {
   return dbInternal.invoiceAutoSend.findUnique({ where: { id }, select: AUTO_ROW });
-}
-
-type ProblemStatus = "NO_ADDRESS" | "UNCLEAR" | "GAVE_UP" | "BOUNCED";
-const isProblem = (s: string): s is ProblemStatus => s === "NO_ADDRESS" || s === "UNCLEAR" || s === "GAVE_UP" || s === "BOUNCED";
-
-/**
- * Pflicht-Benachrichtigung + Aktivitaet fuer einen Problemzustand, in der Transaktion des Statuswechsels.
- * Einmal je Zustand und Zyklus (`notifiedStatus`); wiederholte NO_ADDRESS-Pruefungen melden nicht erneut.
- */
-async function reportWithinTx(
-  tx: Prisma.TransactionClient,
-  rowId: string,
-  status: string,
-  code: string | null,
-  at: Date,
-): Promise<void> {
-  if (!isProblem(status)) return;
-  const row = await tx.invoiceAutoSend.findUnique({ where: { id: rowId }, select: { orgId: true, invoiceId: true, attempts: true, cycle: true, notifiedStatus: true } });
-  if (!row || row.notifiedStatus === status) return;
-  const invoice = await tx.invoice.findFirst({ where: { id: row.invoiceId, orgId: row.orgId }, select: { number: true } });
-  await logActivity(tx, {
-    orgId: row.orgId,
-    entityType: "INVOICE",
-    entityId: row.invoiceId,
-    type: "AUTO_SEND_PROBLEM",
-    actor: AUTO_SEND_ACTOR,
-    at,
-    data: { status, code, attempts: row.attempts },
-  });
-  await notifyRecurringNotSentWithinTx(tx, row.orgId, { invoiceId: row.invoiceId, number: invoice?.number ?? null, status, cycle: row.cycle, at });
-  await tx.invoiceAutoSend.update({ where: { id: rowId }, data: { notifiedStatus: status }, select: { id: true } });
 }
 
 /**
@@ -254,15 +222,13 @@ export async function dispatchAutoSend(id: string, now: Date, provider?: MailPro
   // Protokolle VOR dem Versuch merken: nach einer Ausnahme zaehlt jedes neue Protokoll als "Versand begonnen"
   // (unabhaengig von Uhr und Testdatum).
   const known = new Set((await dbInternal.emailLog.findMany({ where: { orgId: row.orgId, docType: "INVOICE", docId: row.invoiceId }, select: { id: true } })).map((l) => l.id));
-  // Besitz unmittelbar vor dem Versand bestaetigen und `claimedAt` erneuern: hat ein anderer Lauf die Zeile als haengend
-  // uebernommen (z. B. nach sehr langer Vorbereitung), wird hier nicht mehr gesendet. Der SMTP-Versuch selbst ist durch
-  // die Zeitlimits des Transports auf wenige Minuten begrenzt und liegt damit weit unter der Haenge-Schwelle.
-  const stillOwned = await dbInternal.invoiceAutoSend.updateMany({
-    where: { id: row.id, status: "SENDING", claimToken },
-    data: { claimedAt: new Date() },
-  });
-  if (stillOwned.count === 0) return { status: "NOT_CLAIMED" };
-  const attempt = await sendRecurringInvoiceEmail(row.orgId, row.invoiceId, provider, rec?.emailTemplateId ?? null);
+  // Besitz bestaetigen und `claimedAt` erneuern: hat ein anderer Lauf die Zeile als haengend uebernommen, wird nicht gesendet.
+  // Zweimal: jetzt und unmittelbar vor dem QUEUED-Protokoll (nach prefill, PDF/XML und Anhaengen), damit lange Vorbereitung
+  // nicht in die Haenge-Schwelle laeuft; der SMTP-Versuch selbst ist durch die Zeitlimits des Transports begrenzt.
+  const confirmOwnership = async (): Promise<boolean> =>
+    (await dbInternal.invoiceAutoSend.updateMany({ where: { id: row.id, status: "SENDING", claimToken }, data: { claimedAt: new Date() } })).count > 0;
+  if (!(await confirmOwnership())) return { status: "NOT_CLAIMED" };
+  const attempt = await sendRecurringInvoiceEmail(row.orgId, row.invoiceId, provider, rec?.emailTemplateId ?? null, confirmOwnership);
 
   let result: AttemptResult;
   let logId: string | undefined;
@@ -274,6 +240,8 @@ export async function dispatchAutoSend(id: string, now: Date, provider?: MailPro
     case "SKIPPED":
       result = { kind: "NO_ADDRESS" };
       break;
+    case "NOT_OWNED":
+      return { status: "NOT_CLAIMED" };
     case "FAILED":
       result = attempt.outcome === "NOT_SENT" ? { kind: "NOT_SENT", code: "SMTP_REJECTED" } : { kind: "UNKNOWN" };
       break;
@@ -377,7 +345,8 @@ async function resolveStaleManual(now: Date): Promise<void> {
         select: { status: true, sentByUserId: true, createdAt: true },
       });
       const manual = logs.filter((l) => l.sentByUserId !== AUTO_SEND_ACTOR);
-      const status: AutoSendStatus = manual.some((l) => l.status === "SENT") ? "DONE_MANUAL" : manual.some((l) => l.status === "QUEUED") ? "UNCLEAR" : "RETRY";
+      // Ein manuelles Protokoll ohne gesicherten Ausgang (QUEUED oder FAILED) bleibt unklar: nie blind automatisch wiederholen.
+      const status: AutoSendStatus = manual.some((l) => l.status === "SENT") ? "DONE_MANUAL" : manual.some((l) => l.status === "QUEUED" || l.status === "FAILED") ? "UNCLEAR" : "RETRY";
       await dbInternal.$transaction(async (tx) => {
         const upd = await tx.invoiceAutoSend.updateMany({
           where: { id: row.id, status: "MANUAL_PENDING", updatedAt: row.updatedAt },

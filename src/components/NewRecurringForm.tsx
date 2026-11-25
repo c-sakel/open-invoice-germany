@@ -271,7 +271,7 @@ export function NewRecurringForm({
         setError("Archivierte Kunden können keinem neuen Abo zugeordnet werden.");
         return;
       }
-      setCustomerEmail(ctx.customer.email);
+      setCustomerEmail(ctx.customer.invoiceEmail?.trim() ? ctx.customer.invoiceEmail : ctx.customer.email);
       // Manuelle Waehrungswahl bleibt erhalten.
       if (!currencyTouched) changeCurrency(ctx.customer.defaultCurrency ?? defaultCurrency);
     } catch {

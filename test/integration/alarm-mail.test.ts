@@ -11,7 +11,7 @@ import { sendAlarmMailIfDue } from "@/domain/notifications/alarm-mail";
 import { runNotificationsJob } from "@/domain/notifications/job";
 import { loadNotificationSettings, saveNotificationSettings, ALL_NOTIFICATION_TYPES } from "@/domain/notifications/settings";
 
-const NOW = new Date("2271-06-09T10:00:00.000Z");
+const NOW = new Date("2273-06-09T10:00:00.000Z");
 const H = 60 * 60 * 1000;
 
 async function makeOrg(withMail = true): Promise<string> {
@@ -112,6 +112,21 @@ describe("Alarm-Mail", () => {
     const provider = createMemoryProvider();
     provider.failNext("kein Verbindungsaufbau", "NOT_SENT");
     expect(await sendAlarmMailIfDue(orgId, NOW, provider)).toBe(0);
+    const row = await dbInternal.notification.findUniqueOrThrow({ where: { id }, select: { alarmMailedAt: true } });
+    expect(row.alarmMailedAt).toBeNull();
+    expect((await loadNotificationSettings(orgId)).lastAlarmMailAt).toBeNull();
+    expect(await sendAlarmMailIfDue(orgId, new Date(NOW.getTime() + 60_000), provider)).toBe(1);
+    expect(provider.sent).toHaveLength(1);
+  });
+
+  it("6c. Ausnahme vor dem SMTP-Aufruf -> Claim und Takt zurueckgesetzt (es ging sicher nichts raus), naechster Lauf versendet", async () => {
+    const orgId = await makeOrg();
+    const id = await alarm(orgId, "f3");
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(dbInternal.organization, "findUnique").mockRejectedValueOnce(new Error("DB weg"));
+    const provider = createMemoryProvider();
+    expect(await sendAlarmMailIfDue(orgId, NOW, provider)).toBe(0);
+    expect(provider.sent).toHaveLength(0);
     const row = await dbInternal.notification.findUniqueOrThrow({ where: { id }, select: { alarmMailedAt: true } });
     expect(row.alarmMailedAt).toBeNull();
     expect((await loadNotificationSettings(orgId)).lastAlarmMailAt).toBeNull();

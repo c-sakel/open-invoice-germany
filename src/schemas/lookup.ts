@@ -30,6 +30,8 @@ export const editorCustomerSchema = z.object({
   name: z.string(),
   customerNumber: z.string().nullable(),
   email: z.string().nullable(),
+  /** Rechnungs-E-Mail des Kunden; der Versand bevorzugt sie vor `email`. */
+  invoiceEmail: z.string().nullable(),
   defaultPaymentMethodId: z.string().nullable(),
   defaultDiscountPermille: z.number().nullable(),
   defaultCurrency: z.string().nullable(),

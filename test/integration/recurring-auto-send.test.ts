@@ -9,7 +9,7 @@ import { dbInternal } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { saveMailSettings } from "@/domain/email/settings";
 import { prefillEmail } from "@/domain/email/compose";
-import { sendDocumentEmail } from "@/domain/email/send";
+import { sendDocumentEmail, SendOwnershipLostError } from "@/domain/email/send";
 import { cancelInvoice } from "@/domain/invoice/cancel";
 import { createMemoryProvider } from "@/lib/mail/memory";
 import type { MailProvider } from "@/lib/mail/provider";
@@ -498,4 +498,53 @@ describe("automatischer Versand", () => {
     expect(status).toBe("SENT");
     expect((await rowOf(out.invoiceId)).confirmUnclear).toBe(false);
   });
+  it("25: manueller Versand mit unklarem Ausgang waehrend RETRY -> UNCLEAR mit Meldung, die Automatik sendet nicht erneut", async () => {
+    const provider = createMemoryProvider();
+    provider.failNext("x", "NOT_SENT");
+    const { out, now } = await emit(await customer("auto25@example.org"), provider);
+    const manualProv = createMemoryProvider();
+    manualProv.failNext("timeout nach DATA", "UNKNOWN");
+    const res = await manualSend(out.invoiceId, manualProv);
+    expect(res.status).toBe("FAILED");
+    const mid = await rowOf(out.invoiceId);
+    expect(mid.status).toBe("UNCLEAR");
+    expect(mid.lastError).toBe("UNCLEAR_OUTCOME");
+    expect(await notifications(out.invoiceId)).toBe(1);
+    await runAutoSendJob(later(now, 20 * MIN), provider);
+    expect((await rowOf(out.invoiceId)).status).toBe("UNCLEAR");
+    expect(provider.sent).toHaveLength(0);
+  });
+
+  it("26: abgestuerzter manueller Versand mit FAILED-Protokoll ohne gesicherten Ausgang -> UNCLEAR statt RETRY", async () => {
+    const provider = createMemoryProvider();
+    provider.failNext("x", "NOT_SENT");
+    const { out, row } = await emit(await customer("auto26@example.org"), provider);
+    await dbInternal.invoiceAutoSend.update({ where: { id: row.id }, data: { status: "MANUAL_PENDING" } });
+    await dbInternal.emailLog.create({ data: { orgId, docType: "INVOICE", docId: out.invoiceId, subject: "s", bodySnapshot: "b", status: "FAILED", sentByUserId: "user-1" } });
+    await runAutoSendJob(new Date(Date.now() + 60 * MIN), provider);
+    expect((await rowOf(out.invoiceId)).status).toBe("UNCLEAR");
+    expect(provider.sent).toHaveLength(0);
+  });
+
+  it("27: Besitz unmittelbar vor dem QUEUED-Protokoll verloren -> kein Protokoll, kein Versand", async () => {
+    const provider = createMemoryProvider();
+    provider.failNext("x", "NOT_SENT");
+    const { out } = await emit(await customer("auto27@example.org"), provider);
+    const pre = await prefillEmail(orgId, { docType: "INVOICE", docId: out.invoiceId });
+    const logsBefore = await dbInternal.emailLog.count({ where: { orgId, docId: out.invoiceId } });
+    const attempt = createMemoryProvider();
+    await expect(
+      sendDocumentEmail(
+        orgId,
+        "recurring-runner",
+        { docType: "INVOICE", docId: out.invoiceId, to: pre.to.join(","), cc: "", bcc: "", subject: pre.subject, body: pre.body, signature: pre.signature, copyToSelf: false, standardAttachments: pre.defaultStandardAttachments, templateId: pre.templateId, warnings: [] },
+        [],
+        attempt,
+        async () => false,
+      ),
+    ).rejects.toBeInstanceOf(SendOwnershipLostError);
+    expect(attempt.sent).toHaveLength(0);
+    expect(await dbInternal.emailLog.count({ where: { orgId, docId: out.invoiceId } })).toBe(logsBefore);
+  });
+
 });

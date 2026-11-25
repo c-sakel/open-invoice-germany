@@ -201,6 +201,29 @@ describe("Auto-Versand REST/MCP/UI", () => {
     const upd = await call("update_recurring_invoice", { recurring: id, title: "Hinweis-Abo 2" });
     expect(upd.content[0]!.text).toContain("keine E-Mail-Adresse");
   });
+  it("6b: Kunde nur mit Rechnungs-E-Mail bekommt keinen Hinweis auf fehlende Adresse", async () => {
+    seq += 1;
+    const c = await dbInternal.customer.create({ data: { orgId, name: `Rechnungsmail-Kunde ${seq}`, addressLine1: "Weg 1", postalCode: "99905", city: "Teststadt", countryCode: "DE", type: "BUSINESS", invoiceEmail: "rechnung6b@example.org" }, select: { id: true } });
+    const created = await call("create_recurring", {
+      customer: c.id, title: "Rechnungsmail-Abo", startDate: "2276-05-01", autoFinalize: true, autoSend: true,
+      lines: [{ description: "Leistung", quantity: 1, unitPriceEuro: 10, taxRate: 19 }],
+    });
+    expect(created.isError).toBeFalsy();
+    expect(created.content[0]!.text).not.toContain("keine E-Mail-Adresse");
+    const id = /ID: (\S+?)\./.exec(created.content[0]!.text)![1]!;
+    expect((await call("update_recurring_invoice", { recurring: id, title: "Rechnungsmail-Abo 2" })).content[0]!.text).not.toContain("keine E-Mail-Adresse");
+  });
+
+  it("6c: MCP send_email waehrend die Automatik sendet -> Klartext statt unerwartetem Fehler (wie REST 409)", async () => {
+    const id = await emitInvoice("mcp6c@example.org", true);
+    await dbInternal.invoiceAutoSend.update({ where: { invoiceId: id }, data: { status: "SENDING", claimedAt: new Date(), claimToken: "t" } });
+    const res = await call("send_email", { docType: "INVOICE", docId: id, to: ["mcp6c@example.org"], subject: "s", body: "b" });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]!.text).toContain("Automatischer Versand läuft");
+    expect(res.content[0]!.text).not.toContain("Unerwarteter Fehler");
+    await dbInternal.invoiceAutoSend.update({ where: { invoiceId: id }, data: { status: "DONE_MANUAL", claimToken: null } });
+  });
+
   it("7: Retry nach manuellem Versand (GAVE_UP, E-Mail-Protokoll SENT) sendet nicht erneut, Zustand wird DONE_MANUAL", async () => {
     const id = await emitInvoice("man7@example.org", true);
     await dbInternal.invoiceAutoSend.update({ where: { invoiceId: id }, data: { status: "GAVE_UP", lastError: "SMTP_REJECTED" } });
