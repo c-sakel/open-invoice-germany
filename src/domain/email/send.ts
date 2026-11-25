@@ -20,7 +20,7 @@ import { createQueuedEmailLog, finishEmailLog } from "@/domain/email/email-log";
 import { setQuoteStatus, setDeliveryNoteStatus } from "@/domain/document/status";
 import { createSmtpProvider } from "@/lib/mail/smtp";
 import { withHtmlPart } from "@/domain/email/html-part";
-import { AUTO_SEND_ACTOR, assertNoAutoSendRunning } from "@/domain/recurring/auto-send-guard";
+import { AUTO_SEND_ACTOR, acquireManualSendLock } from "@/domain/recurring/auto-send-guard";
 import { MailSendError, type MailProvider } from "@/lib/mail/provider";
 import { sendEmailInputSchema, type SendEmailRawInput } from "@/schemas/email";
 import { MAX_EMAIL_ATTACHMENTS_TOTAL_BYTES } from "@/lib/attachments/mime";
@@ -51,9 +51,6 @@ export async function sendDocumentEmail(
   // zukuenftige zweite Route). Die HTTP-Route parst zusaetzlich fuer eine fruehe 400-
   // Antwort — doppelt ist hier gewollt, massgeblich ist dieser Aufruf.
   const input = sendEmailInputSchema.parse(rawInput);
-
-  // Manueller Versand und Versandautomatik schliessen sich aus: laeuft die Automatik fuer diese Rechnung, nichts senden.
-  if (input.docType === "INVOICE" && actor !== AUTO_SEND_ACTOR) await assertNoAutoSendRunning(orgId, input.docId);
 
   const settings = await loadMailSettings(orgId);
   if (!settings) throw new MailNotConfiguredError();
@@ -128,6 +125,19 @@ export async function sendDocumentEmail(
     sha256: createHash("sha256").update(a.content).digest("hex"),
   }));
 
+  // Manueller Versand und Versandautomatik schliessen sich aus: atomare Sperre unmittelbar vor dem QUEUED-Protokoll
+  // (laeuft die Automatik fuer diese Rechnung, wird abgelehnt; die Automatik kann die gesperrte Zeile nicht claimen).
+  const autoLock = input.docType === "INVOICE" && actor !== AUTO_SEND_ACTOR ? await acquireManualSendLock(orgId, input.docId) : null;
+  let lockReleased = false;
+  const releaseLock = async (outcome: "SENT" | "NOT_SENT") => {
+    if (!autoLock || lockReleased) return;
+    lockReleased = true;
+    try {
+      await autoLock.release(outcome);
+    } catch (e) {
+      console.error("sendDocumentEmail: Sperre nicht freigegeben", e instanceof Error ? e.name : "unknown");
+    }
+  };
   const log = await createQueuedEmailLog({
     orgId,
     docType: input.docType,
@@ -144,6 +154,9 @@ export async function sendDocumentEmail(
     attachmentsJson: JSON.stringify(attachmentsMeta),
     warningsJson: JSON.stringify(input.warnings),
     sentByUserId: actor,
+  }).catch(async (e: unknown) => {
+    await releaseLock("NOT_SENT");
+    throw e;
   });
 
   let status: "SENT" | "FAILED" = "SENT";
@@ -187,7 +200,11 @@ export async function sendDocumentEmail(
     subject: input.subject,
     attachmentsMeta,
     htmlSha256,
+  }).catch(async (e: unknown) => {
+    await releaseLock(status === "SENT" ? "SENT" : "NOT_SENT");
+    throw e;
   });
+  await releaseLock(status === "SENT" ? "SENT" : "NOT_SENT");
 
   // SENT-Hook (Addendum Task 4): erfolgreicher Versand setzt bei Angebot/AB/Proforma
   // (Status DRAFT/EXPIRED) bzw. Lieferschein (Status CREATED) automatisch SENT. Laeuft

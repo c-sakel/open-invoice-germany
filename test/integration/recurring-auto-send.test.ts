@@ -3,7 +3,7 @@
  * nie Doppelversand, manueller Versand stoppt die Automatik, unklarer Ausgang wird nicht wiederholt.
  * Eigenes Jahr 2275 (Invoice.number global eindeutig), eigene Organisation, Memory-Provider, kein Netz.
  */
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBestandRecurring } from "../helpers/recurring-bestand";
 import { dbInternal } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
@@ -36,7 +36,11 @@ beforeAll(async () => {
 
 // Jeder Test sieht nur seine eigenen Auftraege (der Job arbeitet ohne Org-Filter).
 beforeEach(async () => {
-  await dbInternal.invoiceAutoSend.updateMany({ where: { status: { in: ["PENDING", "RETRY", "NO_ADDRESS", "SENDING"] } }, data: { status: "DONE_MANUAL" } });
+  await dbInternal.invoiceAutoSend.updateMany({ where: { status: { in: ["PENDING", "RETRY", "NO_ADDRESS", "SENDING", "MANUAL_PENDING"] } }, data: { status: "DONE_MANUAL" } });
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 async function customer(email: string | null): Promise<string> {
@@ -382,5 +386,116 @@ describe("automatischer Versand", () => {
       }, [], manualProvider),
     ).rejects.toBeInstanceOf(AutoSendRunningError);
     expect(manualProvider.sent).toHaveLength(0);
+  });
+
+  async function manualSend(invoiceId: string, provider: MailProvider) {
+    const pre = await prefillEmail(orgId, { docType: "INVOICE", docId: invoiceId });
+    return sendDocumentEmail(orgId, "user-1", {
+      docType: "INVOICE", docId: invoiceId, to: pre.to.join(","), cc: "", bcc: "", subject: pre.subject, body: pre.body, signature: pre.signature,
+      copyToSelf: false, standardAttachments: pre.defaultStandardAttachments, templateId: pre.templateId, warnings: [],
+    }, [], provider);
+  }
+
+  it("20: Besitz vor dem Versand verloren -> kein Versand (NOT_CLAIMED), Zeile unveraendert", async () => {
+    const provider = createMemoryProvider();
+    provider.failNext("x", "NOT_SENT");
+    const { out, row } = await emit(await customer("auto20@example.org"), provider);
+    await dbInternal.invoiceAutoSend.update({ where: { id: row.id }, data: { nextAttemptAt: new Date("2000-01-01T00:00:00.000Z") } });
+    const original = dbInternal.emailLog.findMany.bind(dbInternal.emailLog);
+    // Zwischen Claim und Besitzpruefung uebernimmt ein anderer Lauf (Token weg, RETRY).
+    vi.spyOn(dbInternal.emailLog, "findMany").mockImplementationOnce(((args: unknown) => {
+      return dbInternal.invoiceAutoSend
+        .update({ where: { id: row.id }, data: { status: "RETRY", claimToken: null }, select: { id: true } })
+        .then(() => (original as (a: unknown) => unknown)(args));
+    }) as never);
+    const sentBefore = provider.sent.length;
+    const res = await dispatchAutoSend(row.id, new Date(), provider);
+    expect(res.status).toBe("NOT_CLAIMED");
+    expect(provider.sent.length).toBe(sentBefore);
+    expect((await rowOf(out.invoiceId)).status).toBe("RETRY");
+  });
+
+  it("21: haengende Zeile, deren Lauf inzwischen erneuert hat -> wird nicht aufgeloest", async () => {
+    const provider = createMemoryProvider();
+    provider.failNext("x", "NOT_SENT");
+    const { out, row } = await emit(await customer("auto21@example.org"), provider);
+    await dbInternal.invoiceAutoSend.update({ where: { id: row.id }, data: { status: "SENDING", claimToken: "tok", claimedAt: new Date(Date.now() - 3 * 60 * MIN) } });
+    const original = dbInternal.emailLog.findMany.bind(dbInternal.emailLog);
+    vi.spyOn(dbInternal.emailLog, "findMany").mockImplementationOnce(((args: unknown) => {
+      return dbInternal.invoiceAutoSend
+        .update({ where: { id: row.id }, data: { claimedAt: new Date() }, select: { id: true } })
+        .then(() => (original as (a: unknown) => unknown)(args));
+    }) as never);
+    await runAutoSendJob(new Date(), provider);
+    const after = await rowOf(out.invoiceId);
+    expect(after.status).toBe("SENDING");
+    expect(after.claimToken).toBe("tok");
+  });
+
+  it("22: manueller Versand sperrt die Zeile atomar: Automatik claimt nicht, danach DONE_MANUAL; bei Fehlschlag zurueck auf RETRY", async () => {
+    const provider = createMemoryProvider();
+    provider.failNext("x", "NOT_SENT");
+    const { out, row, now } = await emit(await customer("auto22@example.org"), provider);
+    await dbInternal.invoiceAutoSend.update({ where: { id: row.id }, data: { nextAttemptAt: new Date("2000-01-01T00:00:00.000Z") } });
+    // Fehlschlag: waehrend des manuellen Versands ist die Zeile gesperrt, die Automatik sendet nichts
+    const inner = createMemoryProvider();
+    inner.failNext("x", "NOT_SENT");
+    let duringStatus = "";
+    let duringAuto = "";
+    const spying: MailProvider = {
+      async send(mail) {
+        duringStatus = (await rowOf(out.invoiceId)).status;
+        duringAuto = (await dispatchAutoSend(row.id, new Date(), provider)).status;
+        return inner.send(mail);
+      },
+    };
+    const failed = await manualSend(out.invoiceId, spying);
+    expect(failed.status).toBe("FAILED");
+    expect(duringStatus).toBe("MANUAL_PENDING");
+    expect(duringAuto).toBe("NOT_CLAIMED");
+    expect((await rowOf(out.invoiceId)).status).toBe("RETRY");
+    // Erfolg: danach DONE_MANUAL, Automatik sendet nie mehr
+    const ok = await manualSend(out.invoiceId, createMemoryProvider());
+    expect(ok.status).toBe("SENT");
+    expect((await rowOf(out.invoiceId)).status).toBe("DONE_MANUAL");
+    const sentBefore = provider.sent.length;
+    await runAutoSendJob(later(now, 30 * MIN), provider);
+    expect(provider.sent.length).toBe(sentBefore);
+  });
+
+  it("22b: abgestuerzter manueller Versand (MANUAL_PENDING) wird nach 30 min anhand des Protokolls aufgeloest", async () => {
+    const provider = createMemoryProvider();
+    provider.failNext("x", "NOT_SENT");
+    const { out, row } = await emit(await customer("auto22b@example.org"), provider);
+    await dbInternal.invoiceAutoSend.update({ where: { id: row.id }, data: { status: "MANUAL_PENDING" } });
+    await dbInternal.emailLog.create({ data: { orgId, docType: "INVOICE", docId: out.invoiceId, subject: "s", bodySnapshot: "b", status: "QUEUED", sentByUserId: "user-1" } });
+    await runAutoSendJob(new Date(Date.now() + 60 * MIN), provider);
+    expect((await rowOf(out.invoiceId)).status).toBe("UNCLEAR");
+    expect(await notifications(out.invoiceId)).toBe(1);
+  });
+
+  it("23: Sweep meldet nur ungemeldete Zeilen (bereits gemeldete terminale Zeilen bleiben unangetastet)", async () => {
+    const provider = createMemoryProvider();
+    provider.failNext("timeout", "UNKNOWN");
+    const a = await emit(await customer("auto23a@example.org"), provider);
+    provider.failNext("timeout", "UNKNOWN");
+    const b = await emit(await customer("auto23b@example.org"), provider);
+    await dbInternal.notification.deleteMany({ where: { orgId, entityId: b.out.invoiceId, type: "RECURRING_NOT_SENT" } });
+    await dbInternal.invoiceAutoSend.update({ where: { id: b.row.id }, data: { notifiedStatus: null } });
+    const activitiesA = await dbInternal.activityLog.count({ where: { orgId, entityId: a.out.invoiceId, type: "AUTO_SEND_PROBLEM" } });
+    await runAutoSendJob(later(b.now, 60 * MIN), provider);
+    expect(await notifications(b.out.invoiceId)).toBe(1);
+    expect(await notifications(a.out.invoiceId)).toBe(1);
+    expect(await dbInternal.activityLog.count({ where: { orgId, entityId: a.out.invoiceId, type: "AUTO_SEND_PROBLEM" } })).toBe(activitiesA);
+  });
+
+  it("24: confirmUnclear wird nach dem bestaetigten Versuch zurueckgesetzt", async () => {
+    const provider = createMemoryProvider();
+    provider.failNext("timeout", "UNKNOWN");
+    const { out, now } = await emit(await customer("auto24@example.org"), provider);
+    expect((await rowOf(out.invoiceId)).confirmUnclear).toBe(false);
+    const status = await retryAutoSend(orgId, out.invoiceId, "user-1", { confirmUnclear: true }, later(now, 10 * MIN), provider);
+    expect(status).toBe("SENT");
+    expect((await rowOf(out.invoiceId)).confirmUnclear).toBe(false);
   });
 });

@@ -15,9 +15,11 @@
  *   Claim-Token; `settle`/`resolveStale` wirken nur bei passendem Token (ein ueberholter Lauf aendert nichts).
  *   Keine SMTP-Aufrufe in einer Transaktion; haengende `SENDING`-Zeilen werden anhand des EmailLog aufgeloest,
  *   nie blind wiederholt (vorhandenes Protokoll -> UNCLEAR).
- * - Manueller Versand wird abgelehnt, solange die Zeile SENDING ist (`assertNoAutoSendRunning`, email/send.ts).
- *   Restfenster: Vorpruefung -> QUEUED-Protokoll (Vorbefuellen + PDF); ein dort manuell gesendeter Beleg bleibt
- *   ein moeglicher Doppelversand, der Bediener sieht beide Protokolle.
+ * - Automatik und manueller Versand schliessen sich atomar aus (`acquireManualSendLock`, auto-send-guard.ts): der manuelle
+ *   Versand sperrt die Zeile (PENDING/RETRY/NO_ADDRESS -> MANUAL_PENDING) unmittelbar vor dem QUEUED-Protokoll und lehnt bei
+ *   SENDING ab; der Claim der Automatik scheitert an MANUAL_PENDING. Nach dem Versuch: SENT -> DONE_MANUAL, sonst zurueck in
+ *   den vorherigen Zustand. Ein abgestuerzter manueller Versand (MANUAL_PENDING > 30 min) wird anhand des Protokolls aufgeloest.
+ *   Bleibt ein Restfenster (manuell, waehrend die Zeile in einem Endzustand/ohne Zeile ist), sieht der Bediener beide Protokolle.
  * - Pflicht-Benachrichtigung (NO_ADDRESS/UNCLEAR/GAVE_UP) in derselben Transaktion wie der Statuswechsel; der Job
  *   holt Verpasstes nach (`notifiedStatus`), je Neustart-Zyklus (`cycle`) eigener Schluessel.
  * - Meldungen nach aussen nur mit festem Code (nie Servertext).
@@ -31,7 +33,7 @@ import { notifyRecurringNotSentWithinTx } from "@/domain/notifications/hooks";
 import { AUTO_SEND_ACTOR } from "./auto-send-guard";
 import { sendRecurringInvoiceEmail } from "./run-parts";
 
-export type AutoSendStatus = "PENDING" | "SENDING" | "RETRY" | "NO_ADDRESS" | "SENT" | "UNCLEAR" | "GAVE_UP" | "DONE_MANUAL" | "CANCELLED" | "BOUNCED";
+export type AutoSendStatus = "PENDING" | "SENDING" | "RETRY" | "NO_ADDRESS" | "SENT" | "UNCLEAR" | "GAVE_UP" | "DONE_MANUAL" | "CANCELLED" | "BOUNCED" | "MANUAL_PENDING";
 export type AutoSendCode = "SMTP_REJECTED" | "MAIL_NOT_CONFIGURED" | "PREPARE_FAILED" | "NO_ADDRESS" | "NOT_FINAL" | "UNCLEAR_OUTCOME";
 
 const MIN_MS = 60 * 1000;
@@ -159,14 +161,15 @@ async function reportWithinTx(
  * Liefert `false`, wenn der Claim verloren war.
  */
 async function transition(
-  where: { id: string; claimToken: string | null },
+  where: { id: string; claimToken: string | null; claimedAt?: Date | null },
   data: { status: AutoSendStatus; attempts?: number; nextAttemptAt: Date; lastError: string | null; emailLogId?: string },
   now: Date,
 ): Promise<boolean> {
   return dbInternal.$transaction(async (tx) => {
     const upd = await tx.invoiceAutoSend.updateMany({
-      where: { id: where.id, status: "SENDING", claimToken: where.claimToken },
-      data: { ...data, claimToken: null },
+      where: { id: where.id, status: "SENDING", claimToken: where.claimToken, ...(where.claimedAt ? { claimedAt: where.claimedAt } : {}) },
+      // Der bestaetigte Versuch ist beendet: die Bestaetigung (`confirmUnclear`) gilt nicht weiter.
+      data: { ...data, claimToken: null, confirmUnclear: false },
     });
     if (upd.count === 0) return false;
     await reportWithinTx(tx, where.id, data.status, data.lastError, now);
@@ -182,7 +185,7 @@ async function settle(
   extra: { emailLogId?: string } = {},
 ): Promise<AutoSendOutcome> {
   const ok = await transition(
-    row,
+    { id: row.id, claimToken: row.claimToken },
     {
       status: next.status,
       attempts: next.attempts,
@@ -299,7 +302,7 @@ function toEmailStatus(o: AutoSendOutcome): "SENT" | "FAILED" | "SKIPPED" | "UNC
       return "SENT";
     case "NO_ADDRESS":
     case "DONE_MANUAL":
-    case "NOT_CLAIMED":
+    case "NOT_CLAIMED": // Besitz verloren oder nicht faellig: in diesem Aufruf wurde nichts gesendet
       return "SKIPPED";
     case "UNCLEAR":
       return "UNCLEAR";
@@ -351,9 +354,39 @@ async function resolveStale(now: Date): Promise<void> {
       if (sent) data = { status: "SENT", emailLogId: sent.id, lastError: null, nextAttemptAt: now };
       else if (logs.length > 0) data = { status: "UNCLEAR", lastError: "UNCLEAR_OUTCOME", nextAttemptAt: now };
       else data = { status: "RETRY", lastError: "PREPARE_FAILED", nextAttemptAt: now };
-      await transition({ id: row.id, claimToken: row.claimToken }, data, now);
+      // claimedAt im WHERE: hat der Lauf inzwischen erneuert (stillOwned) und sendet, gilt er nicht mehr als haengend.
+      await transition({ id: row.id, claimToken: row.claimToken, claimedAt: row.claimedAt }, data, now);
     } catch (e) {
       console.error("auto-send: haengende Zeile nicht aufgeloest", e instanceof Error ? e.name : "unknown");
+    }
+  }
+}
+
+/** Abgestuerzter manueller Versand (MANUAL_PENDING zu lange): Aufloesung anhand des Protokolls, nie blind wiederholen. */
+async function resolveStaleManual(now: Date): Promise<void> {
+  const threshold = new Date(now.getTime() - STALE_SENDING_MS);
+  const stale = await dbInternal.invoiceAutoSend.findMany({
+    where: { status: "MANUAL_PENDING", updatedAt: { lt: threshold } },
+    select: { id: true, orgId: true, invoiceId: true, updatedAt: true },
+    take: JOB_BATCH,
+  });
+  for (const row of stale) {
+    try {
+      const logs = await dbInternal.emailLog.findMany({
+        where: { orgId: row.orgId, docType: "INVOICE", docId: row.invoiceId },
+        select: { status: true, sentByUserId: true, createdAt: true },
+      });
+      const manual = logs.filter((l) => l.sentByUserId !== AUTO_SEND_ACTOR);
+      const status: AutoSendStatus = manual.some((l) => l.status === "SENT") ? "DONE_MANUAL" : manual.some((l) => l.status === "QUEUED") ? "UNCLEAR" : "RETRY";
+      await dbInternal.$transaction(async (tx) => {
+        const upd = await tx.invoiceAutoSend.updateMany({
+          where: { id: row.id, status: "MANUAL_PENDING", updatedAt: row.updatedAt },
+          data: { status, nextAttemptAt: now, lastError: status === "UNCLEAR" ? "UNCLEAR_OUTCOME" : null },
+        });
+        if (upd.count > 0) await reportWithinTx(tx, row.id, status, status === "UNCLEAR" ? "UNCLEAR_OUTCOME" : null, now);
+      });
+    } catch (e) {
+      console.error("auto-send: haengende manuelle Sperre nicht aufgeloest", e instanceof Error ? e.name : "unknown");
     }
   }
 }
@@ -361,8 +394,12 @@ async function resolveStale(now: Date): Promise<void> {
 /** Holt verpasste Pflicht-Benachrichtigungen nach (Absturz zwischen Statuswechsel und Meldung); idempotent ueber `notifiedStatus`. */
 async function sweepUnreported(now: Date): Promise<void> {
   const rows = await dbInternal.invoiceAutoSend.findMany({
-    where: { status: { in: ["NO_ADDRESS", "UNCLEAR", "GAVE_UP"] } },
+    // Nur Zeilen, deren Zustand noch nicht gemeldet ist (terminale, bereits gemeldete Zeilen verdraengen den Sweep nicht).
+    where: {
+      OR: (["NO_ADDRESS", "UNCLEAR", "GAVE_UP"] as const).map((s) => ({ status: s, OR: [{ notifiedStatus: null }, { notifiedStatus: { not: s } }] })),
+    },
     select: { id: true, status: true, lastError: true, notifiedStatus: true },
+    orderBy: { updatedAt: "asc" },
     take: JOB_BATCH * 5,
   });
   for (const r of rows) {
@@ -382,6 +419,7 @@ async function sweepUnreported(now: Date): Promise<void> {
 export async function runAutoSendJob(now: Date, provider?: MailProvider): Promise<AutoSendJobResult> {
   const res: AutoSendJobResult = { checked: 0, sent: 0, retry: 0, unclear: 0, gaveUp: 0, waiting: 0 };
   await resolveStale(now);
+  await resolveStaleManual(now);
   await sweepUnreported(now);
   const due = await dbInternal.invoiceAutoSend.findMany({
     where: { status: { in: ["PENDING", "RETRY", "NO_ADDRESS"] }, nextAttemptAt: { lte: now } },
