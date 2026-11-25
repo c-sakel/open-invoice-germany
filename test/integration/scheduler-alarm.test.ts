@@ -59,4 +59,18 @@ describe("SCHEDULER_FAILED", () => {
     await runScheduledJobs({ jobs: ["dunning"], trigger: "MANUAL", now: min(60) });
     expect(await count(orgA)).toBe(1);
   });
+
+  it("4. Fehler in der Alarmpruefung (DB-Abfrage wirft) bricht den Runner nicht ab", async () => {
+    jobsMock.dunning.mockRejectedValue(new Error("boom"));
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const spy = vi.spyOn(dbInternal.schedulerRun, "findMany").mockRejectedValue(new Error("db weg"));
+    try {
+      const results = await runScheduledJobs({ jobs: ["dunning"], trigger: "MANUAL", now: min(0) });
+      expect(results).toHaveLength(1);
+      expect(results[0].ok).toBe(false);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await count(orgA)).toBe(0);
+  });
 });

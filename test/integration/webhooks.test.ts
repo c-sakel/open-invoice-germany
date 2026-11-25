@@ -317,13 +317,16 @@ describe("Zustellung (deliver.ts) — attemptDelivery", () => {
     const thirdRaw = await loadEndpointRaw(third.id);
     const { loadNotificationSettings: load, saveNotificationSettings: save, ALL_NOTIFICATION_TYPES: all } = await import("@/domain/notifications/settings");
     const cur = await load(orgId);
-    await save(orgId, { enabledTypes: all.filter((t) => t !== "WEBHOOK_DEAD"), emailDigest: cur.emailDigest });
-    const d3 = await dbInternal.webhookDelivery.create({
-      data: { orgId, endpointId: third.id, event: "invoice.finalized", objectName: "Invoice", objectId: "dead-y", dataJson: "{}", status: "FAILED", attempts: 5, nextAttemptAt: FIX_DATE },
-    });
-    await attemptDelivery({ ...d3, endpoint: thirdRaw }, failFetch(500), FIX_DATE);
-    expect(await count()).toBe(before + 1);
-    await save(orgId, { enabledTypes: [...all], emailDigest: cur.emailDigest });
+    try {
+      await save(orgId, { enabledTypes: all.filter((t) => t !== "WEBHOOK_DEAD"), emailDigest: cur.emailDigest });
+      const d3 = await dbInternal.webhookDelivery.create({
+        data: { orgId, endpointId: third.id, event: "invoice.finalized", objectName: "Invoice", objectId: "dead-y", dataJson: "{}", status: "FAILED", attempts: 5, nextAttemptAt: FIX_DATE },
+      });
+      await attemptDelivery({ ...d3, endpoint: thirdRaw }, failFetch(500), FIX_DATE);
+      expect(await count()).toBe(before + 1);
+    } finally {
+      await save(orgId, { enabledTypes: [...all], emailDigest: cur.emailDigest });
+    }
   });
 
   it("SSRF-Skip bei Zustellung: URL zeigt zwischenzeitlich auf ein privates Netz -> sofort DEAD, kein fetch-Aufruf", async () => {

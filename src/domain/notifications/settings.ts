@@ -139,8 +139,3 @@ export async function saveNotificationSettings(orgId: string, input: SaveNotific
 export async function markDigestSent(orgId: string, at: Date): Promise<void> {
   await dbInternal.notificationSettings.update({ where: { orgId }, data: { lastDigestAt: at } });
 }
-
-/** Setzt `lastAlarmMailAt` (Alarm-Mail-Takt, alarm-mail.ts). */
-export async function markAlarmMailSent(orgId: string, at: Date): Promise<void> {
-  await dbInternal.notificationSettings.update({ where: { orgId }, data: { lastAlarmMailAt: at } });
-}
