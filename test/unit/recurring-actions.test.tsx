@@ -59,30 +59,73 @@ describe("Jetzt Rechnung erzeugen", () => {
 });
 
 describe("Fortsetzen", () => {
-  it("mit Rückstand: Dialog mit Auswahl, Vorbelegung nach Abrechnungsart, Angabe im Body", async () => {
+  const confirmBtn = () => screen.getByRole("button", { name: "Fortsetzen bestätigen", hidden: true }) as HTMLButtonElement;
+
+  it("mit Rückstand: keine Vorbelegung, Bestätigen erst nach Wahl, Angabe im Body", async () => {
     fetchMock.mockResolvedValue(new Response("{}", { status: 200 }));
-    render(<RecurringActions id="a1" status="PAUSED" missedCount={3} billingTiming="ADVANCE" />);
+    render(<RecurringActions id="a1" status="PAUSED" missedCount={3} />);
     fireEvent.click(screen.getByRole("button", { name: "Fortsetzen" }));
     expect(fetchMock).not.toHaveBeenCalled();
     expect(screen.getByRole("dialog", { name: RESUME, hidden: true }).textContent).toContain("3 versäumte Zeiträume");
-    const skip = screen.getByRole("radio", { name: /überspringen/, hidden: true }) as HTMLInputElement;
-    expect(skip.checked).toBe(true);
+    expect((screen.getByRole("radio", { name: /überspringen/, hidden: true }) as HTMLInputElement).checked).toBe(false);
+    expect((screen.getByRole("radio", { name: /nachträglich abrechnen/, hidden: true }) as HTMLInputElement).checked).toBe(false);
+    expect(confirmBtn().disabled).toBe(true);
     fireEvent.click(screen.getByRole("radio", { name: /nachträglich abrechnen/, hidden: true }));
-    fireEvent.click(screen.getByRole("button", { name: "Fortsetzen bestätigen", hidden: true }));
+    expect(confirmBtn().disabled).toBe(false);
+    fireEvent.click(confirmBtn());
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     const body = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body)) as Record<string, unknown>;
     expect(body).toEqual({ status: "ACTIVE", missedPeriods: "BILL" });
   });
 
-  it("nachträgliche Abrechnung ist für ARREARS vorbelegt", () => {
-    render(<RecurringActions id="a1" status="PAUSED" missedCount={2} billingTiming="ARREARS" />);
+  it("BILL mit Festschreiben und Versand warnt mit Empfänger und Lauf-Obergrenze", () => {
+    render(<RecurringActions id="a1" status="PAUSED" missedCount={30} autoFinalize autoSend recipient="kunde@example.org" />);
     fireEvent.click(screen.getByRole("button", { name: "Fortsetzen" }));
-    expect((screen.getByRole("radio", { name: /nachträglich abrechnen/, hidden: true }) as HTMLInputElement).checked).toBe(true);
+    const dialog = screen.getByRole("dialog", { name: RESUME, hidden: true });
+    expect(dialog.textContent).not.toContain("kunde@example.org");
+    fireEvent.click(screen.getByRole("radio", { name: /nachträglich abrechnen/, hidden: true }));
+    const text = dialog.textContent ?? "";
+    expect(text).toContain("festgeschrieben und an kunde@example.org versendet");
+    expect(text).toContain("höchstens 24 Rechnungen");
+    expect(text).toContain("30 versäumten");
+  });
+
+  it("BILL mit Versand ohne Kunden-E-Mail: Hinweis, kein Versand an den Kunden", () => {
+    render(<RecurringActions id="a1" status="PAUSED" missedCount={2} autoFinalize autoSend recipient={null} />);
+    fireEvent.click(screen.getByRole("button", { name: "Fortsetzen" }));
+    fireEvent.click(screen.getByRole("radio", { name: /nachträglich abrechnen/, hidden: true }));
+    const text = screen.getByRole("dialog", { name: RESUME, hidden: true }).textContent ?? "";
+    expect(text).toContain("Versand nicht möglich");
+    expect(text).not.toContain("versendet");
+  });
+
+  it("gedeckelte Anzahl wird als Mindestzahl angezeigt", () => {
+    render(<RecurringActions id="a1" status="PAUSED" missedCount={400} />);
+    fireEvent.click(screen.getByRole("button", { name: "Fortsetzen" }));
+    expect(screen.getByRole("dialog", { name: RESUME, hidden: true }).textContent).toContain("Mindestens 400 versäumte Zeiträume");
+  });
+
+  it("409 MISSED_PERIODS_REQUIRED (veraltete Seite) öffnet den Dialog ohne Vorbelegung", async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ error: "x", reason: "MISSED_PERIODS_REQUIRED", details: { missedCount: 4 } }), { status: 409 }));
+    render(<RecurringActions id="a1" status="PAUSED" missedCount={0} />);
+    fireEvent.click(screen.getByRole("button", { name: "Fortsetzen" }));
+    await waitFor(() => expect(screen.getByRole("dialog", { name: RESUME, hidden: true }).textContent).toContain("4 versäumte Zeiträume"));
+    expect(confirmBtn().disabled).toBe(true);
+  });
+
+  it("Ablehnung durch den Server (SKIP bei offenem Verbrauch) zeigt die Meldung und schließt den Dialog", async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ error: "Offener Verbrauch in übersprungenen Zeiträumen." }), { status: 409 }));
+    render(<RecurringActions id="a1" status="PAUSED" missedCount={3} />);
+    fireEvent.click(screen.getByRole("button", { name: "Fortsetzen" }));
+    fireEvent.click(screen.getByRole("radio", { name: /überspringen/, hidden: true }));
+    fireEvent.click(confirmBtn());
+    await waitFor(() => expect(screen.getByText("Offener Verbrauch in übersprungenen Zeiträumen.")).toBeTruthy());
+    expect(document.querySelectorAll("dialog[open]").length).toBe(0);
   });
 
   it("ohne Rückstand: sofort fetch ohne missedPeriods", async () => {
     fetchMock.mockResolvedValue(new Response("{}", { status: 200 }));
-    render(<RecurringActions id="a1" status="PAUSED" missedCount={0} billingTiming="ADVANCE" />);
+    render(<RecurringActions id="a1" status="PAUSED" missedCount={0} />);
     fireEvent.click(screen.getByRole("button", { name: "Fortsetzen" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))).toEqual({ status: "ACTIVE" });

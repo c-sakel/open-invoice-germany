@@ -13,13 +13,22 @@ export interface ResumeResult {
   nextRunDate?: Date;
   /** Das Enddatum liegt im uebersprungenen Zeitraum: nichts fortgesetzt, Abo bleibt pausiert. */
   ended?: boolean;
+  /** Bedienerpfad (strict): SKIP wuerde offenen Verbrauch still abrechnen lassen, nichts fortgesetzt. */
+  blocked?: boolean;
 }
 
 export async function resumePausedRecurringWithinTx(
   tx: Prisma.TransactionClient,
   orgId: string,
   recurringId: string,
-  opts: { missedPeriods: "SKIP" | "BILL"; now: Date; actor: string; invoiceId?: string },
+  opts: {
+    missedPeriods: "SKIP" | "BILL";
+    now: Date;
+    actor: string;
+    invoiceId?: string;
+    /** Bedienerpfad: SKIP mit offenem Verbrauch (BILL_FALLBACK) ablehnen statt still abzurechnen. Regel-Pfad: Fallback. */
+    strict?: boolean;
+  },
 ): Promise<ResumeResult> {
   await lockRow(tx, "RecurringInvoice", recurringId, orgId);
   const rec = await tx.recurringInvoice.findFirst({
@@ -57,6 +66,7 @@ export async function resumePausedRecurringWithinTx(
       skipped = plan.skipped;
       note = `fortgesetzt, ${skipped} Periode(n) uebersprungen`;
     } else if (plan.kind === "BILL_FALLBACK") {
+      if (opts.strict) return { resumed: false, note: plan.reason, skippedPeriods: 0, blocked: true };
       note = `fortgesetzt, ${plan.reason}`;
     }
   } else {

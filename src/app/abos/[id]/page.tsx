@@ -147,7 +147,6 @@ export default async function AboDetail({ params }: { params: Promise<{ id: stri
             autoSend={rec.autoSend}
             recipient={rec.customer.email}
             missedCount={missedCount}
-            billingTiming={timing}
           />
         </div>
       </div>

@@ -3,6 +3,8 @@ import { advanceDate, type RecurInterval } from "@/lib/recurring";
 import { berlinDateKey } from "@/lib/berlin-time";
 
 export const MAX_SKIP_STEPS = 400;
+/** Hoechstzahl Rechnungen je Abo und Lauf (Abo-Lauf, runDueRecurring); weitere folgen im naechsten Lauf. */
+export const MAX_INVOICES_PER_RUN = 24;
 
 export interface SkipMissedInput {
   nextRunDate: Date;

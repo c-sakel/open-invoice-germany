@@ -70,6 +70,7 @@ export async function updateRecurringInvoice(orgId: string, id: string, raw: unk
       );
     }
 
+    let resumedWithMissed = false;
     // Fortsetzen (PAUSED -> ACTIVE) mit Rueckstand: Auswahl Pflicht, Umsetzung ueber den gemeinsamen Fortsetzen-Pfad.
     if (input.status === "ACTIVE" && existing.status === "PAUSED") {
       const now = opts.now ?? new Date();
@@ -82,8 +83,15 @@ export async function updateRecurringInvoice(orgId: string, id: string, raw: unk
       });
       if (missed > 0) {
         if (input.missedPeriods === undefined) throw new RecurringMissedPeriodsError(missed);
-        const res = await resumePausedRecurringWithinTx(tx, orgId, id, { missedPeriods: input.missedPeriods, now, actor });
+        const res = await resumePausedRecurringWithinTx(tx, orgId, id, { missedPeriods: input.missedPeriods, now, actor, strict: true });
         if (!res.resumed && res.ended) throw new RecurringError(res.note);
+        if (!res.resumed && res.blocked) {
+          throw new InvalidOperationError(
+            "Offener Verbrauch in übersprungenen Zeiträumen: Verbräuche zuerst abrechnen oder stornieren, oder die versäumten Zeiträume nachträglich abrechnen (BILL).",
+          );
+        }
+        if (!res.resumed) throw new InvalidOperationError(`Das Abo wurde nicht fortgesetzt: ${res.note}.`);
+        resumedWithMissed = true;
       }
     }
 
@@ -124,6 +132,11 @@ export async function updateRecurringInvoice(orgId: string, id: string, raw: unk
     const reschedule =
       existing.issuedCount === 0 &&
       (startDate !== undefined || timingChanged || (!legacySchedule && (intervalChanged || input.anchorDay != null)));
+    if (resumedWithMissed && reschedule) {
+      throw new InvalidOperationError(
+        "Fortsetzen mit versäumten Zeiträumen und Änderung von Startdatum, Intervall, Ankertag oder Abrechnungsart sind nicht in einem Schritt möglich. Zuerst fortsetzen, dann ändern.",
+      );
+    }
     let nextRunDate: Date | undefined;
     let derivedAnchorDay: number | null | undefined;
     if (reschedule) {
