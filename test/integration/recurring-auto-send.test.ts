@@ -12,6 +12,8 @@ import { prefillEmail } from "@/domain/email/compose";
 import { sendDocumentEmail } from "@/domain/email/send";
 import { cancelInvoice } from "@/domain/invoice/cancel";
 import { createMemoryProvider } from "@/lib/mail/memory";
+import type { MailProvider } from "@/lib/mail/provider";
+import { AutoSendRunningError } from "@/domain/recurring/auto-send-guard";
 import { runDueRecurring } from "@/domain/recurring/run";
 import { dispatchAutoSend, retryAutoSend, runAutoSendJob, AutoSendRetryError } from "@/domain/recurring/auto-send";
 import { createRecurringSchema } from "@/schemas";
@@ -263,5 +265,122 @@ describe("automatischer Versand", () => {
     const after = await dbInternal.invoice.findUniqueOrThrow({ where: { id: out.invoiceId }, select: { status: true, number: true, grossTotalCents: true } });
     expect(after).toEqual(before);
     expect(after.number).toBeTruthy();
+  });
+
+  it("12: Bestandsrechnung ohne Zeile wird vom Job nie versendet und bekommt keine Zeile (R22c-6)", async () => {
+    const provider = createMemoryProvider();
+    const { out, now, row } = await emit(await customer("auto12@example.org"), provider);
+    expect(provider.sent).toHaveLength(1);
+    await dbInternal.invoiceAutoSend.delete({ where: { id: row.id } });
+    await runAutoSendJob(later(now, 48 * 60 * MIN), provider);
+    expect(provider.sent).toHaveLength(1); // keine zweite Mail aus dem Job
+    expect(await dbInternal.invoiceAutoSend.count({ where: { invoiceId: out.invoiceId } })).toBe(0);
+  });
+
+  it("13: haengende Zeile mit SENT-Protokoll -> SENT ohne zweite Mail", async () => {
+    const provider = createMemoryProvider();
+    provider.failNext("x", "NOT_SENT");
+    const { out, now, row } = await emit(await customer("auto13@example.org"), provider);
+    const claimed = later(now, 60 * MIN);
+    await dbInternal.invoiceAutoSend.update({ where: { id: row.id }, data: { status: "SENDING", claimToken: "alt", claimedAt: later(claimed, -31 * MIN) } });
+    const log = await dbInternal.emailLog.create({
+      data: { orgId, docType: "INVOICE", docId: out.invoiceId, subject: "s", bodySnapshot: "b", status: "SENT", sentByUserId: "recurring-runner", createdAt: later(claimed, -30 * MIN) },
+    });
+    await runAutoSendJob(claimed, provider);
+    const after = await rowOf(out.invoiceId);
+    expect(after.status).toBe("SENT");
+    expect(after.emailLogId).toBe(log.id);
+    expect(after.claimToken).toBeNull();
+    expect(provider.sent).toHaveLength(0);
+  });
+
+  it("14: zwei parallele Job-Laeufe -> genau 1 Mail", async () => {
+    const provider = createMemoryProvider();
+    provider.failNext("x", "NOT_SENT");
+    const { out, row } = await emit(await customer("auto14@example.org"), provider);
+    await dbInternal.invoiceAutoSend.update({ where: { id: row.id }, data: { nextAttemptAt: new Date("2000-01-01T00:00:00.000Z") } });
+    await Promise.all([runAutoSendJob(new Date(), provider), runAutoSendJob(new Date(), provider)]);
+    expect(provider.sent).toHaveLength(1);
+    expect((await rowOf(out.invoiceId)).status).toBe("SENT");
+  });
+
+  it("15: Claim ueberholt waehrend des Versands -> der alte Lauf aendert die Zeile nicht und meldet nichts", async () => {
+    const inner = createMemoryProvider();
+    inner.failNext("x", "NOT_SENT");
+    const { out, row } = await emit(await customer("auto15@example.org"), inner);
+    await dbInternal.invoiceAutoSend.update({ where: { id: row.id }, data: { nextAttemptAt: new Date("2000-01-01T00:00:00.000Z") } });
+    const overtaking: MailProvider = {
+      async send(mail) {
+        // ein anderer Lauf loest die Zeile als haengend auf (Token weg, Status RETRY)
+        await dbInternal.invoiceAutoSend.update({ where: { id: row.id }, data: { status: "RETRY", claimToken: null, attempts: 7, lastError: "PREPARE_FAILED" } });
+        return inner.send(mail);
+      },
+    };
+    const res = await dispatchAutoSend(row.id, new Date(), overtaking);
+    expect(res.status).toBe("RETRY");
+    const after = await rowOf(out.invoiceId);
+    expect(after.status).toBe("RETRY");
+    expect(after.attempts).toBe(7);
+    expect(after.lastError).toBe("PREPARE_FAILED");
+  });
+
+  it("16: QUEUED-Protokoll eines manuellen Versands -> UNCLEAR; bestaetigter Neustart sendet trotzdem und meldet erneut", async () => {
+    const provider = createMemoryProvider();
+    provider.failNext("x", "NOT_SENT");
+    const { out, now, row } = await emit(await customer("auto16@example.org"), provider);
+    await dbInternal.emailLog.create({
+      data: { orgId, docType: "INVOICE", docId: out.invoiceId, subject: "s", bodySnapshot: "b", status: "QUEUED", sentByUserId: "user-1" },
+    });
+    await runAutoSendJob(later(now, 20 * MIN), provider);
+    expect((await rowOf(out.invoiceId)).status).toBe("UNCLEAR");
+    expect(await notifications(out.invoiceId)).toBe(1);
+    expect(provider.sent).toHaveLength(0);
+    const status = await retryAutoSend(orgId, out.invoiceId, "user-1", { confirmUnclear: true }, later(now, 30 * MIN), provider);
+    expect(status).toBe("SENT");
+    expect(provider.sent).toHaveLength(1);
+    expect(row.id).toBeTruthy();
+  });
+
+  it("17: nach Neustart meldet ein zweites UNCLEAR erneut (Schluessel je Zyklus)", async () => {
+    const provider = createMemoryProvider();
+    provider.failNext("timeout", "UNKNOWN");
+    const { out, now } = await emit(await customer("auto17@example.org"), provider);
+    expect(await notifications(out.invoiceId)).toBe(1);
+    provider.failNext("timeout", "UNKNOWN");
+    const status = await retryAutoSend(orgId, out.invoiceId, "user-1", { confirmUnclear: true }, later(now, 10 * MIN), provider);
+    expect(status).toBe("UNCLEAR");
+    expect(await notifications(out.invoiceId)).toBe(2);
+    expect((await rowOf(out.invoiceId)).notifiedStatus).toBe("UNCLEAR");
+  });
+
+  it("18: Statuswechsel und Benachrichtigung gemeinsam; verpasste Meldung holt der Job nach (einmal)", async () => {
+    const provider = createMemoryProvider();
+    provider.failNext("timeout", "UNKNOWN");
+    const { out, now, row } = await emit(await customer("auto18@example.org"), provider);
+    expect((await rowOf(out.invoiceId)).notifiedStatus).toBe("UNCLEAR");
+    // Absturz zwischen Statuswechsel und Meldung nachgestellt: Meldung und Merker weg.
+    await dbInternal.notification.deleteMany({ where: { orgId, entityId: out.invoiceId, type: "RECURRING_NOT_SENT" } });
+    await dbInternal.invoiceAutoSend.update({ where: { id: row.id }, data: { notifiedStatus: null } });
+    await runAutoSendJob(later(now, 60 * MIN), provider);
+    await runAutoSendJob(later(now, 120 * MIN), provider);
+    expect(await notifications(out.invoiceId)).toBe(1);
+    expect((await rowOf(out.invoiceId)).notifiedStatus).toBe("UNCLEAR");
+    expect(await dbInternal.activityLog.count({ where: { orgId, entityId: out.invoiceId, type: "AUTO_SEND_PROBLEM" } })).toBe(2);
+  });
+
+  it("19: manueller Versand wird abgelehnt, solange die Automatik sendet (SENDING)", async () => {
+    const provider = createMemoryProvider();
+    provider.failNext("x", "NOT_SENT");
+    const { out, row } = await emit(await customer("auto19@example.org"), provider);
+    await dbInternal.invoiceAutoSend.update({ where: { id: row.id }, data: { status: "SENDING", claimToken: "t", claimedAt: new Date() } });
+    const manualProvider = createMemoryProvider();
+    const pre = await prefillEmail(orgId, { docType: "INVOICE", docId: out.invoiceId });
+    await expect(
+      sendDocumentEmail(orgId, "user-1", {
+        docType: "INVOICE", docId: out.invoiceId, to: pre.to.join(","), cc: "", bcc: "", subject: pre.subject, body: pre.body, signature: pre.signature,
+        copyToSelf: false, standardAttachments: pre.defaultStandardAttachments, templateId: pre.templateId, warnings: [],
+      }, [], manualProvider),
+    ).rejects.toBeInstanceOf(AutoSendRunningError);
+    expect(manualProvider.sent).toHaveLength(0);
   });
 });

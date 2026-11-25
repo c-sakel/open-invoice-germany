@@ -1397,18 +1397,26 @@ model NotificationSettings {
 
 /// Automatischer Versand einer Abo-Rechnung (Outbox). Nur Betriebszustand, kein Beleg.
 model InvoiceAutoSend {
-  id            String    @id @default(cuid())
-  orgId         String
-  invoiceId     String    @unique
-  recurringId   String?
-  status        String // PENDING | SENDING | RETRY | NO_ADDRESS | SENT | UNCLEAR | GAVE_UP | DONE_MANUAL | CANCELLED | BOUNCED
-  attempts      Int       @default(0)
-  nextAttemptAt DateTime  @default(now())
-  claimedAt     DateTime?
-  emailLogId    String?
-  lastError     String? // fester Code, nie Servertext
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id             String    @id @default(cuid())
+  orgId          String
+  invoiceId      String    @unique
+  recurringId    String?
+  status         String // PENDING | SENDING | RETRY | NO_ADDRESS | SENT | UNCLEAR | GAVE_UP | DONE_MANUAL | CANCELLED | BOUNCED
+  attempts       Int       @default(0)
+  nextAttemptAt  DateTime  @default(now())
+  claimedAt      DateTime?
+  emailLogId     String?
+  lastError      String? // fester Code, nie Servertext
+  /// Besitzer des aktuellen Versuchs: settle/resolveStale wirken nur bei passendem Token.
+  claimToken     String?
+  /// Bediener hat einen unklaren Ausgang bestaetigt: ein QUEUED-Protokoll eines manuellen Versands blockiert nicht mehr.
+  confirmUnclear Boolean   @default(false)
+  /// Neustart-Zaehler (retryAutoSend), Teil des Benachrichtigungsschluessels.
+  cycle          Int       @default(0)
+  /// Zustand (NO_ADDRESS/UNCLEAR/GAVE_UP), fuer den die Pflicht-Benachrichtigung bereits angelegt wurde.
+  notifiedStatus String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   @@index([status, nextAttemptAt])
   @@index([orgId, status])

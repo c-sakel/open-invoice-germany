@@ -12,6 +12,10 @@ CREATE TABLE "InvoiceAutoSend" (
     "claimedAt" DATETIME,
     "emailLogId" TEXT,
     "lastError" TEXT,
+    "claimToken" TEXT,
+    "confirmUnclear" BOOLEAN NOT NULL DEFAULT false,
+    "cycle" INTEGER NOT NULL DEFAULT 0,
+    "notifiedStatus" TEXT,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL
 );

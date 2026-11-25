@@ -2264,7 +2264,7 @@ if docker exec "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q \
   -c "INSERT INTO \"InvoiceAutoSend\" (\"id\",\"orgId\",\"invoiceId\",\"status\",\"updatedAt\") VALUES ('as51b','org51','inv51','PENDING',NOW())" >/dev/null 2>&1; then
   fail "zweite InvoiceAutoSend mit gleicher invoiceId wurde angenommen"
 fi
-for COL51 in "Notification|alarmMailedAt|timestamp without time zone|YES" "NotificationSettings|alarmEmail|boolean|NO" "NotificationSettings|lastAlarmMailAt|timestamp without time zone|YES" "InvoiceAutoSend|nextAttemptAt|timestamp without time zone|NO" "InvoiceAutoSend|attempts|integer|NO" "InvoiceAutoSend|claimedAt|timestamp without time zone|YES" "InvoiceAutoSend|status|text|NO"; do
+for COL51 in "Notification|alarmMailedAt|timestamp without time zone|YES" "NotificationSettings|alarmEmail|boolean|NO" "NotificationSettings|lastAlarmMailAt|timestamp without time zone|YES" "InvoiceAutoSend|nextAttemptAt|timestamp without time zone|NO" "InvoiceAutoSend|attempts|integer|NO" "InvoiceAutoSend|claimedAt|timestamp without time zone|YES" "InvoiceAutoSend|status|text|NO" "InvoiceAutoSend|claimToken|text|YES" "InvoiceAutoSend|confirmUnclear|boolean|NO" "InvoiceAutoSend|cycle|integer|NO" "InvoiceAutoSend|notifiedStatus|text|YES"; do
   IFS='|' read -r TBL51 CN51 DT51 NL51 <<<"$COL51"
   T51=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select data_type || '|' || is_nullable from information_schema.columns where table_schema='public' and table_name='$TBL51' and column_name='$CN51'")
   [ "$T51" = "$DT51|$NL51" ] || fail "$TBL51.$CN51 hat '$T51', erwartet $DT51|$NL51"

@@ -2,6 +2,7 @@
  * Gemeinsame Bausteine des Abo-Laufs (Einzel- und Sammelrechnung): Positionen samt Verbrauch,
  * Fortschreiben des Abos, Eingabe fuer den Rechnungspfad und Auto-Versand.
  */
+import { AUTO_SEND_ACTOR } from "./auto-send-guard";
 import type { Prisma } from "@/generated/prisma/client";
 import { berlinCalendarDay } from "@/lib/berlin-time";
 import { billingPeriod, nextStichtag, type BillingTiming, type RecurInterval } from "@/lib/recurring";
@@ -25,7 +26,7 @@ import { effectiveAnchorDay } from "./usage-period";
 export const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Akteur der Mail-Protokolle des automatischen Versands (Abgrenzung zum manuellen Versand). */
-export const AUTO_SEND_ACTOR = "recurring-runner";
+export { AUTO_SEND_ACTOR };
 
 export type RecWithLines = Prisma.RecurringInvoiceGetPayload<{ include: { lines: true } }>;
 

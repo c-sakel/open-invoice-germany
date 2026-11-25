@@ -3,6 +3,7 @@ import { getActiveOrg } from "@/lib/org";
 import { getCurrentUserId } from "@/lib/auth/server";
 import { sendDocumentEmail, EmailAttachmentsTooLargeError } from "@/domain/email/send";
 import { DocumentNotFoundError } from "@/domain/email/context";
+import { AutoSendRunningError } from "@/domain/recurring/auto-send-guard";
 import { MailNotConfiguredError } from "@/domain/email/settings";
 import { sendEmailInputSchema, type SendEmailRawInput } from "@/schemas/email";
 import type { Attachment } from "@/domain/email/attachments";
@@ -100,6 +101,9 @@ export async function POST(req: Request) {
     }
     if (e instanceof MailNotConfiguredError) {
       return NextResponse.json({ error: "MAIL_NOT_CONFIGURED" }, { status: 409 });
+    }
+    if (e instanceof AutoSendRunningError) {
+      return NextResponse.json({ error: e.message }, { status: 409 });
     }
     if (e instanceof EmailAttachmentsTooLargeError) {
       return NextResponse.json({ error: e.message }, { status: 400 });

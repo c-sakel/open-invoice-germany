@@ -11,16 +11,25 @@
  * - Wurde die Rechnung inzwischen manuell versendet (EmailLog SENT/QUEUED eines anderen Akteurs),
  *   versendet die Automatik nie mehr (`DONE_MANUAL`).
  * - Bestand wird nicht nachversendet: die Tabelle startet leer, Auftraege entstehen nur aus Laeufen.
- * - Doppelversand ausgeschlossen durch Claim (`updateMany` mit Status + Faelligkeit), keine SMTP-Aufrufe in
- *   einer Transaktion; haengende `SENDING`-Zeilen werden anhand des EmailLog aufgeloest, nie blind wiederholt.
+ * - Doppelversand ausgeschlossen durch Claim (`updateMany` mit Status + Faelligkeit) mit echtem Zeitstempel und
+ *   Claim-Token; `settle`/`resolveStale` wirken nur bei passendem Token (ein ueberholter Lauf aendert nichts).
+ *   Keine SMTP-Aufrufe in einer Transaktion; haengende `SENDING`-Zeilen werden anhand des EmailLog aufgeloest,
+ *   nie blind wiederholt (vorhandenes Protokoll -> UNCLEAR).
+ * - Manueller Versand wird abgelehnt, solange die Zeile SENDING ist (`assertNoAutoSendRunning`, email/send.ts).
+ *   Restfenster: Vorpruefung -> QUEUED-Protokoll (Vorbefuellen + PDF); ein dort manuell gesendeter Beleg bleibt
+ *   ein moeglicher Doppelversand, der Bediener sieht beide Protokolle.
+ * - Pflicht-Benachrichtigung (NO_ADDRESS/UNCLEAR/GAVE_UP) in derselben Transaktion wie der Statuswechsel; der Job
+ *   holt Verpasstes nach (`notifiedStatus`), je Neustart-Zyklus (`cycle`) eigener Schluessel.
  * - Meldungen nach aussen nur mit festem Code (nie Servertext).
  */
+import { randomUUID } from "node:crypto";
 import type { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import type { MailProvider } from "@/lib/mail/provider";
 import { logActivity } from "@/domain/activity/log";
-import { onRecurringNotSent } from "@/domain/notifications/hooks";
-import { AUTO_SEND_ACTOR, sendRecurringInvoiceEmail } from "./run-parts";
+import { notifyRecurringNotSentWithinTx } from "@/domain/notifications/hooks";
+import { AUTO_SEND_ACTOR } from "./auto-send-guard";
+import { sendRecurringInvoiceEmail } from "./run-parts";
 
 export type AutoSendStatus = "PENDING" | "SENDING" | "RETRY" | "NO_ADDRESS" | "SENT" | "UNCLEAR" | "GAVE_UP" | "DONE_MANUAL" | "CANCELLED" | "BOUNCED";
 export type AutoSendCode = "SMTP_REJECTED" | "MAIL_NOT_CONFIGURED" | "PREPARE_FAILED" | "NO_ADDRESS" | "NOT_FINAL" | "UNCLEAR_OUTCOME";
@@ -103,56 +112,89 @@ const AUTO_ROW = {
   createdAt: true,
   claimedAt: true,
   emailLogId: true,
+  claimToken: true,
+  confirmUnclear: true,
+  cycle: true,
+  notifiedStatus: true,
 } as const;
 
 async function loadRow(id: string) {
   return dbInternal.invoiceAutoSend.findUnique({ where: { id }, select: AUTO_ROW });
 }
 
-/** Beendet eine geclaimte Zeile (nur wenn sie noch SENDING ist) und meldet Problemzustaende. */
-async function settle(
-  row: { id: string; orgId: string; invoiceId: string; createdAt: Date },
-  prevStatus: string,
-  next: AutoSendState,
-  now: Date,
-  extra: { emailLogId?: string } = {},
-): Promise<AutoSendOutcome> {
-  await dbInternal.invoiceAutoSend.updateMany({
-    where: { id: row.id, status: "SENDING" },
-    data: {
-      status: next.status,
-      attempts: next.attempts,
-      nextAttemptAt: next.nextAttemptAt ?? new Date(now.getTime()),
-      lastError: next.lastError,
-      ...(extra.emailLogId ? { emailLogId: extra.emailLogId } : {}),
-    },
-  });
-  await reportProblem(row, prevStatus, next.status, next.lastError, next.attempts, now);
-  return { status: next.status, ...(next.lastError ? { code: next.lastError } : {}) };
-}
+type ProblemStatus = "NO_ADDRESS" | "UNCLEAR" | "GAVE_UP";
+const isProblem = (s: string): s is ProblemStatus => s === "NO_ADDRESS" || s === "UNCLEAR" || s === "GAVE_UP";
 
-/** Benachrichtigung + Aktivitaet bei NO_ADDRESS, UNCLEAR, GAVE_UP (je Statuswechsel einmal; Benachrichtigung zusaetzlich per dedupeKey). */
-async function reportProblem(
-  row: { orgId: string; invoiceId: string },
-  prevStatus: string,
-  status: AutoSendStatus,
+/**
+ * Pflicht-Benachrichtigung + Aktivitaet fuer einen Problemzustand, in der Transaktion des Statuswechsels.
+ * Einmal je Zustand und Zyklus (`notifiedStatus`); wiederholte NO_ADDRESS-Pruefungen melden nicht erneut.
+ */
+async function reportWithinTx(
+  tx: Prisma.TransactionClient,
+  rowId: string,
+  status: string,
   code: string | null,
-  attempts: number,
   at: Date,
 ): Promise<void> {
-  if (status !== "NO_ADDRESS" && status !== "UNCLEAR" && status !== "GAVE_UP") return;
-  if (status === "NO_ADDRESS" && prevStatus === "NO_ADDRESS") return;
-  const invoice = await dbInternal.invoice.findFirst({ where: { id: row.invoiceId, orgId: row.orgId }, select: { number: true } });
-  await logActivity(dbInternal, {
+  if (!isProblem(status)) return;
+  const row = await tx.invoiceAutoSend.findUnique({ where: { id: rowId }, select: { orgId: true, invoiceId: true, attempts: true, cycle: true, notifiedStatus: true } });
+  if (!row || row.notifiedStatus === status) return;
+  const invoice = await tx.invoice.findFirst({ where: { id: row.invoiceId, orgId: row.orgId }, select: { number: true } });
+  await logActivity(tx, {
     orgId: row.orgId,
     entityType: "INVOICE",
     entityId: row.invoiceId,
     type: "AUTO_SEND_PROBLEM",
     actor: AUTO_SEND_ACTOR,
     at,
-    data: { status, code, attempts },
+    data: { status, code, attempts: row.attempts },
   });
-  await onRecurringNotSent(row.orgId, { invoiceId: row.invoiceId, number: invoice?.number ?? null, status, at });
+  await notifyRecurringNotSentWithinTx(tx, row.orgId, { invoiceId: row.invoiceId, number: invoice?.number ?? null, status, cycle: row.cycle, at });
+  await tx.invoiceAutoSend.update({ where: { id: rowId }, data: { notifiedStatus: status }, select: { id: true } });
+}
+
+/**
+ * Statuswechsel einer geclaimten Zeile: nur wenn sie noch SENDING ist UND das Token passt (sonst hat ein anderer Lauf
+ * uebernommen und nichts wird geaendert). Problemzustaende werden in derselben Transaktion gemeldet.
+ * Liefert `false`, wenn der Claim verloren war.
+ */
+async function transition(
+  where: { id: string; claimToken: string | null },
+  data: { status: AutoSendStatus; attempts?: number; nextAttemptAt: Date; lastError: string | null; emailLogId?: string },
+  now: Date,
+): Promise<boolean> {
+  return dbInternal.$transaction(async (tx) => {
+    const upd = await tx.invoiceAutoSend.updateMany({
+      where: { id: where.id, status: "SENDING", claimToken: where.claimToken },
+      data: { ...data, claimToken: null },
+    });
+    if (upd.count === 0) return false;
+    await reportWithinTx(tx, where.id, data.status, data.lastError, now);
+    return true;
+  });
+}
+
+/** Beendet eine geclaimte Zeile; das Ergebnis stammt aus dem tatsaechlichen Zustand (bei verlorenem Claim der aktuelle). */
+async function settle(
+  row: { id: string; claimToken: string | null },
+  next: AutoSendState,
+  now: Date,
+  extra: { emailLogId?: string } = {},
+): Promise<AutoSendOutcome> {
+  const ok = await transition(
+    row,
+    {
+      status: next.status,
+      attempts: next.attempts,
+      nextAttemptAt: next.nextAttemptAt ?? new Date(now.getTime()),
+      lastError: next.lastError,
+      ...(extra.emailLogId ? { emailLogId: extra.emailLogId } : {}),
+    },
+    now,
+  );
+  if (ok) return { status: next.status, ...(next.lastError ? { code: next.lastError } : {}) };
+  const cur = await loadRow(row.id);
+  return { status: cur ? (cur.status as AutoSendStatus) : "NOT_CLAIMED" };
 }
 
 async function startedLogsSince(orgId: string, invoiceId: string, since: Date) {
@@ -168,31 +210,34 @@ async function startedLogsSince(orgId: string, invoiceId: string, since: Date) {
  * Claim: nur PENDING/RETRY/NO_ADDRESS mit faelliger `nextAttemptAt`; parallele Aufrufer scheitern am Claim.
  */
 export async function dispatchAutoSend(id: string, now: Date, provider?: MailProvider): Promise<AutoSendOutcome> {
-  const before = await loadRow(id);
-  if (!before) return { status: "NOT_CLAIMED" };
+  // `nextAttemptAt <= now` nutzt die Planungszeit des Aufrufers; `claimedAt` ist die echte Uhr (Beginn des Versuchs),
+  // damit ein langer Lauf nicht als haengend gilt, nur weil sein Start-`now` alt ist.
+  const claimToken = randomUUID();
   const claim = await dbInternal.invoiceAutoSend.updateMany({
     where: { id, status: { in: ["PENDING", "RETRY", "NO_ADDRESS"] }, nextAttemptAt: { lte: now } },
-    data: { status: "SENDING", claimedAt: now, attempts: { increment: 1 } },
+    data: { status: "SENDING", claimedAt: new Date(), claimToken, attempts: { increment: 1 } },
   });
   if (claim.count === 0) return { status: "NOT_CLAIMED" };
-  const row = { ...before, attempts: before.attempts + 1 };
+  // Nach dem Claim laden: `attempts` ist der echte Stand, das Token weist den Besitz nach.
+  const row = await loadRow(id);
+  if (!row || row.claimToken !== claimToken) return { status: "NOT_CLAIMED" };
   const state = (): AutoSendState => ({ status: "SENDING", attempts: row.attempts, nextAttemptAt: null, lastError: null, createdAt: row.createdAt });
   const finish = (to: AutoSendStatus, code: string | null, extra: { emailLogId?: string } = {}) =>
-    settle(row, before.status, { ...state(), status: to, lastError: code, nextAttemptAt: null }, now, extra);
+    settle(row, { ...state(), status: to, lastError: code, nextAttemptAt: null }, now, extra);
 
   // Vorpruefung: Beleg und bereits vorhandener Versand.
   const invoice = await dbInternal.invoice.findFirst({ where: { id: row.invoiceId, orgId: row.orgId }, select: { status: true, number: true } });
   if (!invoice) return finish("GAVE_UP", "NOT_FINAL");
   if (invoice.status === "CANCELLED") return finish("CANCELLED", null);
   // Manueller Versand (anderer Akteur als die Automatik) stoppt die Automatik; Protokolle der Automatik selbst zaehlen nicht.
+  // Nach bestaetigtem Neustart (`confirmUnclear`) blockiert ein QUEUED-Protokoll (abgestuerzter manueller Versand) nicht mehr.
   const manual = await dbInternal.emailLog.findFirst({
     where: {
       orgId: row.orgId,
       docType: "INVOICE",
       docId: row.invoiceId,
-      status: { in: ["SENT", "QUEUED"] },
+      status: { in: row.confirmUnclear ? ["SENT"] : ["SENT", "QUEUED"] },
       OR: [{ sentByUserId: null }, { sentByUserId: { not: AUTO_SEND_ACTOR } }],
-      ...(row.emailLogId ? { id: { not: row.emailLogId } } : {}),
     },
     select: { status: true },
     orderBy: { createdAt: "asc" },
@@ -236,7 +281,7 @@ export async function dispatchAutoSend(id: string, now: Date, provider?: MailPro
       break;
     }
   }
-  return settle(row, before.status, nextStep(state(), result, now), now, logId ? { emailLogId: logId } : {});
+  return settle(row, nextStep(state(), result, now), now, logId ? { emailLogId: logId } : {});
 }
 
 /** `emailStatus` des Abo-Laufs aus dem Ergebnis des ersten Versuchs. */
@@ -281,31 +326,55 @@ export interface AutoSendJobResult {
   waiting: number;
 }
 
-/** Loest haengende SENDING-Zeilen anhand des Protokolls auf — nie blind wiederholen. */
+/** Loest haengende SENDING-Zeilen anhand des Protokolls auf — nie blind wiederholen. Fehler je Zeile isoliert. */
 async function resolveStale(now: Date): Promise<void> {
   const threshold = new Date(now.getTime() - STALE_SENDING_MS);
   const stale = await dbInternal.invoiceAutoSend.findMany({
     where: { status: "SENDING", claimedAt: { lt: threshold } },
-    select: { id: true, orgId: true, invoiceId: true, attempts: true, claimedAt: true },
+    select: { id: true, orgId: true, invoiceId: true, claimedAt: true, claimToken: true },
     take: JOB_BATCH,
   });
   for (const row of stale) {
     if (!row.claimedAt) continue;
-    const logs = await startedLogsSince(row.orgId, row.invoiceId, row.claimedAt);
-    const sent = logs.find((l) => l.status === "SENT");
-    let data: { status: AutoSendStatus; emailLogId?: string; lastError: string | null; nextAttemptAt: Date };
-    if (sent) data = { status: "SENT", emailLogId: sent.id, lastError: null, nextAttemptAt: now };
-    else if (logs.length > 0) data = { status: "UNCLEAR", lastError: "UNCLEAR_OUTCOME", nextAttemptAt: now };
-    else data = { status: "RETRY", lastError: "PREPARE_FAILED", nextAttemptAt: now };
-    const upd = await dbInternal.invoiceAutoSend.updateMany({ where: { id: row.id, status: "SENDING", claimedAt: row.claimedAt }, data });
-    if (upd.count > 0) await reportProblem(row, "SENDING", data.status, data.lastError, row.attempts, now);
+    try {
+      const logs = await startedLogsSince(row.orgId, row.invoiceId, row.claimedAt);
+      const sent = logs.find((l) => l.status === "SENT");
+      let data: { status: AutoSendStatus; emailLogId?: string; lastError: string | null; nextAttemptAt: Date };
+      if (sent) data = { status: "SENT", emailLogId: sent.id, lastError: null, nextAttemptAt: now };
+      else if (logs.length > 0) data = { status: "UNCLEAR", lastError: "UNCLEAR_OUTCOME", nextAttemptAt: now };
+      else data = { status: "RETRY", lastError: "PREPARE_FAILED", nextAttemptAt: now };
+      await transition({ id: row.id, claimToken: row.claimToken }, data, now);
+    } catch (e) {
+      console.error("auto-send: haengende Zeile nicht aufgeloest", e instanceof Error ? e.name : "unknown");
+    }
   }
 }
 
-/** Scheduler-Job: haengende Zeilen aufloesen, dann faellige Zeilen seriell versuchen. */
+/** Holt verpasste Pflicht-Benachrichtigungen nach (Absturz zwischen Statuswechsel und Meldung); idempotent ueber `notifiedStatus`. */
+async function sweepUnreported(now: Date): Promise<void> {
+  const rows = await dbInternal.invoiceAutoSend.findMany({
+    where: { status: { in: ["NO_ADDRESS", "UNCLEAR", "GAVE_UP"] } },
+    select: { id: true, status: true, lastError: true, notifiedStatus: true },
+    take: JOB_BATCH * 5,
+  });
+  for (const r of rows) {
+    if (r.notifiedStatus === r.status) continue;
+    try {
+      await dbInternal.$transaction(async (tx) => {
+        const cur = await tx.invoiceAutoSend.findUnique({ where: { id: r.id }, select: { status: true, lastError: true } });
+        if (cur) await reportWithinTx(tx, r.id, cur.status, cur.lastError, now);
+      });
+    } catch (e) {
+      console.error("auto-send: Benachrichtigung nicht nachgeholt", e instanceof Error ? e.name : "unknown");
+    }
+  }
+}
+
+/** Scheduler-Job: haengende Zeilen aufloesen, Verpasstes melden, dann faellige Zeilen seriell versuchen. */
 export async function runAutoSendJob(now: Date, provider?: MailProvider): Promise<AutoSendJobResult> {
   const res: AutoSendJobResult = { checked: 0, sent: 0, retry: 0, unclear: 0, gaveUp: 0, waiting: 0 };
   await resolveStale(now);
+  await sweepUnreported(now);
   const due = await dbInternal.invoiceAutoSend.findMany({
     where: { status: { in: ["PENDING", "RETRY", "NO_ADDRESS"] }, nextAttemptAt: { lte: now } },
     select: { id: true },
@@ -359,7 +428,17 @@ export async function retryAutoSend(
   }
   const upd = await dbInternal.invoiceAutoSend.updateMany({
     where: { id: row.id, status: row.status },
-    data: { status: "RETRY", attempts: 0, nextAttemptAt: now, lastError: null },
+    data: {
+      status: "RETRY",
+      attempts: 0,
+      nextAttemptAt: now,
+      lastError: null,
+      claimToken: null,
+      cycle: { increment: 1 },
+      notifiedStatus: null,
+      // Bestaetigter unklarer Ausgang: ein haengendes QUEUED-Protokoll eines manuellen Versands blockiert nicht mehr.
+      confirmUnclear: row.status === "UNCLEAR",
+    },
   });
   if (upd.count === 0) throw new AutoSendRetryError("Der Zustand hat sich inzwischen geändert.");
   await logActivity(dbInternal, {

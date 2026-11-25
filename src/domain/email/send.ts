@@ -20,6 +20,7 @@ import { createQueuedEmailLog, finishEmailLog } from "@/domain/email/email-log";
 import { setQuoteStatus, setDeliveryNoteStatus } from "@/domain/document/status";
 import { createSmtpProvider } from "@/lib/mail/smtp";
 import { withHtmlPart } from "@/domain/email/html-part";
+import { AUTO_SEND_ACTOR, assertNoAutoSendRunning } from "@/domain/recurring/auto-send-guard";
 import { MailSendError, type MailProvider } from "@/lib/mail/provider";
 import { sendEmailInputSchema, type SendEmailRawInput } from "@/schemas/email";
 import { MAX_EMAIL_ATTACHMENTS_TOTAL_BYTES } from "@/lib/attachments/mime";
@@ -50,6 +51,9 @@ export async function sendDocumentEmail(
   // zukuenftige zweite Route). Die HTTP-Route parst zusaetzlich fuer eine fruehe 400-
   // Antwort — doppelt ist hier gewollt, massgeblich ist dieser Aufruf.
   const input = sendEmailInputSchema.parse(rawInput);
+
+  // Manueller Versand und Versandautomatik schliessen sich aus: laeuft die Automatik fuer diese Rechnung, nichts senden.
+  if (input.docType === "INVOICE" && actor !== AUTO_SEND_ACTOR) await assertNoAutoSendRunning(orgId, input.docId);
 
   const settings = await loadMailSettings(orgId);
   if (!settings) throw new MailNotConfiguredError();

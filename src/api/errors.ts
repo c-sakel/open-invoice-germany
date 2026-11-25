@@ -33,6 +33,7 @@ import { RecurringError } from "@/domain/recurring/create";
 import { RecurringMissedPeriodsError, RecurringTimingChangeError } from "@/domain/recurring/errors";
 import { AttachmentValidationError } from "@/lib/attachments/storage";
 import { PricingError } from "@/lib/pricing/errors";
+import { AutoSendRunningError } from "@/domain/recurring/auto-send-guard";
 import { MailNotConfiguredError } from "@/domain/email/settings";
 import { TaxRateNotAllowedError } from "@/domain/settings/tax-rates";
 import { VatCheckDisabledError, VatCheckRateLimitError } from "@/domain/customer/vat-check";
@@ -74,6 +75,7 @@ const DOMAIN_CONFLICT_ERROR_CLASSES = [
   AttachmentValidationError,
   PricingError,
   MailNotConfiguredError,
+  AutoSendRunningError,
   TaxRateNotAllowedError,
   VatCheckDisabledError,
 ] as const;

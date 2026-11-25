@@ -75,9 +75,10 @@ export async function onRecurringFailed(orgId: string, input: { recurringId: str
  * Abo-Rechnung wurde nicht (oder unklar) automatisch versendet (auto-send.ts). Pflicht-Alarm: umgeht den
  * Einstellungsfilter. Text nur aus festen Bausteinen und der Belegnummer, nie mit Servertext.
  */
-export async function onRecurringNotSent(
+export async function notifyRecurringNotSentWithinTx(
+  tx: Prisma.TransactionClient,
   orgId: string,
-  input: { invoiceId: string; number: string | null; status: "NO_ADDRESS" | "UNCLEAR" | "GAVE_UP"; at: Date },
+  input: { invoiceId: string; number: string | null; status: "NO_ADDRESS" | "UNCLEAR" | "GAVE_UP"; cycle: number; at: Date },
 ): Promise<void> {
   const what = input.number ? `Rechnung ${input.number}` : "Rechnung";
   const body =
@@ -86,8 +87,12 @@ export async function onRecurringNotSent(
       : input.status === "UNCLEAR"
         ? `${what}: Ob die E-Mail angekommen ist, ist unklar. Es wird nicht automatisch erneut gesendet. Bitte prüfen und bei Bedarf manuell senden.`
         : `${what}: Der automatische Versand wurde aufgegeben. Bitte manuell senden.`;
-  await safeNotify(orgId, "RECURRING_NOT_SENT", () =>
-    createNotification({
+  // Schluessel je Neustart-Zyklus: nach `retryAutoSend` meldet ein erneutes UNCLEAR/GAVE_UP wieder.
+  const dedupeKey = `RECURRING_NOT_SENT:${input.invoiceId}:${input.status}:${input.cycle}`;
+  const existing = await tx.notification.findFirst({ where: { orgId, dedupeKey }, select: { id: true } });
+  if (existing) return;
+  await tx.notification.create({
+    data: {
       orgId,
       type: "RECURRING_NOT_SENT",
       title: "Abo-Rechnung nicht versendet",
@@ -95,10 +100,11 @@ export async function onRecurringNotSent(
       link: `/rechnungen/${input.invoiceId}`,
       entityType: "INVOICE",
       entityId: input.invoiceId,
-      dedupeKey: `RECURRING_NOT_SENT:${input.invoiceId}:${input.status}`,
-      at: input.at,
-    }),
-  );
+      createdAt: input.at,
+      dedupeKey,
+    },
+    select: { id: true },
+  });
 }
 
 /** Sammelrechnung nicht moeglich: die Abos der Gruppe wurden einzeln abgerechnet. */
