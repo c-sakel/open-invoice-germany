@@ -623,7 +623,7 @@ model Dunning {
   // interestCents}]. NULL bei Bestandsmahnungen (additive Spalte) und bei genau einem
   // Abschnitt — das PDF zeigt dann weiterhin die bisherige Einzelzeile.
   interestSegmentsJson     String?
-  // Tag des Verzugseintritts (Zinsen ab Folgetag); NULL bei Bestandsmahnungen.
+  // Erster Zinstag (Tag nach Verzugseintritt, inklusiv); NULL bei Bestand oder Stufe ohne Zinsen.
   interestFrom             DateTime?
   // Grundlage des Verzugsbeginns: MAHNUNG | ENTGELT_30 | ENTGELT_30_LEISTUNG | NONE; NULL bei Bestand.
   interestBasis            String?

@@ -1,10 +1,13 @@
 import { berlinCalendarDay } from "@/lib/berlin-time";
+import { nextBusinessDay } from "@/lib/german-holidays";
 
 /**
  * Verzugsbeginn (§ 286 BGB) als reine Funktion. Alle Daten sind Berliner Kalendertage (UTC-Mitternacht).
  * Zugangsannahmen (konservativ): E-Mail = Versandtag + 1, Post = Versandtag + 3. Eine Mahnung ohne Versandnachweis begründet keinen Verzug.
  * `from` ist der erste Zinstag und liegt immer einen Tag NACH dem Verzugseintritt (§ 187 Abs. 1 BGB analog):
  * Mahnungsweg = Tag nach Zugang, 30-Tage-Weg = Tag nach Fristende (Zugang 15.03. -> Fristende 14.04. -> Zinsen ab 15.04.).
+ * Fällt das Fristende der 30-Tage-Regel auf Samstag, Sonntag oder einen bundeseinheitlichen Feiertag, endet die Frist erst am
+ * nächsten Werktag (§ 193 BGB); die Zinsen beginnen am Tag danach. Landesfeiertage bleiben unberücksichtigt.
  */
 export type Dispatch = { channel: "EMAIL" | "POST" | "NONE"; at: Date };
 
@@ -42,10 +45,16 @@ export function zugangDay(dispatch: Dispatch): Date {
   return addDays(berlinCalendarDay(dispatch.at), dispatch.channel === "EMAIL" ? 1 : 3);
 }
 
+/** Fristende der 30-Tage-Regel (Anker + 30 Tage), nach § 193 BGB auf den nächsten Werktag verschoben; Rückgabe: erster Zinstag. */
+function entgeltFrist30(anchor: Date): Date {
+  return addDays(nextBusinessDay(addDays(anchor, 30)), 1);
+}
+
 /**
- * Fristablauf an Sonn-/Feiertagen: § 193 BGB wird bewusst NICHT angewandt (keine Verschiebung des Verzugsbeginns).
+ * `from` = erster Zinstag, nur gesetzt, wenn er vor heute liegt. `verzugAt` = Verzugseintritt (Tag vor dem ersten Zinstag), gesetzt,
+ * sobald er heute oder früher liegt; auch dann, wenn noch keine Zinstage vorliegen.
  */
-export function verzugStart(i: VerzugInput): { from: Date | null; basis: VerzugBasis } {
+export function verzugStart(i: VerzugInput): { from: Date | null; basis: VerzugBasis; verzugAt: Date | null } {
   const dueDay = berlinCalendarDay(i.dueDate);
   const today = berlinCalendarDay(i.now);
 
@@ -53,7 +62,7 @@ export function verzugStart(i: VerzugInput): { from: Date | null; basis: VerzugB
   const dunningZugang: Date[] = [];
   for (const dun of i.priorDunnings) {
     if (berlinCalendarDay(dun.createdAt).getTime() <= dueDay.getTime()) continue;
-    // Nur nachweislich versendete Mahnungen begruenden Verzug (Ruling 9); ohne Versandnachweis
+    // Nur nachweislich versendete Mahnungen begruenden Verzug; ohne Versandnachweis
     // (nie versendet, Mail BOUNCED/FAILED, Post nicht eingereicht) zaehlt die Mahnung nicht.
     const z = earliest(dun.dispatches.map(zugangDay));
     if (z) dunningZugang.push(z);
@@ -61,21 +70,21 @@ export function verzugStart(i: VerzugInput): { from: Date | null; basis: VerzugB
   const aZugang = earliest(dunningZugang);
   const a = aZugang ? addDays(aZugang, 1) : null;
 
-  // (b) 30-Tage-Weg: Fristende = Ausgangstag + 30, erster Zinstag = + 31.
+  // (b) 30-Tage-Weg: Fristende = Ausgangstag + 30 (§ 193 BGB), erster Zinstag = Tag danach.
   let b: Date | null = null;
   let bBasis: VerzugBasis = "NONE";
   const z = earliest(i.invoiceDispatches.map(zugangDay));
   if (!i.isConsumer) {
     if (z) {
-      b = addDays(new Date(Math.max(dueDay.getTime(), z.getTime())), 31);
+      b = entgeltFrist30(new Date(Math.max(dueDay.getTime(), z.getTime())));
       bBasis = "ENTGELT_30";
     } else {
       const leistung = berlinCalendarDay(i.serviceDate ?? i.issueDate);
-      b = addDays(new Date(Math.max(dueDay.getTime(), leistung.getTime())), 31);
+      b = entgeltFrist30(new Date(Math.max(dueDay.getTime(), leistung.getTime())));
       bBasis = "ENTGELT_30_LEISTUNG";
     }
   } else if (i.consumerNotice === true && z) {
-    b = addDays(new Date(Math.max(dueDay.getTime(), z.getTime())), 31);
+    b = entgeltFrist30(new Date(Math.max(dueDay.getTime(), z.getTime())));
     bBasis = "ENTGELT_30";
   }
 
@@ -88,8 +97,11 @@ export function verzugStart(i: VerzugInput): { from: Date | null; basis: VerzugB
     from = b;
     basis = bBasis;
   }
-  if (!from || from.getTime() >= today.getTime()) return { from: null, basis: "NONE" };
-  return { from, basis };
+  if (!from) return { from: null, basis: "NONE", verzugAt: null };
+  const verzugAt = addDays(from, -1);
+  if (verzugAt.getTime() > today.getTime()) return { from: null, basis: "NONE", verzugAt: null };
+  if (from.getTime() >= today.getTime()) return { from: null, basis: "NONE", verzugAt };
+  return { from, basis, verzugAt };
 }
 
 /** Lesbarer Grund des Verzugsbeginns (UI, MCP). */

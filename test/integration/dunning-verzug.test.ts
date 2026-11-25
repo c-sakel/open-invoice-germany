@@ -130,11 +130,11 @@ describe("Verzugsbeginn in der Mahnung", () => {
   it("3: B2C mit eingefrorenem Hinweis, Zugang bekannt, mehr als 30 Tage -> ENTGELT_30", async () => {
     await withInterestOnStage0(async () => {
       const inv = await makeInvoice("CONSUMER", {}, true);
-      await mail("INVOICE", inv.id, "SENT", D(3, 2)); // Zugang 03.03. -> Fristende 02.04. -> Zinsen ab 03.04.
+      await mail("INVOICE", inv.id, "SENT", D(3, 2)); // Zugang 03.03. -> Fristende 02.04. (Samstag) -> Montag 04.04.
       const r = await dunn(inv.id, D(6, 1));
       expect(r.dunning.interestBasis).toBe("ENTGELT_30");
-      expect(iso(r.dunning.interestFrom)).toBe("2282-04-03");
-      const e = await expectedInterest(inv.grossTotalCents, D(4, 3), D(6, 1), true);
+      expect(iso(r.dunning.interestFrom)).toBe("2282-04-04"); // Fristende 02.04. liegt auf einem Wochenende (§ 193 BGB)
+      const e = await expectedInterest(inv.grossTotalCents, D(4, 4), D(6, 1), true);
       expect(r.dunning.interestAmountCents).toBe(e.interestCents);
     });
   });
@@ -241,5 +241,51 @@ describe("Verzugsbeginn in der Mahnung", () => {
     const res = await tools["create_dunning"]!.handler({ invoice: inv.number, force: true });
     vi.useRealTimers();
     expect(res.content.map((c) => c.text).join("\n")).toContain("keine Zinsen: Verzug noch nicht eingetreten");
+  });
+});
+
+describe("Pauschale und Mahnkosten nur bei eingetretenem Verzug", () => {
+  async function withStage2Fee<T>(fn: () => Promise<T>): Promise<T> {
+    const s2 = (await listDunningStages(orgId)).find((s) => s.order === 2)!;
+    const { id, ...rest } = s2;
+    void id;
+    await updateDunningStage(orgId, s2.id, { ...rest, feeCents: 250 });
+    try {
+      return await fn();
+    } finally {
+      await updateDunningStage(orgId, s2.id, { ...rest, feeCents: s2.feeCents });
+    }
+  }
+
+  it("8: B2B ohne eingetretenen Verzug -> keine 40-EUR-Pauschale, keine Mahnkosten (Stufe 1 und 2)", async () => {
+    await withStage2Fee(async () => {
+      const inv = await makeInvoice("BUSINESS");
+      await mail("INVOICE", inv.id, "SENT", D(3, 2));
+      await dunn(inv.id, D(3, 3)); // Stufe 0, nicht versendet
+      const r1 = await dunn(inv.id, D(3, 4));
+      const r2 = await dunn(inv.id, D(3, 5));
+      expect(r1.stage.order).toBe(1);
+      expect(r2.stage.order).toBe(2);
+      for (const r of [r1, r2]) {
+        expect(r.dunning.interestBasis).toBe("NONE");
+        expect(r.dunning.flatFee40Cents).toBe(0);
+        expect(r.dunning.feeCents).toBe(0);
+        expect(r.totalCents).toBe(inv.grossTotalCents);
+      }
+    });
+  });
+
+  it("9: B2B mit eingetretenem Verzug (30-Tage-Regel) -> Pauschale genau einmal, Mahnkosten ab Stufe 2", async () => {
+    await withStage2Fee(async () => {
+      const inv = await makeInvoice("BUSINESS");
+      await mail("INVOICE", inv.id, "SENT", D(3, 2));
+      await dunn(inv.id, D(6, 1)); // Stufe 0
+      const r1 = await dunn(inv.id, D(6, 2));
+      const r2 = await dunn(inv.id, D(6, 3));
+      expect(r1.dunning.flatFee40Cents).toBe(4000);
+      expect(r1.dunning.feeCents).toBe(0);
+      expect(r2.dunning.flatFee40Cents).toBe(0);
+      expect(r2.dunning.feeCents).toBe(250);
+    });
   });
 });

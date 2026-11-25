@@ -158,14 +158,13 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
     // ZUSAETZLICH ueber ALLE bisherigen Mahnungen dieser Rechnung zaehlen, in derselben Tx.
     const flatFeeCount = await tx.dunning.count({ where: { invoiceId, flatFee40Cents: { gt: 0 } } });
     const alreadyHasFlat = flatFeeCount > 0;
-    const applyFlatFee = stage.includeB2BFlatFee && !isConsumer && !alreadyHasFlat;
 
     // Zinsen laufen erst ab Verzugseintritt (§ 286 BGB), nicht ab Rechnungsfaelligkeit: durch
     // Mahnung nach Faelligkeit (Zugang) oder 30 Tage nach Faelligkeit und Zugang der Rechnung
     // (Verbraucher nur mit dem beim Festschreiben eingefrorenen Hinweis). Zugangstag laut
     // `verzugStart`; erster Zinstag (`interestFrom`) ist der Tag NACH Zugang (Mahnung) bzw. nach Fristende (30 Tage), § 187 Abs. 1 BGB analog. Faellt der Fristablauf auf einen
-    // Sonn-/Feiertag, wird § 193 BGB bewusst NICHT angewandt (fuer den Glaeubiger guenstigere
-    // Annahme entfaellt; kein Zinsvorteil durch Verschiebung). Je Mahnung neu auf die gesamte
+    // Sa/So/bundesweiten Feiertag, endet die 30-Tage-Frist erst am naechsten Werktag (§ 193 BGB).
+    // Je Mahnung neu auf die gesamte
     // Zeit seit Verzugsbeginn berechnet und ersetzt den zuvor ausgewiesenen Betrag (nicht kumulativ).
     // Basiszinssatz-HISTORIE (`loadBaseRates` heilt eine fehlende Historie idempotent); Zinszeitraum
     // `v.from` -> `now`, an jeder Halbjahresgrenze gestueckelt. Ohne Verzug: 0 Cent, keine Abschnitte.
@@ -214,6 +213,10 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
       priorDunnings: inv.dunnings.map((x) => ({ createdAt: x.createdAt, dispatches: dispatchesOfDunning(x.id) })),
       now,
     });
+    // Pauschale (§ 288 Abs. 5 BGB: "bei Verzug") und Mahnkosten (Verzugsschaden) nur, wenn der Verzug zum Mahnzeitpunkt
+    // eingetreten ist; sonst 0 (der Hinweis auf fehlenden Verzug bleibt). Unabhaengig vom Zinsschalter der Stufe.
+    const inVerzug = v.verzugAt !== null;
+    const applyFlatFee = stage.includeB2BFlatFee && !isConsumer && !alreadyHasFlat && inVerzug;
     const seg = computeInterestSegments({
       openAmountCents: openAmount,
       from: v.from ?? now,
@@ -227,8 +230,8 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
     // wird nach dem Schreiben nie neu berechnet (R8, GoBD).
     const interestSegmentsJson = stage.calculateInterest ? JSON.stringify(seg.segments) : null;
     const flatFee = applyFlatFee && !isConsumer ? 4000 : 0;
-    const feeCents = charging ? stage.feeCents : 0;
-    const lateFeeCents = charging ? (opts.lateFeeCents ?? 0) : 0;
+    const feeCents = charging && inVerzug ? stage.feeCents : 0;
+    const lateFeeCents = charging && inVerzug ? (opts.lateFeeCents ?? 0) : 0;
 
     // B3 (Final-Review): ueber assignDocumentNumber() — siehe invoice/finalize.ts.
     const number = await assignDocumentNumber(tx, inv.orgId, "DUNNING", now);

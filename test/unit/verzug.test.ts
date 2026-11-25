@@ -44,7 +44,7 @@ describe("verzugStart", () => {
 
   it("2c: ohne Leistungsdatum zählt das Rechnungsdatum", () => {
     const r = verzugStart(input({ issueDate: day(3, 18), now: d(5, 30) }));
-    expect(iso(r.from)).toBe("2281-04-18");
+    expect(iso(r.from)).toBe("2281-04-19"); // Fristende 17.04. ist ein Sonntag (§ 193 BGB)
     expect(r.basis).toBe("ENTGELT_30_LEISTUNG");
   });
 
@@ -61,7 +61,7 @@ describe("verzugStart", () => {
 
   it("4: B2C ohne Hinweis, keine Mahnung -> NONE", () => {
     const r = verzugStart(input({ isConsumer: true, consumerNotice: false, invoiceDispatches: [mail(3, 1)] }));
-    expect(r).toEqual({ from: null, basis: "NONE" });
+    expect(r).toMatchObject({ from: null, basis: "NONE" });
   });
 
   it("4b: B2C ohne Hinweis (null) -> NONE", () => {
@@ -77,7 +77,7 @@ describe("verzugStart", () => {
 
   it("5b: B2C mit Hinweis, aber ohne Zugangsnachweis -> NONE", () => {
     const r = verzugStart(input({ isConsumer: true, consumerNotice: true }));
-    expect(r).toEqual({ from: null, basis: "NONE" });
+    expect(r).toMatchObject({ from: null, basis: "NONE" });
   });
 
   it("6: B2C ohne Hinweis, Mahnung per Post am 20.03. -> Zinsen ab 24.03. MAHNUNG", () => {
@@ -114,7 +114,8 @@ describe("verzugStart", () => {
 
   it("9: from = heute oder später -> NONE", () => {
     const r = verzugStart(input({ invoiceDispatches: [mail(3, 1)], now: d(4, 15, 8) }));
-    expect(r).toEqual({ from: null, basis: "NONE" });
+    expect(r).toMatchObject({ from: null, basis: "NONE" });
+    expect(iso(r.verzugAt)).toBe("2281-04-14"); // Verzug eingetreten, aber noch kein Zinstag
     const r2 = verzugStart(input({ invoiceDispatches: [mail(3, 1)], now: d(4, 16, 8) }));
     expect(iso(r2.from)).toBe("2281-04-15");
   });
@@ -201,10 +202,47 @@ describe("verzugStart: Zeitzonen, Kalender und § 193 BGB", () => {
     );
     expect(iso(r.from)).toBe("2282-01-21");
   });
-  it("§ 193 BGB wird bewusst nicht angewandt: Fristende auf Sonntag bleibt der Sonntag", () => {
-    // fällig 15.03.2281 + 30 Tage = 14.04.2281 (Sonntag); Fristende bleibt der Sonntag, erster Zinstag ist Montag 15.04.
+  it("§ 193 BGB: Fristende Sonntag 17.04.2281 -> Montag 18.04. letzter Tag, Zinsen ab Dienstag 19.04.", () => {
+    const r = verzugStart(input({ dueDate: day(3, 18), invoiceDispatches: [mail(3, 1)], now: d(6, 1) }));
+    expect(iso(r.from)).toBe("2281-04-19");
+  });
+  it("Fristende an einem Werktag (Donnerstag 14.04.2281) bleibt unverändert", () => {
     const r = verzugStart(input({ invoiceDispatches: [mail(3, 1)] }));
     expect(iso(r.from)).toBe("2281-04-15");
+  });
+  const frist = (dueM: number, dueD: number, dueY = 2281) =>
+    verzugStart(
+      input({
+        dueDate: new Date(Date.UTC(dueY, dueM - 1, dueD)),
+        issueDate: new Date(Date.UTC(dueY, dueM - 1, 1)),
+        invoiceDispatches: [{ channel: "EMAIL", at: new Date(Date.UTC(dueY, dueM - 1, 1, 12)) }],
+        now: new Date(Date.UTC(2283, 5, 1, 12)),
+      }),
+    );
+  it("§ 193 BGB: Fristende Ostermontag (11.04.2281) -> Zinsen ab 13.04.", () => {
+    expect(iso(frist(3, 12).from)).toBe("2281-04-13");
+  });
+  it("§ 193 BGB: Fristende Karfreitag (08.04.) -> Samstag, Sonntag, Ostermontag -> Zinsen ab 13.04.", () => {
+    expect(iso(frist(3, 9).from)).toBe("2281-04-13");
+  });
+  it("§ 193 BGB: Fristende Tag der Deutschen Einheit (03.10.2281, Montag) -> Zinsen ab 05.10.", () => {
+    expect(iso(frist(9, 3).from)).toBe("2281-10-05");
+  });
+  it("§ 193 BGB: Fristende 1. Mai (Sonntag) -> Montag 02.05. -> Zinsen ab 03.05.", () => {
+    expect(iso(frist(4, 1).from)).toBe("2281-05-03");
+  });
+  it("§ 193 BGB Jahreswechsel: Fristende Samstag 31.12.2281 -> Neujahr (Sonntag) -> Montag 02.01.2282 -> Zinsen ab 03.01.", () => {
+    expect(iso(frist(12, 1).from)).toBe("2282-01-03");
+  });
+  it("§ 193 BGB gilt nicht für den Mahnungsweg: Zugang am Wochenende bleibt, Zinsen am Folgetag", () => {
+    const r = verzugStart(input({ invoiceDispatches: [mail(3, 1)], priorDunnings: [{ createdAt: d(3, 20), dispatches: [mail(3, 20)] }] }));
+    expect(iso(r.from)).toBe("2281-03-22");
+  });
+  it("verzugAt: bei Zugang der Mahnung gesetzt, vor Verzugseintritt null", () => {
+    const vor = verzugStart(input({ invoiceDispatches: [mail(3, 1)], now: d(3, 20) }));
+    expect(vor.verzugAt).toBeNull();
+    const nach = verzugStart(input({ invoiceDispatches: [mail(3, 1)], now: d(4, 30) }));
+    expect(iso(nach.verzugAt)).toBe("2281-04-14");
   });
   it("B2C mit Hinweis, Zugang bekannt, Mahnung früher als 30-Tage-Frist -> MAHNUNG", () => {
     const r = verzugStart(

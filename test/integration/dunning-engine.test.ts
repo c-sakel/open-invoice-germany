@@ -28,6 +28,7 @@ import { upsertBaseRate } from "@/domain/dunning/base-rate";
 import { recordPaymentSchema, type CreateInvoiceInput } from "@/schemas";
 
 const FIX_DATE = new Date("2050-06-09T10:00:00.000Z"); // 8 Tage nach dueDate (2050-06-01)
+const VERZUG_DATE = new Date("2050-08-01T10:00:00.000Z"); // Verzug nach 30-Tage-Regel eingetreten
 
 let orgId: string;
 let n = 0;
@@ -92,24 +93,25 @@ describe("Phase 6 — Mahn-Engine (create.ts, state.ts, send.ts, snapshot.ts)", 
     expect(r1.dunning.flatFee40Cents).toBe(0);
   });
 
+  // VERZUG_DATE: > 30 Tage nach Faelligkeit (Verzug eingetreten, sonst keine Pauschale).
   it("B2B: 9 Prozentpunkte Verzugszins + 40-€-Pauschale, nur EINMAL je Forderung", async () => {
     const customerId = await makeCustomer("BUSINESS");
     const fin = await makeFinalizedInvoice(customerId);
-    await createDunning(fin.id, { now: FIX_DATE }); // order 0
-    const r1 = await createDunning(fin.id, { now: FIX_DATE, force: true }); // order 1
+    await createDunning(fin.id, { now: VERZUG_DATE }); // order 0
+    const r1 = await createDunning(fin.id, { now: VERZUG_DATE, force: true }); // order 1
     expect(r1.dunning.interestRatePoints).toBe(9);
     expect(r1.dunning.flatFee40Cents).toBe(4000);
-    const r2 = await createDunning(fin.id, { now: FIX_DATE, force: true }); // order 2
+    const r2 = await createDunning(fin.id, { now: VERZUG_DATE, force: true }); // order 2
     expect(r2.dunning.flatFee40Cents).toBe(0); // schon einmal berechnet
   });
 
   it("B1 (Fix-Welle): 40-€-Pauschale ueber alle vier Standardstufen genau EINMAL (0/4000/0/0), nicht nur gegen die letzte Mahnung geprueft", async () => {
     const customerId = await makeCustomer("BUSINESS");
     const fin = await makeFinalizedInvoice(customerId);
-    const r0 = await createDunning(fin.id, { now: FIX_DATE }); // order 0 (Zahlungserinnerung, keine Pauschale)
-    const r1 = await createDunning(fin.id, { now: FIX_DATE, force: true }); // order 1 (1. Mahnung)
-    const r2 = await createDunning(fin.id, { now: FIX_DATE, force: true }); // order 2 (2. Mahnung)
-    const r3 = await createDunning(fin.id, { now: FIX_DATE, force: true }); // order 3 (3. Mahnung)
+    const r0 = await createDunning(fin.id, { now: VERZUG_DATE }); // order 0 (Zahlungserinnerung, keine Pauschale)
+    const r1 = await createDunning(fin.id, { now: VERZUG_DATE, force: true }); // order 1 (1. Mahnung)
+    const r2 = await createDunning(fin.id, { now: VERZUG_DATE, force: true }); // order 2 (2. Mahnung)
+    const r3 = await createDunning(fin.id, { now: VERZUG_DATE, force: true }); // order 3 (3. Mahnung)
     expect([r0, r1, r2, r3].map((r) => r.dunning.flatFee40Cents)).toEqual([0, 4000, 0, 0]);
   });
 
