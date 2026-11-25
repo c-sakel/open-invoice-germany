@@ -74,9 +74,9 @@ describe("loadCustomerForEditor", () => {
     expect(r.customer).not.toHaveProperty("datevAccount");
   });
   it("liefert die Rechnungs-E-Mail des Kunden mit (Versandadresse hat Vorrang vor email)", async () => {
-    await prisma.customer.update({ where: { id: beckerId }, data: { invoiceEmail: "rechnung@becker.example.org" } });
+    await dbInternal.customer.update({ where: { id: beckerId }, data: { invoiceEmail: "rechnung@becker.example.org" } });
     expect((await loadCustomerForEditor(orgA, beckerId)).customer.invoiceEmail).toBe("rechnung@becker.example.org");
-    await prisma.customer.update({ where: { id: beckerId }, data: { invoiceEmail: null } });
+    await dbInternal.customer.update({ where: { id: beckerId }, data: { invoiceEmail: null } });
   });
   it("archivierter Kunde bleibt ladbar (Entwurf mit archiviertem Kunden) und traegt isArchived", async () => {
     const r = await loadCustomerForEditor(orgA, archivedId);
