@@ -5,7 +5,7 @@ import { getActiveOrg } from "@/lib/org";
 import { formatCents } from "@/lib/money";
 import { computeLineNet } from "@/lib/pricing/line";
 import { LineItemsTable } from "@/components/LineItemsTable";
-import { intervalLabel, previewPeriods, type BillingTiming, type RecurInterval } from "@/lib/recurring";
+import { intervalLabel, previewPeriods, unbilledRest, type BillingTiming, type RecurInterval } from "@/lib/recurring";
 import { StatusBadge } from "@/components/StatusBadge";
 import { RecurringActions } from "@/components/RecurringActions";
 import { berlinDateKey } from "@/lib/berlin-time";
@@ -80,6 +80,17 @@ export default async function AboDetail({ params }: { params: Promise<{ id: stri
     },
     3,
   );
+  const rest = unbilledRest({
+    billingTiming: timing,
+    nextRunDate: rec.nextRunDate,
+    interval: rec.interval as RecurInterval,
+    intervalCount: rec.intervalCount,
+    anchorDay: rec.anchorDay,
+    endDate: rec.endDate,
+    status: rec.status,
+    maxRuns: rec.maxRuns,
+    issuedCount: rec.issuedCount,
+  });
   const deDay = (d: Date): string => berlinDateKey(d).split("-").reverse().join(".");
   const first = periods[0];
   const nextPeriod = first ? { start: deDay(first.start), end: deDay(first.end) } : undefined;
@@ -145,7 +156,7 @@ export default async function AboDetail({ params }: { params: Promise<{ id: stri
             nextPeriod={nextPeriod}
             autoFinalize={rec.autoFinalize}
             autoSend={rec.autoSend}
-            recipient={rec.customer.email}
+            recipient={rec.customer.invoiceEmail ?? rec.customer.email}
             missedCount={missedCount}
           />
         </div>
@@ -207,6 +218,11 @@ export default async function AboDetail({ params }: { params: Promise<{ id: stri
                 ))}
               </ul>
             </div>
+          )}
+          {rest && (
+            <p data-testid="arrears-rest" className="mt-3 text-xs text-seal">
+              Der Zeitraum {deDate(rest.start)}&nbsp;–&nbsp;{deDate(rest.end)} liegt nach dem letzten Stichtag und wird nicht abgerechnet.
+            </p>
           )}
           {arrearsHint && (
             <p className="mt-3 text-xs text-ink-muted">

@@ -2,7 +2,7 @@
  * Abrechnungsart und erster Stichtag eines Abos (Anlage und Änderung teilen denselben Pfad).
  * `validateLeistungsbeginn` läuft immer VOR `firstStichtag`.
  */
-import { billingPeriod, firstStichtag, validateLeistungsbeginn, type BillingTiming, type RecurInterval } from "@/lib/recurring";
+import { billingPeriod, firstStichtag, isMonthBased, validateLeistungsbeginn, type BillingTiming, type RecurInterval } from "@/lib/recurring";
 import { RecurringError, type TimingChangeDetails } from "@/domain/recurring/errors";
 
 export const USAGE_ADVANCE_MESSAGE = "Verbrauchspositionen werden nachträglich abgerechnet. Abrechnungsart „nachträglich“ wählen.";
@@ -26,7 +26,8 @@ export function resolveFirstSchedule(
   const problem = validateLeistungsbeginn(timing, leistungsbeginn, interval);
   if (problem !== null) throw new RecurringError(problem);
   const first = firstStichtag(timing, leistungsbeginn, interval, count);
-  if (givenAnchorDay != null && givenAnchorDay !== first.anchorDay) {
+  // Bei täglichem/wöchentlichem Rhythmus gibt es keinen Ankertag: eine Angabe wird ignoriert, nicht abgelehnt.
+  if (givenAnchorDay != null && isMonthBased(interval) && givenAnchorDay !== first.anchorDay) {
     throw new RecurringError("Ankertag muss dem Tag des ersten Stichtags entsprechen.");
   }
   return first;

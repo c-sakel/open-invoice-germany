@@ -3,7 +3,7 @@
 import { useMemo, useReducer, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { currencyOptions } from "@/lib/currencies";
-import { draftLinesFromInitial, draftLinesToPayload, draftReducer, emptyDraft, type InitialLineLike } from "@/lib/editor/draft";
+import { draftLinesFromInitial, draftLinesToPayload, draftReducer, emptyDraft, type DraftState, type InitialLineLike } from "@/lib/editor/draft";
 import { shouldBlockEnterSubmit } from "@/lib/editor/enter-guard";
 import { computeDraftTotals } from "@/lib/editor/totals";
 import { LineItemsEditor } from "@/components/editor/blocks/LineItemsEditor";
@@ -17,6 +17,7 @@ import { ConfirmDialog, type ConfirmDialogHandle } from "@/components/ui/Confirm
 import {
   firstStichtag,
   previewPeriods,
+  unbilledRest,
   validateLeistungsbeginn,
   type BillingTiming,
   type RecurInterval,
@@ -211,7 +212,7 @@ export function NewRecurringForm({
     // Nach dem ersten Lauf (oder unveraendertem Plan) gilt der gespeicherte Stichtag, sonst die Ableitung aus dem Leistungsbeginn.
     const useStored = mode === "edit" && stored !== null && ((initial?.issuedCount ?? 0) > 0 || unchanged);
     const problem = useStored ? null : validateLeistungsbeginn(effectiveTiming, start, iv);
-    if (problem) return { problem, periods: [] as ReturnType<typeof previewPeriods> };
+    if (problem) return { problem, periods: [] as ReturnType<typeof previewPeriods>, rest: null as ReturnType<typeof unbilledRest> };
     const first = useStored && stored ? { stichtag: stored, anchorDay: initial?.anchorDay ?? null } : firstStichtag(effectiveTiming, start, iv, count);
     const periods = previewPeriods(
       {
@@ -227,7 +228,18 @@ export function NewRecurringForm({
       },
       3,
     );
-    return { problem: null, periods };
+    const rest = unbilledRest({
+      billingTiming: effectiveTiming,
+      nextRunDate: first.stichtag,
+      interval: iv,
+      intervalCount: count,
+      anchorDay: first.anchorDay,
+      endDate: end,
+      status: "ACTIVE",
+      maxRuns: runs,
+      issuedCount: mode === "edit" ? (initial?.issuedCount ?? 0) : 0,
+    });
+    return { problem: null, periods, rest };
   }, [startDate, interval, intervalCount, endDate, maxRuns, effectiveTiming, mode, initial]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -533,6 +545,11 @@ export function NewRecurringForm({
             {schedule.periods.some((p) => p.clippedByEndDate) && (
               <p className="text-seal">Der letzte Zeitraum wird durch das Vertragsende gekürzt.</p>
             )}
+            {schedule.rest && (
+              <p role="status" data-testid="arrears-rest" className="text-seal">
+                Der Zeitraum {deDay(schedule.rest.start)} – {deDay(schedule.rest.end)} liegt nach dem letzten Stichtag und wird nicht abgerechnet.
+              </p>
+            )}
           </div>
         )}
       </fieldset>
@@ -543,7 +560,11 @@ export function NewRecurringForm({
           {mode === "edit" ? (
             <span className={`${input} bg-paper text-ink-soft`}>{TAX_SCHEME_OPTIONS.find((o) => o.value === taxScheme)?.label ?? taxScheme}</span>
           ) : (
-            <select className={input} value={taxScheme} onChange={(e) => setTaxScheme(e.target.value)}>
+            <select className={input} value={taxScheme} onChange={(e) => {
+                setTaxScheme(e.target.value);
+                // Positionseditor und Summen folgen dem Schema (Kleinunternehmer/Reverse Charge: keine Steuersätze).
+                dispatch({ type: "set", field: "taxScheme", value: e.target.value as DraftState["taxScheme"] });
+              }}>
               {TAX_SCHEME_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
@@ -569,7 +590,7 @@ export function NewRecurringForm({
         </label>
         <label className="flex cursor-pointer items-center gap-2 self-end rounded-md border border-rule bg-sheet px-3 py-2 text-sm">
           <input type="checkbox" checked={showPeriodText} onChange={(e) => setShowPeriodText(e.target.checked)} />
-          <span className="text-ink-soft">Leistungszeitraum-Text auf der Rechnung einfügen</span>
+          <span className="text-ink-soft">Leistungszeitraum zusätzlich als Text im Kopftext einfügen (der Zeitraum steht ohnehin im Rechnungskopf)</span>
         </label>
       </div>
 

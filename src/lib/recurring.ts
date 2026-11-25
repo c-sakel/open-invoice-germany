@@ -100,7 +100,7 @@ export function periodRange(
 
 export type BillingTiming = "ADVANCE" | "ARREARS";
 
-const isMonthBased = (i: RecurInterval): boolean => i === "MONTHLY" || i === "QUARTERLY" || i === "YEARLY";
+export const isMonthBased = (i: RecurInterval): boolean => i === "MONTHLY" || i === "QUARTERLY" || i === "YEARLY";
 
 /** Kalendertage addieren (12:00-normalisiert, zeitzonen- und DST-sicher). */
 export function addDays(d: Date, n: number): Date {
@@ -116,6 +116,9 @@ export function nextStichtag(stichtag: Date, interval: RecurInterval, count: num
  * Leistungszeitraum (beide Grenzen inklusive) zum Stichtag `stichtag`.
  * ADVANCE: [S, adv(S) - 1 Tag]; ARREARS: [adv(S, -I) + 1 Tag, S].
  * `endDate` (letzter Leistungstag) kuerzt nur ADVANCE; ARREARS-Laeufe enden mit dem Stichtag.
+ * `previousEnd` (Ende des zuletzt abgerechneten Zeitraums) verhindert bei Bestandsabos ohne Ankertag
+ * (nachtraeglich, Stichtag nach dem Klemmen am Monatsende, z. B. 31.01. -> 28.02.) eine Doppelabrechnung:
+ * der Beginn rueckt hinter das letzte Ende. Luecken werden nie geschlossen.
  */
 export function billingPeriod(
   timing: BillingTiming,
@@ -124,9 +127,14 @@ export function billingPeriod(
   count: number,
   anchorDay: number | null,
   endDate?: Date | null,
+  previousEnd?: Date | null,
 ): { start: Date; end: Date; clippedByEndDate: boolean } {
   if (timing === "ARREARS") {
-    const start = addDays(advanceDate(stichtag, interval, -count, anchorDay), 1);
+    let start = addDays(advanceDate(stichtag, interval, -count, anchorDay), 1);
+    if (anchorDay === null && isMonthBased(interval) && previousEnd && start.getTime() <= previousEnd.getTime()) {
+      const after = addDays(previousEnd, 1);
+      if (after.getTime() <= stichtag.getTime()) start = after;
+    }
     return { start, end: stichtag, clippedByEndDate: false };
   }
   const start = stichtag;
@@ -178,6 +186,8 @@ export type PreviewInput = {
   status: string;
   maxRuns: number | null;
   issuedCount: number;
+  /** Ende des zuletzt abgerechneten Zeitraums (nur Bestandsabos ohne Ankertag), sonst weglassen. */
+  previousEnd?: Date | null;
 };
 
 /** Die naechsten Laeufe mit Leistungszeitraum (Vorschau); beachtet Status, endDate und maxRuns. */
@@ -190,11 +200,35 @@ export function previewPeriods(
   if (rec.maxRuns !== null) limit = Math.min(limit, Math.max(0, rec.maxRuns - rec.issuedCount));
   const out: { runDate: Date; start: Date; end: Date; clippedByEndDate: boolean }[] = [];
   let s = rec.nextRunDate;
+  let previousEnd = rec.previousEnd ?? null;
   while (out.length < limit) {
     if (rec.endDate && s.getTime() > rec.endDate.getTime()) break;
-    const p = billingPeriod(rec.billingTiming, s, rec.interval, rec.intervalCount, rec.anchorDay, rec.endDate);
+    const p = billingPeriod(rec.billingTiming, s, rec.interval, rec.intervalCount, rec.anchorDay, rec.endDate, previousEnd);
     out.push({ runDate: s, ...p });
+    previousEnd = p.end;
     s = nextStichtag(s, rec.interval, rec.intervalCount, rec.anchorDay);
   }
   return out;
+}
+
+/**
+ * Nachtraegliche Abrechnung (ARREARS) mit Vertragsende: Der Zeitraum nach dem letzten Stichtag
+ * (<= Vertragsende, begrenzt durch maxRuns) wird NICHT abgerechnet. Liefert diesen Rest
+ * (erster Tag nach dem letzten Stichtag bis Vertragsende) oder null.
+ */
+export function unbilledRest(rec: PreviewInput): { start: Date; end: Date } | null {
+  if (rec.billingTiming !== "ARREARS" || rec.status !== "ACTIVE" || !rec.endDate) return null;
+  const cap = 5000;
+  const limit = rec.maxRuns !== null ? Math.max(0, rec.maxRuns - rec.issuedCount) : cap;
+  let last: Date | null = null;
+  let s = rec.nextRunDate;
+  let n = 0;
+  while (n < limit && n < cap && s.getTime() <= rec.endDate.getTime()) {
+    last = s;
+    s = nextStichtag(s, rec.interval, rec.intervalCount, rec.anchorDay);
+    n++;
+  }
+  if (!last || (n >= cap && s.getTime() <= rec.endDate.getTime())) return null;
+  const start = addDays(last, 1);
+  return start.getTime() <= rec.endDate.getTime() ? { start, end: rec.endDate } : null;
 }

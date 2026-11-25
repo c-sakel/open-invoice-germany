@@ -76,6 +76,8 @@ const date = (name: string): CsvColumn => ({ name, type: "date" });
 const INVOICE_COLUMNS: readonly CsvColumn[] = [
   t("beleg"), t("art"), t("status"), t("steuerschema"), t("waehrung"), date("belegdatum"), date("lieferdatum"), date("faelligkeit"),
   amount("netto"), amount("steuer"), amount("brutto"), amount("bezahlt"), amount("zahlbetrag"), t("storniert_durch"), t("korrigiert_beleg"), t("xml_format"), t("festgeschrieben_am"),
+  // Leistungszeitraum (BG-14; Abo-Rechnungen tragen kein Lieferdatum): Endspalten, Bestandsspalten unveraendert.
+  date("leistung_von"), date("leistung_bis"),
 ];
 const LINE_COLUMNS: readonly CsvColumn[] = [
   t("beleg"), { name: "position", type: "int" }, t("positionsart"), t("artikelnummer"), t("beschreibung"), { name: "menge", type: "quantity" }, t("einheit"),
@@ -264,7 +266,7 @@ export async function buildAuditExport(
       take: INVOICE_PAGE,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       select: {
-        id: true, number: true, type: true, status: true, taxScheme: true, currency: true, issueDate: true, deliveryDate: true, dueDate: true,
+        id: true, number: true, type: true, status: true, taxScheme: true, currency: true, issueDate: true, deliveryDate: true, deliveryStart: true, deliveryEnd: true, dueDate: true,
         netTotalCents: true, taxTotalCents: true, grossTotalCents: true, paidAmountCents: true, payableCents: true, finalizedAt: true,
         reversedByInvoiceId: true, correctsInvoiceId: true, xmlFormat: true, customerId: true, buyerSnapshotJson: true,
         lines: {
@@ -320,6 +322,7 @@ export async function buildAuditExport(
         inv.reversedByInvoiceId ? (refNumbers.get(inv.reversedByInvoiceId) ?? null) : null,
         inv.correctsInvoiceId ? (refNumbers.get(inv.correctsInvoiceId) ?? null) : null,
         inv.xmlFormat, inv.finalizedAt ? formatDateTimeDe(inv.finalizedAt) : null,
+        d(inv.deliveryStart), d(inv.deliveryEnd),
       ]);
       for (const l of inv.lines) {
         await add("positionen.csv", [

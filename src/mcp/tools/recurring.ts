@@ -64,7 +64,7 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
         maxRuns: z.number().int().positive().optional().describe("Höchstzahl der Rechnungen (danach endet das Abo)"),
         anchorDay: z.number().int().min(1).max(31).optional().describe("Fester Tag im Monat (1..31, 31 = Monatsletzter); bei neuen Abos aus dem Leistungsbeginn abgeleitet, ein abweichender Wert wird abgelehnt"),
         taxScheme: TaxScheme.optional().describe("Steuerschema der erzeugten Rechnungen; ohne Angabe das Schema des Unternehmens (sonst REGULAR)"),
-        showPeriodText: z.boolean().optional().describe("Leistungszeitraum-Text in den Positionen einfügen (ohne Angabe: Org-Standard)"),
+        showPeriodText: z.boolean().optional().describe("Leistungszeitraum zusätzlich als Text im Kopftext der Rechnung (ohne Angabe: Org-Standard)"),
         emailTemplateId: z.string().optional().describe("E-Mail-Vorlage für den automatischen Versand (autoSend); ohne Angabe die Standardvorlage"),
         paymentTermsDays: z.number().int().min(0).max(365).default(14),
         autoFinalize: z.boolean().optional().describe("true = erzeugte Rechnungen sofort festschreiben (ohne Angabe: Org-Standard aus den Einstellungen)"),

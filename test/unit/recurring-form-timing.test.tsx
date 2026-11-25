@@ -123,6 +123,25 @@ describe("Abo-Formular: Abrechnungsart und Vorschau", () => {
     expect(screen.getByTestId("period-preview").textContent).toContain("01.01.2264 – 15.01.2264");
     expect(screen.getByText(/durch das Vertragsende gekürzt/)).toBeTruthy();
   });
+
+  it("warnt bei nachträglicher Abrechnung vor dem nicht abgerechneten Rest nach dem letzten Stichtag", () => {
+    render(<NewRecurringForm products={[]} taxRates={[19, 7, 0]} />);
+    fireEvent.change(screen.getByLabelText("Leistungsbeginn"), { target: { value: "2264-01-01" } });
+    fireEvent.click(radio(/Nachträglich/));
+    expect(screen.queryByTestId("arrears-rest")).toBeNull();
+    fireEvent.change(screen.getByLabelText(/Vertragsende/), { target: { value: "2264-03-15" } });
+    // Stichtage 31.01., 29.02. (2264 ist ein Schaltjahr) und 31.03. > Vertragsende: letzter Stichtag 29.02.
+    expect(screen.getByTestId("arrears-rest").textContent).toContain("01.03.2264 – 15.03.2264");
+    fireEvent.change(screen.getByLabelText(/Vertragsende/), { target: { value: "2264-03-31" } });
+    expect(screen.queryByTestId("arrears-rest")).toBeNull();
+  });
+
+  it("Steuerschema-Wechsel gelangt in den Positionseditor (keine Steuersätze bei Kleinunternehmer)", () => {
+    render(<NewRecurringForm products={[]} taxRates={[19, 7, 0]} />);
+    expect(screen.getAllByRole("combobox").some((e) => (e as HTMLSelectElement).value === "19")).toBe(true);
+    fireEvent.change(screen.getByLabelText("Steuerschema"), { target: { value: "KLEINUNTERNEHMER" } });
+    expect(screen.getAllByRole("combobox").some((e) => (e as HTMLSelectElement).value === "19")).toBe(false);
+  });
 });
 
 describe("Abo-Formular: Payload", () => {

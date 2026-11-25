@@ -45,7 +45,7 @@ const restRun = (id: string) => RecurringRun(new Request(`http://localhost/api/v
 interface RecData {
   id: string;
   billingTiming: string;
-  nextPeriods: { start: string; end: string; clippedByEndDate: boolean }[];
+  nextPeriods: { runDate: string; start: string; end: string; clippedByEndDate: boolean }[];
 }
 interface ToolResult {
   content: { type: string; text: string }[];
@@ -80,7 +80,7 @@ describe("REST", () => {
     const { data } = await json<{ data: RecData }>(res);
     expect(data.billingTiming).toBe("ADVANCE");
     expect(data.nextPeriods).toHaveLength(3);
-    expect(data.nextPeriods[0]).toEqual({ start: "2263-11-25", end: "2264-11-24", clippedByEndDate: false });
+    expect(data.nextPeriods[0]).toEqual({ runDate: "2263-11-25", start: "2263-11-25", end: "2264-11-24", clippedByEndDate: false });
   });
 
   it("POST mit Verbrauchsposition ohne Angabe: ARREARS", async () => {
@@ -146,7 +146,7 @@ describe("MCP", () => {
 
   it("list_recurring nennt billingTiming und nextPeriods", async () => {
     const res = await callTool("list_recurring", { status: "ACTIVE" });
-    const rows = JSON.parse(text(res)) as { title: string; billingTiming: string; nextPeriods: { start: string; end: string }[] }[];
+    const rows = JSON.parse(text(res)) as { title: string; billingTiming: string; nextPeriods: { runDate: string; start: string; end: string }[] }[];
     const row = rows.find((r) => r.title === "ZR-1");
     expect(row?.billingTiming).toBe("ADVANCE");
     expect(row?.nextPeriods[0]).toMatchObject({ start: "2263-11-25", end: "2264-11-24" });
