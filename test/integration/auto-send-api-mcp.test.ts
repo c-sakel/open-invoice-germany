@@ -201,4 +201,16 @@ describe("Auto-Versand REST/MCP/UI", () => {
     const upd = await call("update_recurring_invoice", { recurring: id, title: "Hinweis-Abo 2" });
     expect(upd.content[0]!.text).toContain("keine E-Mail-Adresse");
   });
+  it("7: Retry nach manuellem Versand (GAVE_UP, E-Mail-Protokoll SENT) sendet nicht erneut, Zustand wird DONE_MANUAL", async () => {
+    const id = await emitInvoice("man7@example.org", true);
+    await dbInternal.invoiceAutoSend.update({ where: { invoiceId: id }, data: { status: "GAVE_UP", lastError: "SMTP_REJECTED" } });
+    await dbInternal.emailLog.create({
+      data: { orgId, docType: "INVOICE", docId: id, subject: "s", bodySnapshot: "b", status: "SENT", sentByUserId: "tester" },
+    });
+    const res = await retryAutoSendAction({ invoiceId: id, confirmUnclear: false });
+    expect(res).toMatchObject({ ok: true, status: "DONE_MANUAL" });
+    expect(hoisted.state.sent).toHaveLength(0);
+    expect((await dbInternal.invoiceAutoSend.findUniqueOrThrow({ where: { invoiceId: id } })).status).toBe("DONE_MANUAL");
+    expect((await retry(id, sendToken)).status).toBe(409);
+  });
 });
