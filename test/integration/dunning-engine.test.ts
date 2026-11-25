@@ -28,6 +28,7 @@ import { upsertBaseRate } from "@/domain/dunning/base-rate";
 import { recordPaymentSchema, type CreateInvoiceInput } from "@/schemas";
 
 const FIX_DATE = new Date("2050-06-09T10:00:00.000Z"); // 8 Tage nach dueDate (2050-06-01)
+const VERZUG_DATE = new Date("2050-08-01T10:00:00.000Z"); // Verzug nach 30-Tage-Regel eingetreten
 
 let orgId: string;
 let n = 0;
@@ -66,36 +67,51 @@ async function makeFinalizedInvoice(customerId: string, extra: Partial<CreateInv
   return finalizeInvoice(draft.id, { now: FIX_DATE });
 }
 
+/** createdAt ist die echte Uhr; fuer Zeitreise-Tests auf den simulierten Erstellungstag setzen. */
+async function backdate(dunningId: string, at: Date) {
+  await dbInternal.dunning.update({ where: { id: dunningId }, data: { createdAt: at } });
+}
+
+/** Versandnachweis der Mahnung (E-Mail SENT); ohne Nachweis begruendet eine Mahnung keinen Verzug. */
+async function markDunningMailed(dunningId: string, at: Date) {
+  await dbInternal.emailLog.create({ data: { orgId, docType: "DUNNING", docId: dunningId, subject: "x", bodySnapshot: "x", status: "SENT", sentAt: at } });
+}
+
 describe("Phase 6 — Mahn-Engine (create.ts, state.ts, send.ts, snapshot.ts)", () => {
   it("B2C: 5 Prozentpunkte Verzugszins, KEINE 40-€-Pauschale", async () => {
     const customerId = await makeCustomer("CONSUMER");
     const fin = await makeFinalizedInvoice(customerId); // brutto 238,00 €
-    await createDunning(fin.id, { now: FIX_DATE }); // order 0
-    const r1 = await createDunning(fin.id, { now: FIX_DATE, force: true }); // order 1
+    const r0 = await createDunning(fin.id, { now: FIX_DATE }); // order 0
+    await backdate(r0.dunning.id, FIX_DATE);
+    await markDunningMailed(r0.dunning.id, FIX_DATE);
+    // Verzug erst durch Zugang der versendeten Zahlungserinnerung (Versand + 1 Tag); Zinsen ab dort.
+    const r1 = await createDunning(fin.id, { now: new Date("2050-06-20T10:00:00.000Z"), force: true }); // order 1
     expect(r1.stage.order).toBe(1);
+    expect(r1.dunning.interestBasis).toBe("MAHNUNG");
     expect(r1.dunning.interestAmountCents).toBeGreaterThan(0);
     expect(r1.dunning.interestRatePoints).toBe(5);
     expect(r1.dunning.flatFee40Cents).toBe(0);
   });
 
+  // VERZUG_DATE: > 30 Tage nach Faelligkeit (Verzug eingetreten, sonst keine Pauschale).
   it("B2B: 9 Prozentpunkte Verzugszins + 40-€-Pauschale, nur EINMAL je Forderung", async () => {
     const customerId = await makeCustomer("BUSINESS");
     const fin = await makeFinalizedInvoice(customerId);
-    await createDunning(fin.id, { now: FIX_DATE }); // order 0
-    const r1 = await createDunning(fin.id, { now: FIX_DATE, force: true }); // order 1
+    await createDunning(fin.id, { now: VERZUG_DATE }); // order 0
+    const r1 = await createDunning(fin.id, { now: VERZUG_DATE, force: true }); // order 1
     expect(r1.dunning.interestRatePoints).toBe(9);
     expect(r1.dunning.flatFee40Cents).toBe(4000);
-    const r2 = await createDunning(fin.id, { now: FIX_DATE, force: true }); // order 2
+    const r2 = await createDunning(fin.id, { now: VERZUG_DATE, force: true }); // order 2
     expect(r2.dunning.flatFee40Cents).toBe(0); // schon einmal berechnet
   });
 
   it("B1 (Fix-Welle): 40-€-Pauschale ueber alle vier Standardstufen genau EINMAL (0/4000/0/0), nicht nur gegen die letzte Mahnung geprueft", async () => {
     const customerId = await makeCustomer("BUSINESS");
     const fin = await makeFinalizedInvoice(customerId);
-    const r0 = await createDunning(fin.id, { now: FIX_DATE }); // order 0 (Zahlungserinnerung, keine Pauschale)
-    const r1 = await createDunning(fin.id, { now: FIX_DATE, force: true }); // order 1 (1. Mahnung)
-    const r2 = await createDunning(fin.id, { now: FIX_DATE, force: true }); // order 2 (2. Mahnung)
-    const r3 = await createDunning(fin.id, { now: FIX_DATE, force: true }); // order 3 (3. Mahnung)
+    const r0 = await createDunning(fin.id, { now: VERZUG_DATE }); // order 0 (Zahlungserinnerung, keine Pauschale)
+    const r1 = await createDunning(fin.id, { now: VERZUG_DATE, force: true }); // order 1 (1. Mahnung)
+    const r2 = await createDunning(fin.id, { now: VERZUG_DATE, force: true }); // order 2 (2. Mahnung)
+    const r3 = await createDunning(fin.id, { now: VERZUG_DATE, force: true }); // order 3 (3. Mahnung)
     expect([r0, r1, r2, r3].map((r) => r.dunning.flatFee40Cents)).toEqual([0, 4000, 0, 0]);
   });
 
@@ -109,15 +125,19 @@ describe("Phase 6 — Mahn-Engine (create.ts, state.ts, send.ts, snapshot.ts)", 
     expect(fin.grossTotalCents).toBe(100000); // 1.000,00 €
     await recordPayment(fin.id, recordPaymentSchema.parse({ amountCents: 40000, method: "TRANSFER", paidAt: FIX_DATE }));
 
-    await createDunning(fin.id, { now: FIX_DATE }); // order 0
-    const r1 = await createDunning(fin.id, { now: FIX_DATE, force: true }); // order 1
+    const r0 = await createDunning(fin.id, { now: FIX_DATE }); // order 0
+    await backdate(r0.dunning.id, FIX_DATE);
+    await markDunningMailed(r0.dunning.id, FIX_DATE);
+    const r1Now = new Date("2050-06-20T10:00:00.000Z");
+    const r1 = await createDunning(fin.id, { now: r1Now, force: true }); // order 1
     expect(r1.openAmountCents).toBe(60000); // 600,00 €
     expect(r1.dunning.claimBaseCents).toBe(60000);
 
     const settings = await saveDunningSettings(orgId, {}); // Default-Basiszins
     const expected = computeDunning({
       openAmountCents: 60000,
-      daysOverdue: r1.daysOverdue,
+      // Verzugsbeginn: Zugang der versendeten Zahlungserinnerung (Versand + 1 Tag), nicht die Faelligkeit.
+      daysOverdue: daysBetween(r1.dunning.interestFrom!, r1Now),
       isConsumer: false,
       baseRateBp: settings.baseInterestRateBp,
       applyFlatFee: false, // applyFlatFee beeinflusst nur flatFee40Cents, nicht interestCents
@@ -345,7 +365,7 @@ describe("Phase 6 — Mahn-Engine (create.ts, state.ts, send.ts, snapshot.ts)", 
     const customerId = await makeCustomer("BUSINESS");
     const fin = await makeFinalizedInvoice(customerId, {
       deliveryDate: new Date("2050-05-01"),
-      dueDate: new Date("2050-05-01"),
+      dueDate: new Date("2050-04-28"), // Donnerstag; der 01.05. (Sonntag) wuerde nach § 193 BGB auf den 02.05. rutschen
     });
     const mahnungAm = new Date("2050-09-15T10:00:00.000Z");
 
@@ -356,7 +376,10 @@ describe("Phase 6 — Mahn-Engine (create.ts, state.ts, send.ts, snapshot.ts)", 
     const r1 = await createDunning(fin.id, { now: mahnungAm, force: true }); // order 1: verzinst
 
     const cut = new Date("2050-07-01T00:00:00.000Z");
-    const days1 = daysBetween(new Date("2050-05-01"), cut);
+    // Verzugsbeginn: B2B ohne Zugangsnachweis = Leistung 01.05. + 30 Tage = Fristende 31.05., Zinsen ab 01.06. (nicht die Faelligkeit).
+    expect(r1.dunning.interestBasis).toBe("ENTGELT_30_LEISTUNG");
+    expect(r1.dunning.interestFrom?.toISOString().slice(0, 10)).toBe("2050-06-01");
+    const days1 = daysBetween(new Date("2050-06-01"), cut);
     const days2 = daysBetween(cut, mahnungAm);
     const openAmount = fin.grossTotalCents;
     // Handrechnung: exakte Bruch-Summe der beiden Abschnitte, EINMAL gerundet (R7).

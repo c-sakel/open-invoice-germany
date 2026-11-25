@@ -272,6 +272,11 @@ describe("GoBD: Nummernkreis + Unveränderbarkeit", () => {
     expect(r0.dunning.stageId).not.toBeNull();
     const stage0 = await dbInternal.dunningStage.findUnique({ where: { id: r0.dunning.stageId! } });
     expect(stage0?.order).toBe(0);
+    // Verzug durch Mahnung nur bei nachweislichem Versand: Zahlungserinnerung am 02.06. per Mail
+    // versendet -> Zugang 03.06., Zinsen ab 04.06. (vor FIX_DATE 09.06.).
+    await dbInternal.emailLog.create({
+      data: { orgId, docType: "DUNNING", docId: r0.dunning.id, subject: "x", bodySnapshot: "x", status: "SENT", sentAt: new Date("2026-06-02T09:00:00.000Z") },
+    });
 
     const r1 = await createDunning(fin.id, { now: FIX_DATE, force: true });
     expect(r1.level).toBe(1); // 1. Mahnung -> Verzugszins + 40-€-Pauschale (B2B)

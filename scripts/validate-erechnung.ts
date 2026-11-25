@@ -6,7 +6,7 @@
  *   - CII: EN-16931-CII (KoSIT-Konfig)
  *
  * Aufruf:
- *   npm run validate:erechnung                # alle 37 Fixtures (73 XML: base nur UBL) erzeugen + prüfen
+ *   npm run validate:erechnung                # alle 38 Fixtures (75 XML: base nur UBL) erzeugen + prüfen
  *   npm run validate:erechnung -- pfad/zur.xml
  *
  * Exit 0 = bestanden, 1 = Verletzung(en). Schematrons landen in validation/.cache
@@ -98,7 +98,7 @@ async function validateFile(target: string): Promise<boolean> {
   return false;
 }
 
-// Fixture-Set: alle 37 Fixtures (73 XML: base nur UBL), siehe scripts/generate-sample-xrechnung.ts.
+// Fixture-Set: alle 38 Fixtures (75 XML: base nur UBL), siehe scripts/generate-sample-xrechnung.ts.
 const SAMPLE_NAMES = [
   "base",
   "line-discount",
@@ -115,6 +115,7 @@ const SAMPLE_NAMES = [
   "downpayment-386", // Phase 5 (Task 3): Abschlagsrechnung, InvoiceTypeCode 386
   "partial-percent", // Phase 5 (Task 3): Teilrechnung (PERCENT), InvoiceTypeCode 380
   "final-two-downpayments", // Phase 5 (Task 3): Schlussrechnung mit zwei abgesetzten Abschlaegen (BT-113/BT-115/BG-3 x2/BT-22)
+  "final-two-downpayments-skonto", // Schlussrechnung mit Skonto auf dem Zahlbetrag (BT-20 ohne BASISBETRAG)
   "reverse-charge-ae", // Phase 12b (Task 6): Reverse Charge (§ 13b), Kategorie AE
   "ig-lieferung-k", // Phase 12b (Task 6): ig. Lieferung (§ 6a), Kategorie K, BG-14 (Leistungszeitraum)
   "ausfuhr-g", // Phase 12b (Task 6): Ausfuhrlieferung (§ 6), Kategorie G, Drittlandkunde

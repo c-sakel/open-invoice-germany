@@ -96,6 +96,7 @@ export function serializeInvoice(inv: InvoiceWithOptionalRelations, embed: Set<s
     paidAmountCents: inv.paidAmountCents,
     payableCents: inv.payableCents,
     payableTotalCents: payableBaseCents(inv),
+    skontoBaseCents: inv.skontoBaseCents ?? null,
     openAmountCents: Math.max(0, openAmountCents(inv)),
     prepaidCents: inv.prepaidCents,
     reversedByInvoiceId: inv.reversedByInvoiceId,
@@ -201,6 +202,11 @@ export const invoiceSchema = z.object({
     .number()
     .int()
     .describe("Immer gesetzter Zahlbetrag in Cent (Lesefeld): payableCents, falls gesetzt, sonst grossTotalCents."),
+  skontoBaseCents: z
+    .number()
+    .int()
+    .nullable()
+    .describe("Skonto-Basis in Cent (Lesefeld): beim Festschreiben eingefrorener Zahlbetrag, auf dem die Skontobeträge berechnet werden. null = keine Skonto-Konditionen oder Zahlbetrag."),
   openAmountCents: z
     .number()
     .int()

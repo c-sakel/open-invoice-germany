@@ -109,6 +109,7 @@ export function buildDunningPdfData(d: DunningRow, inv: InvoiceRow): DunningPdfD
     feeCents: d.feeCents,
     lateFeeCents: d.lateFeeCents,
     totalCents: open + d.interestAmountCents + d.flatFee40Cents + d.feeCents + d.lateFeeCents,
-    daysOverdue: daysBetween(dueDateForOverdue, d.sentAt),
+    // Zinstage laufen ab Verzugsbeginn (interestFrom); Bestandsmahnungen ab Faelligkeit.
+    daysOverdue: daysBetween(d.interestFrom ?? dueDateForOverdue, d.sentAt),
   };
 }
