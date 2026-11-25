@@ -4,8 +4,7 @@
 import { dbInternal } from "@/lib/db";
 import { hmacWithDerivedKey } from "@/lib/crypto/secrets";
 import { normalizeIban } from "@/lib/iban";
-import { skontoTerms } from "@/lib/pricing/skonto";
-import { openAmountCents } from "@/domain/invoice/amounts";
+import { openAmountCents, skontoTermsForInvoice } from "@/domain/invoice/amounts";
 import { buyerSnapshotSchema } from "@/schemas";
 import { returnHints, suggestMatches, type MatchContext, type MatchTransaction, type OpenInvoiceForMatch, type ReturnHint, type Suggestion } from "./match";
 
@@ -54,6 +53,7 @@ export async function loadMatchContext(orgId: string): Promise<MatchContext> {
         dueDate: true,
         grossTotalCents: true,
         payableCents: true,
+        skontoBaseCents: true,
         paidAmountCents: true,
         skonto1Permille: true,
         skonto1Days: true,
@@ -78,14 +78,7 @@ export async function loadMatchContext(orgId: string): Promise<MatchContext> {
         openCents,
         issueDate: r.issueDate,
         dueDate: r.dueDate,
-        skontoTerms: skontoTerms({
-          issueDate: r.issueDate,
-          grossTotalCents: r.grossTotalCents,
-          skonto1Permille: r.skonto1Permille,
-          skonto1Days: r.skonto1Days,
-          skonto2Permille: r.skonto2Permille,
-          skonto2Days: r.skonto2Days,
-        }),
+        skontoTerms: skontoTermsForInvoice(r, openCents),
         mandateIbanHash: bankIbanHash(r.customer.sepaDebitIban),
       });
     }

@@ -1,3 +1,5 @@
+import { skontoTerms, type SkontoTerm } from "@/lib/pricing/skonto";
+
 /**
  * Offener Betrag einer Rechnung (brutto). Phase 5 (§13-15 UStG): eine Schlussrechnung
  * traegt in `payableCents` den um die Abschlaege bereits reduzierten Restbetrag
@@ -26,6 +28,34 @@ export function skontoBaseCents(
   invoice: Pick<OpenAmountInvoice, "grossTotalCents" | "payableCents"> & { skontoBaseCents?: number | null },
 ): number {
   return invoice.skontoBaseCents ?? payableBaseCents(invoice);
+}
+
+export interface SkontoInvoice extends Pick<OpenAmountInvoice, "grossTotalCents" | "payableCents"> {
+  skontoBaseCents?: number | null;
+  issueDate: Date;
+  skonto1Permille: number | null;
+  skonto1Days: number | null;
+  skonto2Permille: number | null;
+  skonto2Days: number | null;
+}
+
+/**
+ * Skonto-Fristen einer Rechnung auf der Skonto-Basis (`skontoBaseCents`). Liegt die eingefrorene Basis
+ * ueber dem Zahlbetrag (Bestand: Schlussrechnung mit Basis = Gesamtbrutto), ist der Skonto-Zahlbetrag
+ * der noch offene Betrag minus Skontobetrag, damit Zahlungserkennung und Bankabgleich weiter greifen.
+ */
+export function skontoTermsForInvoice(invoice: SkontoInvoice, openBeforeCents: number): SkontoTerm[] {
+  const base = skontoBaseCents(invoice);
+  const terms = skontoTerms({
+    issueDate: invoice.issueDate,
+    grossTotalCents: base,
+    skonto1Permille: invoice.skonto1Permille,
+    skonto1Days: invoice.skonto1Days,
+    skonto2Permille: invoice.skonto2Permille,
+    skonto2Days: invoice.skonto2Days,
+  });
+  if (base <= payableBaseCents(invoice)) return terms;
+  return terms.map((t) => ({ ...t, payableCents: openBeforeCents - t.amountCents }));
 }
 
 /** Offener Rest (brutto) = Bemessungsgrundlage minus bereits erfasste Zahlungen. */
