@@ -1,10 +1,9 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { getActiveOrg } from "@/lib/org";
-import { dbInternal } from "@/lib/db";
 import { listRecurring, recurringStatusTabCounts, type RecurringListResult } from "@/domain/document/list";
 import { availableActions } from "@/domain/document/actions";
-import { applyCustomerComboFilter } from "@/domain/customer/list";
+import { applyCustomerComboFilter, loadComboCustomer } from "@/domain/customer/list";
 import { FilterBar, type FilterField } from "@/components/list/FilterBar";
 import { Pagination } from "@/components/list/Pagination";
 import { RowActionsMenu } from "@/components/list/RowActionsMenu";
@@ -49,14 +48,11 @@ export default async function AbosPage({ searchParams }: { searchParams: Promise
   const org = await getActiveOrg();
   const rawFilter = parseListQuery(sp);
 
-  const [customerOptions] = await Promise.all([
-    // Fix-Welle S3: `take: 500` (Spec: „bis zu 500 Kunden") — ohne Begrenzung laedt jeder
-    // Seitenaufruf ALLE nicht archivierten Kunden der Organisation in die <datalist>.
-    dbInternal.customer.findMany({ where: { orgId: org.id, isArchived: false }, select: { id: true, name: true }, orderBy: { name: "asc" }, take: 500 }),
-    // Fix-Welle M2: `customerId` kann ein getippter Kundenname statt einer Id sein — auf
-    // einen exakten Treffer aufloesen, sonst faellt der Rohtext auf `q` zurueck (Spec).
-    applyCustomerComboFilter(org.id, rawFilter),
-  ]);
+  // `customerId` kann ein getippter Kundenname statt einer Id sein — auf einen exakten Treffer
+  // aufloesen, sonst faellt der Rohtext auf `q` zurueck.
+  await applyCustomerComboFilter(org.id, rawFilter);
+  // Nur der gewaehlte Kunde (Anzeige); die Auswahl sucht serverseitig.
+  const comboCustomer = await loadComboCustomer(org.id, rawFilter);
 
   // Fix-Welle S6: `runListFilter` versucht `rawFilter` zuerst vollstaendig, entfernt bei
   // einem ZodError NUR die beanstandeten Schluessel (statt alle Filter zu verwerfen) und
@@ -91,10 +87,7 @@ export default async function AbosPage({ searchParams }: { searchParams: Promise
       type: "combo",
       name: "customerId",
       label: "Kunde",
-      options: customerOptions.map((c) => ({ value: c.id, label: c.name })),
-      // Fix-Welle S2: zeigt den Kundennamen statt der rohen Id, wenn `?customerId=<cuid>`
-      // ueber einen Link/ein Lesezeichen vorbelegt wurde.
-      displayValue: customerOptions.find((c) => c.id === values.customerId)?.name,
+      selected: comboCustomer,
     },
   ];
 
@@ -139,7 +132,7 @@ export default async function AbosPage({ searchParams }: { searchParams: Promise
               mobile: "title",
               cell: (r) => (
                 <span>
-                  <Link href={`/abos/${r.id}`} className="break-words font-medium text-pen hover:underline">
+                  <Link prefetch={false} href={`/abos/${r.id}`} className="break-words font-medium text-pen hover:underline">
                     {r.title}
                   </Link>
                   {r.collectiveBilling && (

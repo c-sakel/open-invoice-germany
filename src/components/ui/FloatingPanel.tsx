@@ -30,6 +30,7 @@ export function FloatingPanel({
   onClose,
   align = "start",
   matchAnchorWidth = false,
+  sheetOnMobile = false,
   width,
   className,
   children,
@@ -44,6 +45,8 @@ export function FloatingPanel({
   /** `end`: Panel schliesst rechtsbuendig mit dem Anker ab (Menues am rechten Rand). */
   align?: "start" | "end";
   matchAnchorWidth?: boolean;
+  /** Unter 640 px Viewportbreite als Bottom-Sheet in voller Breite. */
+  sheetOnMobile?: boolean;
   /** Feste Breite in px (ignoriert bei `matchAnchorWidth`). */
   width?: number;
   className?: string;
@@ -70,6 +73,12 @@ export function FloatingPanel({
       const a = anchor.getBoundingClientRect();
       const vw = window.innerWidth;
       const vh = window.innerHeight;
+      if (sheetOnMobile && vw < 640) {
+        const sheetMax = Math.round(vh * 0.6);
+        const sheetH = Math.min(panel.scrollHeight, sheetMax);
+        setPos({ top: vh - sheetH, left: 0, width: vw, maxHeight: sheetMax });
+        return;
+      }
       const w = matchAnchorWidth ? a.width : (width ?? panel.offsetWidth);
       const naturalH = panel.scrollHeight;
       const below = vh - a.bottom - GAP - MARGIN;
@@ -91,7 +100,7 @@ export function FloatingPanel({
       window.removeEventListener("scroll", place, true);
       window.removeEventListener("resize", place);
     };
-  }, [open, anchorRef, align, matchAnchorWidth, width, children]);
+  }, [open, anchorRef, align, matchAnchorWidth, sheetOnMobile, width, children]);
 
   useEffect(() => {
     if (!open) return;

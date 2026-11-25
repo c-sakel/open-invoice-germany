@@ -9,7 +9,7 @@ import { createDunning, DunningError } from "@/domain/dunning/create";
 import { verzugBasisLabel } from "@/domain/dunning/verzug";
 import { sendDunning } from "@/domain/dunning/send";
 import { setDunningState } from "@/domain/dunning/state";
-import { loadDunningOverview } from "@/domain/dunning/overview";
+import { DUNNING_ALL_ROWS, loadDunningOverview } from "@/domain/dunning/overview";
 import { listDunningStages, updateDunningStage, DunningStageError } from "@/domain/dunning/stages";
 import { MailNotConfiguredError } from "@/domain/email/settings";
 import { NotFoundError } from "@/domain/errors";
@@ -122,7 +122,7 @@ export function registerDunningTools(server: McpServer, ctx: McpToolsContext): v
     async ({ state }): Promise<Result> => {
       try {
         const org = await ctx.requireOrg();
-        const overview = await loadDunningOverview(org.id, new Date(), { state });
+        const overview = await loadDunningOverview(org.id, new Date(), { state, limit: DUNNING_ALL_ROWS });
         return ctx.ok(
           JSON.stringify(
             {

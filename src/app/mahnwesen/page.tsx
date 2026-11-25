@@ -5,6 +5,8 @@ import { loadDunningOverview } from "@/domain/dunning/overview";
 import { loadDunningSettings } from "@/domain/dunning/settings";
 import { listPaymentMethods } from "@/domain/payment-method/manage";
 import { OverviewWidgets } from "@/components/dunning/OverviewWidgets";
+import { Pagination } from "@/components/list/Pagination";
+import { dunningPageSchema } from "@/schemas/dunning-page";
 import { OverdueTable } from "@/components/dunning/OverdueTable";
 import { loadPostalSettings } from "@/domain/postal/settings";
 import { listPendingPostalDunnings } from "@/domain/postal/pending";
@@ -14,11 +16,13 @@ export const dynamic = "force-dynamic";
 
 // Task 4 (Facts): Seite rendert serverseitig, kein Client-Fetch fuer die Erstansicht —
 // Filter kommen als GET-Query und lesen sich damit auch als Deep-Link/Lesezeichen.
-export default async function MahnwesenPage({ searchParams }: { searchParams: Promise<{ state?: string; customerId?: string }> }) {
-  const { state, customerId } = await searchParams;
+export default async function MahnwesenPage({ searchParams }: { searchParams: Promise<{ state?: string; customerId?: string; offset?: string }> }) {
+  const { state, customerId, offset: rawOffset } = await searchParams;
+  const parsedOffset = dunningPageSchema.safeParse({ offset: rawOffset });
+  const offset = parsedOffset.success ? parsedOffset.data.offset : 0;
   const org = await getActiveOrg();
 
-  const filter: { state?: "ACTIVE" | "PAUSED" | "STOPPED"; customerId?: string } = {};
+  const filter: { state?: "ACTIVE" | "PAUSED" | "STOPPED"; customerId?: string; offset?: number } = { offset };
   if (state === "ACTIVE" || state === "PAUSED" || state === "STOPPED") filter.state = state;
   if (customerId) filter.customerId = customerId;
 
@@ -74,6 +78,7 @@ export default async function MahnwesenPage({ searchParams }: { searchParams: Pr
       </nav>
 
       <OverdueTable rows={rows} paymentMethods={paymentMethods} />
+      <Pagination basePath="/mahnwesen" searchParams={{ state: filter.state, customerId: filter.customerId }} total={overview.total} limit={overview.limit} offset={overview.offset} />
 
       {postalSettings.enabled && (
         <section id="post" className="scroll-mt-16 space-y-3">

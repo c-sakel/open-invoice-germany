@@ -63,3 +63,13 @@ describe("/api/reports (Phase 17c, Task 3)", () => {
     expect(res.status).toBe(401);
   });
 });
+
+describe("/api/lookup (Phase 22a, Task 4)", () => {
+  it("ist nicht oeffentlich (ohne Sitzung 401)", async () => {
+    expect(PUBLIC_PREFIXES.some((p) => "/api/lookup/customers".startsWith(p))).toBe(false);
+    for (const p of ["/api/lookup/customers", "/api/lookup/customers/abc", "/api/lookup/products"]) {
+      const res = await proxy(new NextRequest(`http://localhost${p}`));
+      expect(res.status, p).toBe(401);
+    }
+  });
+});

@@ -31,45 +31,89 @@ async function unreversedCents(db: Prisma.TransactionClient, paymentId: string, 
   return amountCents + (agg._sum.amountCents ?? 0);
 }
 
-export async function returnSuggestions(orgId: string, txId: string): Promise<ReturnSuggestion[]> {
-  const bankTx = await dbInternal.bankTransaction.findFirst({
-    where: { id: txId, orgId },
+const PAYMENT_SELECT = { id: true, amountCents: true, invoice: { select: { id: true, number: true, currency: true, orgId: true } } } as const;
+type SuggestPayment = Prisma.PaymentGetPayload<{ select: typeof PAYMENT_SELECT }>;
+
+/**
+ * Vorschlaege fuer mehrere Rueckbuchungs-Umsaetze mit einer festen Zahl von Abfragen (Batch
+ * ueber `in`), unabhaengig von der Zeilenzahl. Jede gefundene Umsatz-Id erscheint im Ergebnis
+ * (bei anderem Status als RETURN mit leerer Liste); unbekannte oder fremde Ids fehlen.
+ */
+export async function returnSuggestionsForRows(orgId: string, txIds: string[]): Promise<Map<string, ReturnSuggestion[]>> {
+  const result = new Map<string, ReturnSuggestion[]>();
+  const ids = [...new Set(txIds)];
+  if (ids.length === 0) return result;
+  const txs = await dbInternal.bankTransaction.findMany({
+    where: { id: { in: ids }, orgId },
     select: { id: true, status: true, currency: true, endToEndId: true },
   });
-  if (!bankTx) throw new NotFoundError("Bankumsatz nicht gefunden.");
-  if (bankTx.status !== "RETURN") return [];
+  const returns = txs.filter((t) => t.status === "RETURN");
+  for (const t of txs) result.set(t.id, []);
+  if (returns.length === 0) return result;
 
-  const out = new Map<string, ReturnSuggestion>();
-  const add = async (
-    p: { id: string; amountCents: number; invoice: { id: string; number: string | null; currency: string; orgId: string } },
-    reason: ReturnSuggestion["reason"],
-  ): Promise<void> => {
-    if (out.has(p.id) || p.invoice.orgId !== orgId || p.invoice.currency !== bankTx.currency || !p.invoice.number) return;
-    const rest = await unreversedCents(dbInternal, p.id, p.amountCents);
-    if (rest > 0) out.set(p.id, { paymentId: p.id, invoiceId: p.invoice.id, number: p.invoice.number, amountCents: rest, reason });
-  };
-  const PAYMENT_SELECT = { id: true, amountCents: true, invoice: { select: { id: true, number: true, currency: true, orgId: true } } } as const;
-
-  if (bankTx.endToEndId) {
+  // Zahlungen ueber gleiche Ende-zu-Ende-Referenz (hoechstens 20 je Referenz).
+  const e2eIds = [...new Set(returns.map((t) => t.endToEndId).filter((e): e is string => Boolean(e)))];
+  const matchesByE2e = new Map<string, SuggestPayment[]>();
+  if (e2eIds.length > 0) {
     const matches = await dbInternal.bankMatch.findMany({
-      where: { orgId, kind: "PAYMENT", paymentId: { not: null }, transaction: { orgId, endToEndId: bankTx.endToEndId } },
-      select: { payment: { select: PAYMENT_SELECT } },
-      take: 20,
+      where: { orgId, kind: "PAYMENT", paymentId: { not: null }, transaction: { orgId, endToEndId: { in: e2eIds } } },
+      select: { payment: { select: PAYMENT_SELECT }, transaction: { select: { endToEndId: true } } },
     });
-    for (const m of matches) if (m.payment) await add(m.payment, "SAME_E2E");
+    for (const m of matches) {
+      const e2e = m.transaction.endToEndId;
+      if (!e2e || !m.payment) continue;
+      const list = matchesByE2e.get(e2e) ?? [];
+      if (list.length < 20) list.push(m.payment);
+      matchesByE2e.set(e2e, list);
+    }
   }
 
-  const hints = (await returnHintsForPage(orgId, [txId])).get(txId) ?? [];
-  if (hints.length > 0) {
-    const payments = await dbInternal.payment.findMany({
-      where: { invoiceId: { in: hints.map((h) => h.invoiceId) }, kind: "PAYMENT", isSkonto: false, skontoForPaymentId: null, method: { not: "CREDIT_NOTE" } },
-      select: PAYMENT_SELECT,
+  // Rechnungsnummern-Hinweise (gebuendelt) und deren Zahlungen (hoechstens 50 je Umsatz).
+  const hintsByTx = await returnHintsForPage(orgId, returns.map((t) => t.id));
+  const invoiceIds = [...new Set([...hintsByTx.values()].flatMap((hs) => hs.map((h) => h.invoiceId)))];
+  let hintPayments: Array<SuggestPayment & { invoiceId: string }> = [];
+  if (invoiceIds.length > 0) {
+    hintPayments = await dbInternal.payment.findMany({
+      where: { invoiceId: { in: invoiceIds }, kind: "PAYMENT", isSkonto: false, skontoForPaymentId: null, method: { not: "CREDIT_NOTE" } },
+      select: { ...PAYMENT_SELECT, invoiceId: true },
       orderBy: { createdAt: "asc" },
-      take: 50,
     });
-    for (const p of payments) await add(p, "NUMBER");
   }
-  return [...out.values()];
+
+  // Bereits gegengebuchte Betraege aller beteiligten Zahlungen.
+  const allPaymentIds = new Set<string>(hintPayments.map((p) => p.id));
+  for (const list of matchesByE2e.values()) for (const p of list) allPaymentIds.add(p.id);
+  const reversedByPayment = new Map<string, number>();
+  if (allPaymentIds.size > 0) {
+    const groups = await dbInternal.payment.groupBy({
+      by: ["reversesPaymentId"],
+      where: { reversesPaymentId: { in: [...allPaymentIds] }, kind: "REVERSAL" },
+      _sum: { amountCents: true },
+    });
+    for (const g of groups) if (g.reversesPaymentId) reversedByPayment.set(g.reversesPaymentId, g._sum.amountCents ?? 0);
+  }
+
+  for (const t of returns) {
+    const out = new Map<string, ReturnSuggestion>();
+    const add = (p: SuggestPayment, reason: ReturnSuggestion["reason"]): void => {
+      if (out.has(p.id) || p.invoice.orgId !== orgId || p.invoice.currency !== t.currency || !p.invoice.number) return;
+      const rest = p.amountCents + (reversedByPayment.get(p.id) ?? 0);
+      if (rest > 0) out.set(p.id, { paymentId: p.id, invoiceId: p.invoice.id, number: p.invoice.number, amountCents: rest, reason });
+    };
+    if (t.endToEndId) for (const p of matchesByE2e.get(t.endToEndId) ?? []) add(p, "SAME_E2E");
+    const hintInvoices = new Set((hintsByTx.get(t.id) ?? []).map((h) => h.invoiceId));
+    if (hintInvoices.size > 0) {
+      for (const p of hintPayments.filter((x) => hintInvoices.has(x.invoiceId)).slice(0, 50)) add(p, "NUMBER");
+    }
+    result.set(t.id, [...out.values()]);
+  }
+  return result;
+}
+
+export async function returnSuggestions(orgId: string, txId: string): Promise<ReturnSuggestion[]> {
+  const found = (await returnSuggestionsForRows(orgId, [txId])).get(txId);
+  if (!found) throw new NotFoundError("Bankumsatz nicht gefunden.");
+  return found;
 }
 
 export interface BankReturnResult {

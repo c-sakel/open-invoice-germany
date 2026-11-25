@@ -5,22 +5,22 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { inputCls } from "@/components/forms/fields";
 import { FloatingPanel } from "@/components/ui/FloatingPanel";
+import { SearchSelect } from "@/components/ui/SearchSelect";
+import { loadCustomerById, loadCustomersByIds, searchCustomers } from "@/components/ui/customer-lookup";
 
 /**
  * Filterleiste (Phase 8b, umgebaut in Phase 13a, Fix-Welle 1 M1+M2): jede Aenderung
- * navigiert selbst — Selects/Datumsfelder sofort, Text-/Betrags-/Kontaktfelder 300 ms
+ * navigiert selbst — Selects/Datumsfelder sofort, Text-/Betragsfelder 300 ms
  * entprellt (JE FELD ein eigener Timer — ein einzelner geteilter Timer verwarf zuvor
  * den anstehenden Wert eines zweiten, kurz danach editierten Feldes, Fix M1), kein
  * Knopf "Filtern" mehr.
  *
- * Betrags- ("number") und Kontaktfelder ("combo") bilden ihren Rohtext seit Fix M2 NICHT
- * mehr selbst auf Cent/Id ab — der Rohtext ("12,50", ein getippter Kundenname) geht 1:1
- * unter dem echten Parameternamen in die URL. Serverseitig laeuft DIESELBE Abbildung fuer
- * BEIDE Pfade (mit und ohne JavaScript): `parseListQuery`s `moneyKeys` fuer Betraege
- * (tolerant Euro -> Cent, `src/lib/list-query.ts`) bzw. `applyCustomerComboFilter` fuer
- * den Kundennamen (exakter Treffer -> Id, sonst Rueckfall auf `q`,
- * `src/domain/customer/list.ts`) — kein zweiter, abweichender Umrechnungscode mehr, der
- * JS-freie Rueckfall liefert dieselben Ergebnisse wie der JS-Pfad.
+ * Betragsfelder ("number") bilden ihren Rohtext NICHT selbst auf Cent ab: der Text ("12,50") geht
+ * 1:1 unter dem echten Parameternamen in die URL; serverseitig laeuft dieselbe Abbildung fuer beide
+ * Pfade (mit und ohne JavaScript, `parseListQuery`s `moneyKeys`, `src/lib/list-query.ts`).
+ * Das Kundenfeld ("combo") ist eine Such-Auswahl (`SearchSelect`, Kunden-Lookup) und navigiert mit
+ * der gewaehlten Kunden-Id sofort; ohne JavaScript bleibt ein Textfeld mit dem Kundennamen, den
+ * `applyCustomerComboFilter` (exakter Treffer -> Id, sonst Rueckfall auf `q`) aufloest.
  *
  * Das <form method="get"> bleibt als JS-freier Rueckfall (Enter sendet nativ, dazu ein
  * sr-only-Submit); `offset` wird bei jeder Aenderung verworfen.
@@ -34,12 +34,11 @@ export type FilterField =
       type: "combo";
       name: string;
       label: string;
-      options: { value: string; label: string }[];
-      // Fix-Welle S2: Anzeigetext fuers Vorbelegen, wenn `values[name]` eine Id ist (z. B.
-      // aus einem Link/Lesezeichen `?customerId=<cuid>`) — ohne diesen Wert zeigte das Feld
-      // die rohe Id statt des Kundennamens. Die Seite loest ihn ueber `options` auf.
-      displayValue?: string;
-    }; // Name-Text, serverseitig -> Id (M2)
+      // Aktuell gewaehlter Kunde (Id + Anzeigename), von der Seite per Einzelabfrage aufgeloest.
+      // Die Auswahl selbst sucht serverseitig (`/api/lookup/customers`), die Seite laedt keine
+      // Kundenliste mehr. Ohne JavaScript bleibt ein Textfeld mit Namen (Server loest ihn auf).
+      selected?: { id: string; label: string };
+    };
 
 const DEBOUNCE_MS = 300;
 const SEARCH_FIELD = "q";
@@ -65,9 +64,8 @@ export function FilterBar({
 }) {
   const router = useRouter();
   function initial(f: FilterField): string {
-    // Fix-Welle S2: "combo" zeigt beim ersten Rendern den aufgeloesten Anzeigetext statt
-    // der rohen Id, sofern die Seite einen liefert (siehe `displayValue` oben).
-    if (f.type === "combo" && f.displayValue) return f.displayValue;
+    // "combo" haelt die Kunden-Id der aufgeloesten Auswahl (nie einen Rohtext).
+    if (f.type === "combo") return f.selected?.id ?? "";
     return values[f.name] ?? "";
   }
   // Beim Mount aus `values` gefuellt und danach NICHT per Effekt nachgezogen — sonst
@@ -129,7 +127,7 @@ export function FilterBar({
 
   function chipLabel(f: FilterField, raw: string): string {
     if (f.type === "select") return f.options.find((o) => o.value === raw)?.label ?? raw;
-    if (f.type === "combo" && f.displayValue && values[f.name] === raw) return f.displayValue;
+    if (f.type === "combo" && f.selected) return f.selected.label;
     return raw;
   }
   function hrefWithout(name: string): string {
@@ -139,7 +137,7 @@ export function FilterBar({
   }
   const chips = otherFields.filter((f) => (values[f.name] ?? "") !== "");
 
-  function renderField(f: FilterField, idPrefix: string) {
+  function renderField(f: FilterField) {
     const value = local[f.name] ?? "";
     const wrap = "flex min-w-0 flex-col gap-1 text-sm";
     const label = <span className="font-medium text-ink-soft">{f.label}</span>;
@@ -167,17 +165,28 @@ export function FilterBar({
       );
     }
     if (f.type === "combo") {
-      const datalistId = `${idPrefix}${f.name}-optionen`;
+      const selected = f.selected;
       return (
-        <label key={f.name} className={wrap}>
+        <div key={f.name} className={wrap}>
           {label}
-          <input type="text" name={f.name} list={datalistId} value={value} onChange={(e) => change(f.name, e.target.value, true)} className={inputCls} />
-          <datalist id={datalistId}>
-            {f.options.map((o) => (
-              <option key={o.value} value={o.label} />
-            ))}
-          </datalist>
-        </label>
+          {/* Ohne JavaScript: Textfeld mit Kundenname (steht vor dem versteckten Feld, damit der
+              getippte Wert gewinnt); die Seite loest den Namen auf. */}
+          <noscript>
+            <input type="text" name={f.name} defaultValue={selected?.label ?? ""} className={inputCls} />
+          </noscript>
+          <SearchSelect
+            label={f.label}
+            name={f.name}
+            placeholder="Alle Kunden"
+            value={value === "" ? null : value}
+            onChange={(id) => change(f.name, id ?? "", false)}
+            search={searchCustomers}
+            loadByIds={loadCustomersByIds}
+            loadSelected={async (id) => (selected?.id === id ? { id, label: selected.label } : loadCustomerById(id))}
+            recentKey="customer"
+            emptyOptionLabel="Alle Kunden"
+          />
+        </div>
       );
     }
     return (
@@ -207,7 +216,7 @@ export function FilterBar({
           <input key={key} type="hidden" name={key} value={v} />
         ))}
       <div className="flex flex-wrap items-end gap-3">
-        {searchField && <div className="min-w-0 flex-1 basis-48 lg:max-w-sm">{renderField(searchField, "bar-")}</div>}
+        {searchField && <div className="min-w-0 flex-1 basis-48 lg:max-w-sm">{renderField(searchField)}</div>}
         {/* Mobil: ein Knopf oeffnet alle uebrigen Felder im Panel (Phase 16f). */}
         {otherFields.length > 0 && (
           <button
@@ -222,7 +231,7 @@ export function FilterBar({
           </button>
         )}
         {/* Desktop: erste zwei Felder in der Zeile, Rest hinter "Weitere Filter". */}
-        <div className="hidden flex-wrap items-end gap-3 lg:flex">{primary.map((f) => renderField(f, "bar-"))}</div>
+        <div className="hidden flex-wrap items-end gap-3 lg:flex">{primary.map((f) => renderField(f))}</div>
         {more.length > 0 && (
           <button
             type="button"
@@ -242,7 +251,7 @@ export function FilterBar({
           Zurücksetzen
         </Link>
       </div>
-      {moreOpen && more.length > 0 && <div className="hidden flex-wrap items-end gap-3 lg:flex">{more.map((f) => renderField(f, "bar-"))}</div>}
+      {moreOpen && more.length > 0 && <div className="hidden flex-wrap items-end gap-3 lg:flex">{more.map((f) => renderField(f))}</div>}
       {chips.length > 0 && (
         <ul className="flex flex-wrap gap-2" aria-label="Aktive Filter">
           {chips.map((f) => (
@@ -274,7 +283,7 @@ export function FilterBar({
         }}
         className="w-[min(22rem,calc(100vw-1rem))] space-y-3 rounded-[var(--radius-card)] border border-rule bg-sheet p-4 shadow-lg lg:hidden"
       >
-        {otherFields.map((f) => renderField(f, "panel-"))}
+        {otherFields.map((f) => renderField(f))}
       </FloatingPanel>
     </form>
   );

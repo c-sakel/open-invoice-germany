@@ -77,7 +77,7 @@ export default async function ProduktePage({ searchParams }: { searchParams: Pro
               mobile: "title",
               cell: (p) => (
                 <>
-                  <Link href={`/produkte/${p.id}`} className="break-words font-medium text-pen hover:underline">
+                  <Link prefetch={false} href={`/produkte/${p.id}`} className="break-words font-medium text-pen hover:underline">
                     {p.name}
                   </Link>
                   {p.differential && <span className="ml-2 rounded bg-well px-1.5 py-0.5 text-xs text-ink-soft">§ 25a</span>}

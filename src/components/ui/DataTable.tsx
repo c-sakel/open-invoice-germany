@@ -56,7 +56,7 @@ export function DataTable<T>({ rows, columns, rowKey, rowHref, empty, caption }:
                 return (
                   <td key={c.key} className={isRight(c) ? "tabular whitespace-nowrap px-3 py-2.5 text-right" : "px-3 py-2.5"}>
                     {rowHref && i === 0 ? (
-                      <Link href={rowHref(row)} className="font-medium text-ink hover:text-pen">
+                      <Link prefetch={false} href={rowHref(row)} className="font-medium text-ink hover:text-pen">
                         {content}
                       </Link>
                     ) : (
@@ -76,7 +76,7 @@ export function DataTable<T>({ rows, columns, rowKey, rowHref, empty, caption }:
             <li key={rowKey(row)} className="py-3">
               <div className="flex items-baseline justify-between gap-3">
                 <div className="min-w-0 font-medium text-ink">
-                  {rowHref ? <Link href={rowHref(row)}>{titleContent}</Link> : titleContent}
+                  {rowHref ? <Link prefetch={false} href={rowHref(row)}>{titleContent}</Link> : titleContent}
                 </div>
                 {amounts.length > 0 && (
                   <div className="tabular whitespace-nowrap text-right font-medium text-ink">

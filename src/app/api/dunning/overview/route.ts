@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getActiveOrg } from "@/lib/org";
-import { loadDunningOverview } from "@/domain/dunning/overview";
+import { DUNNING_ALL_ROWS, loadDunningOverview } from "@/domain/dunning/overview";
 import { dunningOverviewFilterSchema } from "@/schemas";
 
 export const runtime = "nodejs";
@@ -17,7 +17,7 @@ export async function GET(req: Request) {
       if (v !== null && v !== "") raw[key] = v;
     }
     const filter = dunningOverviewFilterSchema.parse(raw);
-    const overview = await loadDunningOverview(org.id, new Date(), filter);
+    const overview = await loadDunningOverview(org.id, new Date(), { ...filter, limit: DUNNING_ALL_ROWS });
     return NextResponse.json(overview);
   } catch (e) {
     if (e instanceof z.ZodError) {

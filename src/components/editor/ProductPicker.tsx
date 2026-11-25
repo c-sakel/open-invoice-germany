@@ -1,21 +1,22 @@
 "use client";
 
 /**
- * Produkt-Picker (Phase 4b): Suchfeld filtert clientseitig ueber die Produktliste
- * (Props, keine neue Route noetig laut Vorgabe), plus "Neues Produkt"-Dialog fuer
- * die Inline-Anlage.
+ * Produkt-Picker des Editors: Huelle um `SearchSelect` (Tastatur, Bottom-Sheet mobil). Bis
+ * `PRODUCT_OPTIONS_LIMIT - 1` Produkte (Props) wird clientseitig gefiltert, sonst serverseitig
+ * ueber `/api/lookup/products` (Name + Artikelnummer, „zuletzt verwendet“ per `ids`). Die Wahl
+ * uebernimmt das Produkt (Preis/Einheit/Steuersatz) und leert das Feld wieder. „Neues Produkt“
+ * bleibt als Dialog neben dem Feld (wie beim Kunden-Picker, damit der Fokus nicht verloren geht).
  *
- * `autoFocus` (Phase 13b, Task 3) — "+ Produkt auswählen" in `LineItemsEditor` legt eine
- * neue Zeile an und will deren Suchfeld sofort fokussieren, OHNE ein zweites Suchfeld zu
- * bauen: ein Effekt mit leerem Deps-Array fokussiert das bestehende Suchfeld einmalig
- * beim Mount (ein spaeteres Aendern der Prop loest KEINEN erneuten Fokus aus — passend
- * zum "einmalig beim Anlegen"-Verhalten). `.focus()` triggert den bestehenden
- * `onFocus`-Handler (`setOpen(true)`) automatisch, wie ein manueller Klick auch.
+ * `autoFocus`: „+ Produkt auswählen“ in `LineItemsEditor` legt eine neue Zeile an und fokussiert
+ * deren Feld einmalig beim Mount (spaetere Aenderungen der Prop fokussieren nicht erneut); der
+ * Fokus oeffnet die Liste wie ein Klick.
  */
-import { useEffect, useRef, useState } from "react";
-import { FloatingPanel } from "@/components/ui/FloatingPanel";
+import { useCallback, useEffect, useRef } from "react";
+import { SearchSelect, type SearchSelectOption } from "@/components/ui/SearchSelect";
 import { NewProductDialog, type InlineProduct } from "./NewProductDialog";
 import { unitLabel } from "@/lib/units";
+import { PRODUCT_OPTIONS_LIMIT } from "@/lib/editor/constants";
+import { productLookupRowsSchema } from "@/schemas/lookup";
 
 export interface ProductOption {
   id: string;
@@ -24,6 +25,17 @@ export interface ProductOption {
   netPriceCents: number;
   taxRate: number;
   articleNumber?: string | null;
+}
+
+function toOption(p: ProductOption): SearchSelectOption {
+  const price = `${(p.netPriceCents / 100).toFixed(2)} € / ${unitLabel(p.unit)}`;
+  return { id: p.id, label: p.name, subtitle: p.articleNumber ? `${p.articleNumber} · ${price}` : price };
+}
+
+async function fetchProducts(query: string, signal?: AbortSignal): Promise<(ProductOption & { isArchived: boolean })[]> {
+  const res = await fetch(`/api/lookup/products?${query}`, { signal, headers: { accept: "application/json" } });
+  if (!res.ok) throw new Error(`Anfrage fehlgeschlagen (${res.status})`);
+  return productLookupRowsSchema.parse(await res.json());
 }
 
 export function ProductPicker({
@@ -40,79 +52,57 @@ export function ProductPicker({
   onCreated?: (p: InlineProduct) => void;
   autoFocus?: boolean;
 }) {
-  const [query, setQuery] = useState("");
-  const [open, setOpen] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const anchorRef = useRef<HTMLDivElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  // Zuletzt gesehene Produkte je Id (Props + Suchtreffer), damit die Wahl den vollen Datensatz liefert.
+  const seen = useRef(new Map<string, ProductOption>());
+  const clientSide = products.length < PRODUCT_OPTIONS_LIMIT;
 
   useEffect(() => {
-    if (autoFocus) inputRef.current?.focus();
+    if (autoFocus) wrapRef.current?.querySelector<HTMLInputElement>('input[role="combobox"]')?.focus();
     // Bewusst nur beim Mount (siehe Modulkommentar) — nicht bei jeder `autoFocus`-Aenderung.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const filtered = query.trim()
-    ? products.filter((p) => p.name.toLowerCase().includes(query.trim().toLowerCase()))
-    : products;
+  const search = useCallback(async (q: string, signal: AbortSignal) => {
+    const rows = await fetchProducts(`q=${encodeURIComponent(q)}`, signal);
+    for (const r of rows) seen.current.set(r.id, r);
+    return rows.map(toOption);
+  }, []);
+
+  const loadByIds = useCallback(async (ids: string[]) => {
+    const rows = await fetchProducts(`ids=${encodeURIComponent(ids.join(","))}`);
+    // Archivierte duerfen nicht mehr uebernommen werden.
+    const active = rows.filter((r) => !r.isArchived);
+    for (const r of active) seen.current.set(r.id, r);
+    return active.map(toOption);
+  }, []);
+
+  const options = clientSide ? products.map(toOption) : undefined;
 
   return (
-    <div>
-      <div ref={anchorRef} className="flex items-center gap-2 whitespace-nowrap">
-        <input
-          ref={inputRef}
-          className="w-full min-w-0 rounded border border-rule px-2 py-1 text-xs text-ink-soft"
+    <div ref={wrapRef} className="flex items-start gap-2">
+      <div className="min-w-0 flex-1">
+        <SearchSelect
+          label="Produkt suchen"
           placeholder="Produkt suchen…"
-          value={query}
-          onFocus={() => setOpen(true)}
-          onKeyDown={(e) => {
-            if (e.key === "Escape" && open) {
-              e.preventDefault();
-              setOpen(false);
-            }
-          }}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setOpen(true);
-          }}
-        />
-        <NewProductDialog
-          taxRates={taxRates}
-          onCreated={(p) => {
-            onCreated?.(p);
-            onPick(p);
-            setQuery("");
-            setOpen(false);
+          value={null}
+          options={options}
+          search={clientSide ? undefined : search}
+          loadByIds={clientSide ? undefined : loadByIds}
+          recentKey={clientSide ? undefined : "product"}
+          onChange={(id) => {
+            const product = id ? (seen.current.get(id) ?? products.find((p) => p.id === id)) : undefined;
+            if (product) onPick(product);
           }}
         />
       </div>
-      {/* Portal + fixed (FloatingPanel): wird vom `overflow-x-auto` der Positionstabelle
-          nicht abgeschnitten und klappt bei Platzmangel nach oben. Klick ausserhalb
-          schliesst (FloatingPanel `onClose`), Esc schliesst im Suchfeld. */}
-      <FloatingPanel
-        anchorRef={anchorRef}
-        open={open && filtered.length > 0}
-        onClose={() => setOpen(false)}
-        matchAnchorWidth
-        className="max-h-48 rounded-md border border-rule bg-sheet text-xs shadow-lg"
-      >
-        <ul>
-          {filtered.slice(0, 30).map((p) => (
-            <li key={p.id}>
-              <button
-                type="button"
-                className="block w-full px-2 py-1.5 text-left hover:bg-pen-wash"
-                onClick={() => {
-                  onPick(p);
-                  setQuery("");
-                  setOpen(false);
-                }}
-              >
-                {p.name} <span className="text-ink-muted">— {(p.netPriceCents / 100).toFixed(2)} € / {unitLabel(p.unit)}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </FloatingPanel>
+      <NewProductDialog
+        taxRates={taxRates}
+        onCreated={(p) => {
+          onCreated?.(p);
+          onPick(p);
+        }}
+      />
     </div>
   );
 }

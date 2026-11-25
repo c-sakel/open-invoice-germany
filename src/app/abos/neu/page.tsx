@@ -1,3 +1,4 @@
+import { PRODUCT_OPTIONS_LIMIT } from "@/lib/editor/constants";
 import Link from "next/link";
 import { dbInternal } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
@@ -17,18 +18,19 @@ export default async function NeuesAboPage() {
 
   const docSettings = await loadDocumentSettings(orgId);
 
-  const [customers, products, emailTemplates] = await Promise.all([
-    dbInternal.customer.findMany({ where: { orgId, isArchived: false }, select: { id: true, name: true, defaultCurrency: true }, orderBy: { name: "asc" } }),
+  const [customerCount, products, emailTemplates] = await Promise.all([
+    dbInternal.customer.count({ where: { orgId, isArchived: false } }),
     dbInternal.product.findMany({
       where: { orgId, isArchived: false },
       select: { id: true, name: true, unit: true, netPriceCents: true, taxRate: true },
       orderBy: { name: "asc" },
+      take: PRODUCT_OPTIONS_LIMIT,
     }),
     // Phase 8b (§43): INVOICE-Vorlagen fuer emailTemplateId (nur relevant bei autoSend).
     dbInternal.emailTemplate.findMany({ where: { orgId, docType: "INVOICE" }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
 
-  if (customers.length === 0) {
+  if (customerCount === 0) {
     return (
       <div className="rounded-lg border border-seal/30 bg-seal/10 p-6 text-sm text-seal">
         Noch keine Kunden angelegt. Lege zuerst einen{" "}
@@ -49,7 +51,6 @@ export default async function NeuesAboPage() {
         <h1 className="text-2xl font-bold tracking-tight">Neues Abo</h1>
       </div>
       <NewRecurringForm
-        customers={customers}
         products={products}
         emailTemplates={emailTemplates}
         defaultAutoFinalize={docSettings.recurringAutoFinalizeDefault}

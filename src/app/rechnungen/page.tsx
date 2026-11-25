@@ -5,7 +5,7 @@ import { getActiveOrg } from "@/lib/org";
 import { dbInternal } from "@/lib/db";
 import { listInvoices, invoiceStatusTabCounts, invoiceListHeadline, type InvoiceListRow } from "@/domain/invoice/list";
 import { availableActions } from "@/domain/document/actions";
-import { applyCustomerComboFilter } from "@/domain/customer/list";
+import { applyCustomerComboFilter, loadComboCustomer } from "@/domain/customer/list";
 import { listPaymentMethods } from "@/domain/payment-method/manage";
 import { listTags } from "@/domain/tag/manage";
 import { tagsForDocuments } from "@/domain/tag/list";
@@ -133,13 +133,12 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
   // deshalb sequenziell statt im selben Promise.all wie unten.
   await applyCustomerComboFilter(org.id, rawFilter);
 
-  const [[result, tabCounts, headline], allPaymentMethods, docSettings, customerOptions, tags] = await Promise.all([
+  const [[result, tabCounts, headline], allPaymentMethods, docSettings, comboCustomer, tags] = await Promise.all([
     loadOverview(org.id, rawFilter, now),
     listPaymentMethods(org.id),
     loadDocumentSettings(org.id),
-    // Fix-Welle S3: `take: 500` (Spec: „bis zu 500 Kunden") — ohne Begrenzung laedt jeder
-    // Seitenaufruf ALLE nicht archivierten Kunden der Organisation in die <datalist>.
-    dbInternal.customer.findMany({ where: { orgId: org.id, isArchived: false }, select: { id: true, name: true }, orderBy: { name: "asc" }, take: 500 }),
+    // Nur der gewaehlte Kunde (Anzeige); die Auswahl sucht serverseitig.
+    loadComboCustomer(org.id, rawFilter),
     // Phase 13d, Task 4: Tag-Filteroptionen (FilterBar-Feld "tag").
     listTags(org.id),
   ]);
@@ -200,10 +199,7 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
       type: "combo",
       name: "customerId",
       label: "Kunde",
-      options: customerOptions.map((c) => ({ value: c.id, label: c.name })),
-      // Fix-Welle S2: zeigt den Kundennamen statt der rohen Id, wenn `?customerId=<cuid>`
-      // ueber einen Link/ein Lesezeichen vorbelegt wurde.
-      displayValue: customerOptions.find((c) => c.id === values.customerId)?.name,
+      selected: comboCustomer,
     },
     { type: "number", name: "minCents", label: "Betrag von", placeholder: "0,00" },
     { type: "number", name: "maxCents", label: "Betrag bis", placeholder: "0,00" },
@@ -248,12 +244,12 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
         const rowTags = tagsByDocId.get(inv.id) ?? [];
         return (
           <>
-            <Link href={detailHref(inv.id)} className="font-medium text-pen hover:underline">
+            <Link prefetch={false} href={detailHref(inv.id)} className="font-medium text-pen hover:underline">
               {inv.number ?? "Entwurf"}
             </Link>
             {origin && (
               <span className="block">
-                <Link href={origin.href} className="text-xs text-ink-muted hover:text-ink-soft hover:underline">
+                <Link prefetch={false} href={origin.href} className="text-xs text-ink-muted hover:text-ink-soft hover:underline">
                   {origin.label}
                 </Link>
               </span>

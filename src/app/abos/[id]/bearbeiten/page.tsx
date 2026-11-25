@@ -1,3 +1,4 @@
+import { PRODUCT_OPTIONS_LIMIT } from "@/lib/editor/constants";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { dbInternal } from "@/lib/db";
@@ -30,6 +31,7 @@ export default async function AboBearbeitenPage({ params }: { params: Promise<{ 
     where: { orgId: org.id, isArchived: false },
     select: { id: true, name: true, unit: true, netPriceCents: true, taxRate: true },
     orderBy: { name: "asc" },
+      take: PRODUCT_OPTIONS_LIMIT,
   });
   const emailTemplates = await dbInternal.emailTemplate.findMany({
     where: { orgId: org.id, docType: "INVOICE" },
@@ -84,7 +86,6 @@ export default async function AboBearbeitenPage({ params }: { params: Promise<{ 
         mode="edit"
         recurringId={id}
         customerName={rec.customer.name}
-        customers={[]}
         products={products}
         emailTemplates={emailTemplates}
         defaultAutoFinalize={docSettings.recurringAutoFinalizeDefault}

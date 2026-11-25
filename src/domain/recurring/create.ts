@@ -16,8 +16,9 @@ import { RecurringError } from "@/domain/recurring/errors";
 export { RecurringError };
 
 export async function createRecurring(orgId: string, input: CreateRecurringInput) {
-  const customer = await dbInternal.customer.findFirst({ where: { id: input.customerId, orgId }, select: { id: true, defaultCurrency: true, language: true } });
+  const customer = await dbInternal.customer.findFirst({ where: { id: input.customerId, orgId }, select: { id: true, defaultCurrency: true, language: true, isArchived: true } });
   if (!customer) throw new RecurringError("Kunde nicht gefunden.");
+  if (customer.isArchived) throw new RecurringError("Archivierte Kunden koennen keinem neuen Abo zugeordnet werden.");
   if (input.collectiveBilling === true && (input.invoiceHeading === undefined || input.invoiceHeading.trim() === "")) {
     throw new RecurringError("Blockueberschrift ist fuer Sammelrechnungen Pflicht.");
   }
