@@ -42,8 +42,14 @@ export async function loadBrand(orgId: string): Promise<Brand> {
 
 /** Marke je Organisation prozessweit gecacht (60 s); Speichern des Brandings entwertet den Tag `brand:<orgId>`. */
 export const brandTag = (orgId: string): string => `brand:${orgId}`;
-const loadBrandCached = (orgId: string): Promise<Brand> =>
-  unstable_cache(() => loadBrand(orgId), ["brand", orgId], { revalidate: 60, tags: [brandTag(orgId)] })();
+const loadBrandCached = async (orgId: string): Promise<Brand> => {
+  try {
+    return await unstable_cache(() => loadBrand(orgId), ["brand", orgId], { revalidate: 60, tags: [brandTag(orgId)] })();
+  } catch {
+    // Ausserhalb eines Next-Requests (Skripte, Tests) fehlt der Cache: dann direkt laden.
+    return loadBrand(orgId);
+  }
+};
 
 /**
  * M7 (Abschluss-Review Phase 12c, Fix-Welle): vorher in `src/app/layout.tsx` definiert —
