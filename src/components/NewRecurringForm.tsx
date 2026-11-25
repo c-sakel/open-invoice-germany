@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useReducer, useState } from "react";
+import { useMemo, useReducer, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { currencyOptions, currencySymbol } from "@/lib/currencies";
 import { draftLinesFromInitial, draftLinesToPayload, draftReducer, emptyDraft, type InitialLineLike } from "@/lib/editor/draft";
@@ -10,13 +10,10 @@ import { LineItemsEditor } from "@/components/editor/blocks/LineItemsEditor";
 import { EditorCurrencyContext } from "@/components/editor/currency-context";
 import { parseDecimalInput } from "@/lib/money";
 import { PRICE_FIELD_ERROR, toPrice } from "@/lib/editor/parse";
+import { SearchSelect } from "@/components/ui/SearchSelect";
+import { loadActiveCustomersByIds, loadCustomerById, searchCustomers } from "@/components/ui/customer-lookup";
+import { editorCustomerContextSchema } from "@/schemas/lookup";
 
-interface CustomerOption {
-  id: string;
-  name: string;
-  /** Waehrungsvorgabe des Kunden (Customer.defaultCurrency), sonst null. */
-  defaultCurrency?: string | null;
-}
 interface ProductOption {
   id: string;
   name: string;
@@ -54,7 +51,6 @@ export interface RecurringInitialValues {
 }
 
 export function NewRecurringForm({
-  customers,
   products,
   emailTemplates = [],
   defaultAutoFinalize = false,
@@ -67,7 +63,6 @@ export function NewRecurringForm({
   taxRates,
   defaultCurrency = "EUR",
 }: {
-  customers: CustomerOption[];
   products: ProductOption[];
   /** INVOICE-Vorlagen der Organisation (Phase 8b, §43: emailTemplateId — Auswahl fuer den
    *  automatischen Versand, siehe autoSend). */
@@ -100,9 +95,9 @@ export function NewRecurringForm({
 }) {
   const router = useRouter();
   const [title, setTitle] = useState(initial?.title ?? "");
-  // Vorbelegter Kunde: derselbe Datensatz fuer customerId und Initialwaehrung.
-  const presetCustomer = customers[0];
-  const [customerId, setCustomerId] = useState(presetCustomer?.id ?? "");
+  // Kunde: serverseitige Suche (kein Kundenlisten-Prop); die Waehrungsvorgabe kommt beim Wahlen.
+  const [customerId, setCustomerId] = useState("");
+  const customerPick = useRef(0);
   const [interval, setInterval] = useState(initial?.interval ?? "MONTHLY");
   const [intervalCount, setIntervalCount] = useState(String(initial?.intervalCount ?? 1));
   const [startDate, setStartDate] = useState(initial?.startDate ?? todayISO());
@@ -117,7 +112,7 @@ export function NewRecurringForm({
   // Waehrung: Kette Kunde > Einstellung > EUR; manuelle Wahl (currencyTouched) wird durch
   // spaeteren Kundenwechsel nicht ueberschrieben. Beim Bearbeiten gilt der Bestandswert.
   const [currency, setCurrency] = useState(
-    initial?.currency ?? presetCustomer?.defaultCurrency ?? defaultCurrency,
+    initial?.currency ?? defaultCurrency,
   );
   const [currencyTouched, setCurrencyTouched] = useState(mode === "edit");
   const [notes, setNotes] = useState(initial?.notes ?? "");
@@ -126,7 +121,7 @@ export function NewRecurringForm({
   const [draft, dispatch] = useReducer(draftReducer, undefined, () =>
     emptyDraft("INVOICE", {
       taxScheme: "REGULAR",
-      currency: initial?.currency ?? presetCustomer?.defaultCurrency ?? defaultCurrency,
+      currency: initial?.currency ?? defaultCurrency,
       allowedTaxRates: [...taxRates],
       lines: draftLinesFromInitial(initial?.lines, taxRates),
     }),
@@ -141,9 +136,26 @@ export function NewRecurringForm({
     dispatch({ type: "set", field: "currency", value });
   }
 
-  function selectCustomer(id: string) {
-    setCustomerId(id);
-    if (!currencyTouched) changeCurrency(customers.find((c) => c.id === id)?.defaultCurrency ?? defaultCurrency);
+  async function selectCustomer(id: string | null) {
+    setCustomerId(id ?? "");
+    const pick = ++customerPick.current;
+    if (!currencyTouched) changeCurrency(defaultCurrency);
+    if (!id) return;
+    try {
+      const res = await fetch(`/api/lookup/customers/${encodeURIComponent(id)}`, { headers: { accept: "application/json" } });
+      if (!res.ok) return;
+      const ctx = editorCustomerContextSchema.parse(await res.json());
+      if (pick !== customerPick.current) return; // Nur die letzte Auswahl zaehlt.
+      if (ctx.customer.isArchived) {
+        setCustomerId("");
+        setError("Archivierte Kunden können keinem neuen Abo zugeordnet werden.");
+        return;
+      }
+      // Manuelle Waehrungswahl bleibt erhalten.
+      if (!currencyTouched) changeCurrency(ctx.customer.defaultCurrency ?? defaultCurrency);
+    } catch {
+      // Waehrung bleibt bei der Einstellung; der Server wendet die Kette Kunde > Einstellung > EUR an.
+    }
   }
 
   async function submit(e: React.FormEvent) {
@@ -165,6 +177,12 @@ export function NewRecurringForm({
             ? `${PRICE_FIELD_ERROR} – bitte z. B. 1.234,56 oder 0,002 eingeben.`
             : "Menge nicht lesbar – bitte z. B. 2,5 eingeben (höchstens 3 Nachkommastellen).",
       );
+      setBusy(false);
+      return;
+    }
+
+    if (mode === "create" && !customerId) {
+      setError("Bitte einen Kunden wählen.");
       setBusy(false);
       return;
     }
@@ -275,16 +293,20 @@ export function NewRecurringForm({
             <span className={`${input} bg-paper text-ink-soft`}>{customerName}</span>
           </label>
         ) : (
-          <label className="flex flex-col gap-1 text-sm">
+          <div className="flex flex-col gap-1 text-sm">
             <span className="font-medium text-ink-soft">Kunde</span>
-            <select className={input} value={customerId} onChange={(e) => selectCustomer(e.target.value)} required>
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </label>
+            <SearchSelect
+              label="Kunde"
+              placeholder="Kunde suchen…"
+              value={customerId === "" ? null : customerId}
+              onChange={(id) => void selectCustomer(id)}
+              search={searchCustomers}
+              loadByIds={loadActiveCustomersByIds}
+              loadSelected={loadCustomerById}
+              recentKey="customer"
+              required
+            />
+          </div>
         )}
       </div>
 

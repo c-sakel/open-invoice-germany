@@ -1,7 +1,7 @@
 import { PageHeader } from "@/components/PageHeader";
 import { getActiveOrg } from "@/lib/org";
 import { BANK_TABS, listBankPage, type BankTab } from "@/domain/bank/list";
-import { returnSuggestions, type ReturnSuggestion } from "@/domain/bank/return";
+import { returnSuggestionsForRows } from "@/domain/bank/return";
 import { suggestionsForPage } from "@/domain/bank/suggest";
 import { BankTransactionTable } from "@/components/bank/BankTransactionTable";
 import { BankUploadForm } from "@/components/bank/BankUploadForm";
@@ -20,10 +20,10 @@ export default async function BankabgleichPage({ searchParams }: { searchParams:
   const data = await listBankPage(org.id, tab, Number(rawPage ?? "1"));
 
   const suggestions = await suggestionsForPage(org.id, data.rows.filter((r) => r.direction === "CRDT").map((r) => r.id));
-  const returnsById = new Map<string, ReturnSuggestion[]>();
-  for (const r of data.rows) {
-    if (r.status === "RETURN" && r.direction === "DBIT") returnsById.set(r.id, await returnSuggestions(org.id, r.id));
-  }
+  const returnsById = await returnSuggestionsForRows(
+    org.id,
+    data.rows.filter((r) => r.status === "RETURN" && r.direction === "DBIT").map((r) => r.id),
+  );
   const imports = await dbInternal.bankStatementImport.findMany({
     where: { orgId: org.id, id: { in: [...new Set(data.rows.map((r) => r.importId))] } },
     select: { id: true, origin: true },

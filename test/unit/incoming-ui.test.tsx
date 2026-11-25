@@ -341,11 +341,11 @@ describe("Lieferant, Kopfdaten, Notiz, Übergabe", () => {
 
   it("Lieferant: Vorschläge nur bei änderbarem Status, Name escaped", () => {
     const sug = [{ id: "c1", name: "<b>X</b>", customerNumber: "K-1", vatId: null, match: "VAT_ID" as const }];
-    const edit = renderToStaticMarkup(<IncomingSupplier id="i" editable contact={null} suggestions={sug} customers={[]} />);
+    const edit = renderToStaticMarkup(<IncomingSupplier id="i" editable contact={null} suggestions={sug} />);
     expect(edit).toContain("gleiche USt-IdNr.");
     expect(edit).toContain("Als Kontakt anlegen");
     expect(edit).not.toContain("<b>X");
-    const locked = renderToStaticMarkup(<IncomingSupplier id="i" editable={false} contact={{ id: "c1", name: "Muster", customerNumber: null }} suggestions={sug} customers={[]} />);
+    const locked = renderToStaticMarkup(<IncomingSupplier id="i" editable={false} contact={{ id: "c1", name: "Muster", customerNumber: null }} suggestions={sug} />);
     expect(locked).toContain("zuerst zurücksetzen");
     expect(locked).not.toContain("Zuordnen");
   });

@@ -2,7 +2,6 @@ import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { CsvLink } from "@/components/ui/CsvLink";
 import { getActiveOrg } from "@/lib/org";
-import { dbInternal } from "@/lib/db";
 import {
   listDeliveryNotes,
   deliveryNoteStatusTabCounts,
@@ -12,7 +11,7 @@ import {
   type DeliveryNoteListHeadline,
 } from "@/domain/document/list";
 import { availableActions } from "@/domain/document/actions";
-import { applyCustomerComboFilter } from "@/domain/customer/list";
+import { applyCustomerComboFilter, loadComboCustomer } from "@/domain/customer/list";
 import { listTags } from "@/domain/tag/manage";
 import { tagsForDocuments } from "@/domain/tag/list";
 import { TagChips } from "@/components/tags/TagChips";
@@ -68,13 +67,10 @@ export default async function LieferscheinePage({ searchParams }: { searchParams
   const org = await getActiveOrg();
   const rawFilter = parseListQuery(sp);
 
-  const [customerOptions, , tags] = await Promise.all([
-    // Fix-Welle S3: `take: 500` (Spec: „bis zu 500 Kunden") — ohne Begrenzung laedt jeder
-    // Seitenaufruf ALLE nicht archivierten Kunden der Organisation in die <datalist>.
-    dbInternal.customer.findMany({ where: { orgId: org.id, isArchived: false }, select: { id: true, name: true }, orderBy: { name: "asc" }, take: 500 }),
-    // Fix-Welle M2: `customerId` kann ein getippter Kundenname statt einer Id sein — auf
-    // einen exakten Treffer aufloesen, sonst faellt der Rohtext auf `q` zurueck (Spec).
-    applyCustomerComboFilter(org.id, rawFilter),
+  await applyCustomerComboFilter(org.id, rawFilter);
+  const [comboCustomer, tags] = await Promise.all([
+    // Nur der gewaehlte Kunde (Anzeige); die Auswahl sucht serverseitig.
+    loadComboCustomer(org.id, rawFilter),
     // Phase 13d, Task 4: Tag-Filteroptionen (FilterBar-Feld "tag").
     listTags(org.id),
   ]);
@@ -110,10 +106,7 @@ export default async function LieferscheinePage({ searchParams }: { searchParams
       type: "combo",
       name: "customerId",
       label: "Kunde",
-      options: customerOptions.map((c) => ({ value: c.id, label: c.name })),
-      // Fix-Welle S2: zeigt den Kundennamen statt der rohen Id, wenn `?customerId=<cuid>`
-      // ueber einen Link/ein Lesezeichen vorbelegt wurde.
-      displayValue: customerOptions.find((c) => c.id === values.customerId)?.name,
+      selected: comboCustomer,
     },
     { type: "date", name: "from", label: "Von" },
     { type: "date", name: "to", label: "Bis" },
@@ -133,12 +126,12 @@ export default async function LieferscheinePage({ searchParams }: { searchParams
         const rowTags = tagsByDocId.get(n.id) ?? [];
         return (
           <>
-            <Link href={detailHref(n.id)} className="font-medium text-pen hover:underline">
+            <Link prefetch={false} href={detailHref(n.id)} className="font-medium text-pen hover:underline">
               {n.number ?? "(Entwurf)"}
             </Link>
             {origin && (
               <span className="block">
-                <Link href={origin.href} className="text-xs text-ink-muted hover:text-ink-soft hover:underline">
+                <Link prefetch={false} href={origin.href} className="text-xs text-ink-muted hover:text-ink-soft hover:underline">
                   {origin.label}
                 </Link>
               </span>

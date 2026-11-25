@@ -10,14 +10,10 @@ import { useRef, useState } from "react";
 import { createCustomerInline, type CreateCustomerInlineResult } from "@/app/actions/masterdata";
 import { inputCls } from "@/components/forms/fields";
 import type { CustomerInput } from "@/schemas";
+import type { EditorCustomer } from "@/schemas/lookup";
 
-export interface InlineCustomer {
-  id: string;
-  name: string;
-  customerNumber: string | null;
-  email: string | null;
-  defaultPaymentMethodId?: string | null;
-}
+/** Neu angelegter Kunde im Format des Editor-Kontexts (ohne Kontakte/Adressen). */
+export type InlineCustomer = EditorCustomer;
 
 export function NewCustomerDialog({ onCreated }: { onCreated: (c: InlineCustomer) => void }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -63,7 +59,23 @@ export function NewCustomerDialog({ onCreated }: { onCreated: (c: InlineCustomer
       setError(result.error);
       return;
     }
-    onCreated(result.customer);
+    onCreated({
+      id: result.customer.id,
+      name: result.customer.name,
+      customerNumber: result.customer.customerNumber,
+      email: result.customer.email,
+      defaultPaymentMethodId: result.customer.defaultPaymentMethodId ?? null,
+      defaultDiscountPermille: null,
+      defaultCurrency: null,
+      language: null,
+      defaultPaymentTermsDays: null,
+      addressLine1: addressLine1.trim(),
+      postalCode: postalCode.trim(),
+      city: city.trim(),
+      countryCode: "DE",
+      vatId: vatId.trim() || null,
+      isArchived: false,
+    });
     setName("");
     setAddressLine1("");
     setPostalCode("");

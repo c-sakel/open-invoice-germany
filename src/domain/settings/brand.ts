@@ -7,6 +7,7 @@
  * keine Einstellung abschaltbar (§13 AGPL, COMPLIANCE.md).
  */
 import { cache } from "react";
+import { unstable_cache } from "next/cache";
 import { loadBrandingSettings } from "@/domain/settings/branding";
 import type { BrandingSettingsInput } from "@/schemas/settings";
 import { DEFAULT_APP_NAME, DEFAULT_APP_SHORT_NAME } from "@/lib/brand-defaults";
@@ -39,6 +40,17 @@ export async function loadBrand(orgId: string): Promise<Brand> {
   return resolveBrand(await loadBrandingSettings(orgId));
 }
 
+/** Marke je Organisation prozessweit gecacht (60 s); Speichern des Brandings entwertet den Tag `brand:<orgId>`. */
+export const brandTag = (orgId: string): string => `brand:${orgId}`;
+const loadBrandCached = async (orgId: string): Promise<Brand> => {
+  try {
+    return await unstable_cache(() => loadBrand(orgId), ["brand", orgId], { revalidate: 60, tags: [brandTag(orgId)] })();
+  } catch {
+    // Ausserhalb eines Next-Requests (Skripte, Tests) fehlt der Cache: dann direkt laden.
+    return loadBrand(orgId);
+  }
+};
+
 /**
  * M7 (Abschluss-Review Phase 12c, Fix-Welle): vorher in `src/app/layout.tsx` definiert —
  * `login/page.tsx` importierte `safeBrand` von dort, ein Nicht-Next-Export auf einem
@@ -56,7 +68,7 @@ export async function loadBrand(orgId: string): Promise<Brand> {
 export const getOrgAndBrand = cache(async (): Promise<{ org: Awaited<ReturnType<typeof getActiveOrg>>; brand: Brand } | null> => {
   try {
     const org = await getActiveOrg();
-    const brand = await loadBrand(org.id);
+    const brand = await loadBrandCached(org.id);
     return { org, brand };
   } catch {
     return null;

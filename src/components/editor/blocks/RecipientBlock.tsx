@@ -12,11 +12,12 @@
  * `TakeOverPrompt` existiert nur fuer INVOICE/DOCUMENT (Lieferscheine kennen die
  * Funktion nicht).
  */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { clampTaxRate, type DraftState, type DraftAction, type DraftLine, type LineType } from "@/lib/editor/draft";
 import { newLineKey } from "@/lib/editor/ids";
 import type { EditorMode } from "@/lib/editor/constants";
-import { CustomerPicker, type CustomerOption } from "../CustomerPicker";
+import { CustomerPicker } from "../CustomerPicker";
+import type { EditorCustomer, EditorCustomerContext } from "@/schemas/lookup";
 import { EditorField } from "../EditorField";
 import { addressCountryLine } from "@/lib/countries";
 import { inputCls } from "@/components/forms/fields";
@@ -25,17 +26,8 @@ import { nextDiscountOnCustomerChange } from "@/lib/forms/discount-prefill";
 import { fromCents, fromMilli, fromPermille, fromPrice } from "@/lib/editor/parse";
 import { TakeOverPrompt, type TakeOverPrefillDTO, type TakeOverLineDTO } from "@/components/TakeOverPrompt";
 
-/** `CustomerOption` (Task 3, `CustomerPicker.tsx`) traegt keine Anschrift — fuer die
- *  read-only Anschrift-Vorschau erweitert um optionale Adressfelder (Task 6 liefert sie
- *  im Prisma-`select` mit; ohne sie bleibt die Vorschau schlicht leer). */
-export interface RecipientCustomerOption extends CustomerOption {
-  addressLine1?: string | null;
-  postalCode?: string | null;
-  city?: string | null;
-  countryCode?: string | null;
-  /** USt-IdNr. des Kunden — nur fuer die Kleinbetrags-Kennzeichnung (Fernverkauf an EU-Privatkunden). */
-  vatId?: string | null;
-}
+/** Kunde mit Vorgaben und Anschrift (Antwort des Kundenkontexts, `EditorCustomer`). */
+export type RecipientCustomerOption = EditorCustomer;
 
 export interface ContactOption {
   id: string;
@@ -87,6 +79,7 @@ export function RecipientBlock({
   customers,
   contacts = [],
   addresses = [],
+  onCustomerContext,
   offerLastDocument = false,
 }: {
   mode: EditorMode;
@@ -96,6 +89,8 @@ export function RecipientBlock({
   customers: RecipientCustomerOption[];
   contacts?: ContactOption[];
   addresses?: AddressOption[];
+  /** Meldet den frisch geladenen Kundenkontext an den Editor (Kontakte/Adressen je Kunde). */
+  onCustomerContext?: (ctx: EditorCustomerContext) => void;
   offerLastDocument?: boolean;
 }) {
   // Fix-Welle B6-Muster: der zuletzt AUTOMATISCH angewendete Rabatt-Default — nur wenn
@@ -105,7 +100,8 @@ export function RecipientBlock({
 
   const selectedCustomer = customers.find((c) => c.id === draft.customerId);
   const customerContacts = contacts.filter((c) => c.customerId === draft.customerId);
-  const customerAddresses = addresses.filter((a) => a.customerId === draft.customerId);
+  // Lieferschein: Lieferadresse ist SHIPPING oder OTHER (BILLING lehnt die Domain ab).
+  const customerAddresses = addresses.filter((a) => a.customerId === draft.customerId && (mode !== "DELIVERY_NOTE" || a.type !== "BILLING"));
   const hasDefaultContact = customerContacts.some((c) => c.isDefault);
   const hasDefaultBillingAddress = customerAddresses.some((a) => a.type === "BILLING" && a.isDefault);
   // Nur fuer DELIVERY_NOTE verwendet (INVOICEs Lieferadresse-Select nutzt statt der
@@ -113,30 +109,40 @@ export function RecipientBlock({
   // Filterung nach `type`.
   const hasDefaultShippingAddress = customerAddresses.some((a) => a.isDefault);
 
-  function selectCustomer(id: string, customer: CustomerOption | null) {
+  // Der Kontext-Abruf ist asynchron: den zum Antwortzeitpunkt aktuellen Entwurf lesen, nicht den des Renders.
+  const draftRef = useRef(draft);
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
+
+  function selectCustomer(ctx: EditorCustomerContext) {
+    const draft = draftRef.current;
+    const customer = ctx.customer;
+    const id = customer.id;
+    onCustomerContext?.(ctx);
     dispatch({ type: "set", field: "customerId", value: id });
     // Ansprechpartner/Adressen gehoeren zum ALTEN Kunden — beim Kundenwechsel
     // zuruecksetzen, wenn sie nicht (mehr) zum neuen passen.
-    if (draft.contactPersonId && !contacts.some((c) => c.id === draft.contactPersonId && c.customerId === id)) {
+    if (draft.contactPersonId && !ctx.contacts.some((c) => c.id === draft.contactPersonId)) {
       dispatch({ type: "set", field: "contactPersonId", value: "" });
     }
-    if (draft.billingAddressId && !addresses.some((a) => a.id === draft.billingAddressId && a.customerId === id)) {
+    if (draft.billingAddressId && !ctx.addresses.some((a) => a.id === draft.billingAddressId)) {
       dispatch({ type: "set", field: "billingAddressId", value: "" });
     }
-    if (draft.shippingAddressId && !addresses.some((a) => a.id === draft.shippingAddressId && a.customerId === id)) {
+    if (draft.shippingAddressId && !ctx.addresses.some((a) => a.id === draft.shippingAddressId)) {
       dispatch({ type: "set", field: "shippingAddressId", value: "" });
     }
     if (!isEdit) {
       if (mode === "INVOICE" || mode === "DOCUMENT") {
-        dispatch({ type: "suggestCurrency", value: customer?.defaultCurrency ?? "" });
+        dispatch({ type: "suggestCurrency", value: customer.defaultCurrency ?? "" });
       }
       // Phase 16b: Belegsprache folgt dem Kunden (Server-Kette: Kunde, sonst de); eine vom
       // Nutzer gewaehlte Sprache bleibt (languageTouched).
-      dispatch({ type: "suggestLanguage", value: customer?.language === "en" ? "en" : "" });
+      dispatch({ type: "suggestLanguage", value: customer.language === "en" ? "en" : "" });
       if (mode === "INVOICE") {
-        dispatch({ type: "set", field: "paymentMethodId", value: customer?.defaultPaymentMethodId ?? "" });
+        dispatch({ type: "set", field: "paymentMethodId", value: customer.defaultPaymentMethodId ?? "" });
       }
-      const nextDiscount = nextDiscountOnCustomerChange(draft.documentDiscountPercent, appliedDefaultDiscount, discountPercentOf(customer ?? undefined));
+      const nextDiscount = nextDiscountOnCustomerChange(draft.documentDiscountPercent, appliedDefaultDiscount, discountPercentOf(customer));
       if (nextDiscount.apply) {
         dispatch({ type: "set", field: "documentDiscountPercent", value: nextDiscount.value });
         setAppliedDefaultDiscount(nextDiscount.value);
@@ -176,7 +182,7 @@ export function RecipientBlock({
         {/* Kein `disabled={isEdit}`: auch bei Belegen mit Status DRAFT (der einzige
             bearbeitbare Zustand, siehe z. B. rechnungen/[id]/bearbeiten/page.tsx) laesst
             sich der Kunde im Editor aendern. */}
-        {() => <CustomerPicker customers={customers} value={draft.customerId} onChange={selectCustomer} />}
+        {() => <CustomerPicker value={draft.customerId} initialCustomer={selectedCustomer ?? null} onChange={selectCustomer} />}
       </EditorField>
 
       {selectedCustomer && (selectedCustomer.addressLine1 || selectedCustomer.city) && (

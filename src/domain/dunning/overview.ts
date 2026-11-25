@@ -20,7 +20,14 @@ export interface DunningOverviewFilter {
   /** Filtert auf die AKTUELLE Mahnstufe (order der letzten erstellten Mahnung); Rechnungen
    *  ohne bisherige Mahnung (currentStage === null) matchen nie. */
   stageOrder?: number;
+  /** Seitenweise Ausgabe (Standard 0 / 50); Widgets und Summen laufen immer ueber ALLE Treffer. */
+  offset?: number;
+  limit?: number;
 }
+
+export const DUNNING_PAGE_SIZE = 50;
+/** Fuer REST/MCP: alle Zeilen ohne Seitenschnitt. */
+export const DUNNING_ALL_ROWS = Number.MAX_SAFE_INTEGER;
 
 /** Feste Vier-Bucket-Form (Phase 6, unveraendert nach aussen) — wird lokal aus dem
  *  generalisierten `agingBuckets`-Array (Fix-Runde 1, Task 4) zusammengesetzt. */
@@ -59,6 +66,10 @@ export interface DunningOverview {
     aging: AgingBuckets;
   };
   rows: DunningOverviewRow[];
+  /** Anzahl aller Treffer (nicht nur der Seite). */
+  total: number;
+  offset: number;
+  limit: number;
 }
 
 export async function loadDunningOverview(orgId: string, now: Date = new Date(), filter: DunningOverviewFilter = {}): Promise<DunningOverview> {
@@ -139,13 +150,73 @@ export async function loadDunningOverview(orgId: string, now: Date = new Date(),
     candidates.push({ inv, openCents, dueDate, daysOverdue, last, currentStage });
   }
 
-  // EIN Batch statt einer emailLog.aggregate()-Abfrage je Rechnung: groupBy ueber (docType,
-  // docId) fuer alle betroffenen invoiceIds/dunningIds auf einmal, danach in-memory je
-  // Rechnung auf das Maximum aus ihrer eigenen INVOICE-Zeile und allen ihren DUNNING-Zeilen
-  // reduziert.
-  const invoiceIds = candidates.map((c) => c.inv.id);
+  const rows: DunningOverviewRow[] = [];
+  let openTotalCents = 0;
+
+  for (const { inv, openCents, dueDate, daysOverdue, last, currentStage } of candidates) {
+    const schedule = dunningScheduleFor({
+      invoiceDueDate: dueDate,
+      lastDunning: last ? { order: currentStage!.order, dueDate: last.dueDate, sentAt: last.sentAt } : null,
+      stages,
+      reachedStageIds: reachedStageIds(inv.dunnings),
+      gracePeriodDays: settings.gracePeriodDays,
+      now,
+    });
+
+    rows.push({
+      invoiceId: inv.id,
+      number: inv.number,
+      customerName: inv.customer.name,
+      grossCents: inv.grossTotalCents,
+      paidCents: inv.paidAmountCents,
+      openCents,
+      dueDate,
+      daysOverdue,
+      currentStage,
+      nextStage: schedule.nextStage ? { name: schedule.nextStage.name, order: schedule.nextStage.order } : null,
+      nextDunningAt: schedule.dueAt,
+      dunningState: inv.dunningState,
+      pausedUntil: inv.dunningPausedUntil,
+      lastContactAt: null,
+    });
+
+    openTotalCents += openCents;
+  }
+
+  // Aging-Buckets ueber den geteilten, generalisierten Helfer (Task-4-Brief, Fix-Runde 1):
+  // dieselbe Grenzwahl (7/30/60 Tage, minDays: 1 -> daysOverdue===0 zaehlt nicht, §25) wie
+  // bisher; das Array-Ergebnis wird hier in die feste Vier-Schluessel-Form zurueckgebaut,
+  // damit sich am oeffentlichen `DunningOverview`-Vertrag (Route/OverviewWidgets/Tests)
+  // nichts aendert.
+  const agingArray = agingBuckets(
+    rows.map((r) => ({ dueDate: r.dueDate, cents: r.openCents })),
+    now,
+    [7, 30, 60],
+    { minDays: 1 },
+  );
+  const aging: AgingBuckets = {
+    d1_7: { count: agingArray[0].count, cents: agingArray[0].cents },
+    d8_30: { count: agingArray[1].count, cents: agingArray[1].cents },
+    d31_60: { count: agingArray[2].count, cents: agingArray[2].cents },
+    d60plus: { count: agingArray[3].count, cents: agingArray[3].cents },
+  };
+
+  // Stabile Reihenfolge fuer das Offset-Blaettern: bei gleichem Ueberfaelligkeitstag entscheidet die Id.
+  rows.sort((a, b) => b.daysOverdue - a.daysOverdue || (a.invoiceId < b.invoiceId ? -1 : a.invoiceId > b.invoiceId ? 1 : 0));
+
+  const offset = Math.max(0, Math.floor(filter.offset ?? 0));
+  const limit = Math.max(1, Math.floor(filter.limit ?? DUNNING_PAGE_SIZE));
+  const pageRows = rows.slice(offset, offset + limit);
+
+  // EIN Batch statt einer emailLog.aggregate()-Abfrage je Rechnung, nur fuer die Zeilen der
+  // angeforderten Seite: groupBy ueber (docType, docId) fuer deren invoiceIds/dunningIds, danach
+  // in-memory je Rechnung auf das Maximum aus ihrer eigenen INVOICE-Zeile und allen ihren
+  // DUNNING-Zeilen reduziert.
+  const pageIds = new Set(pageRows.map((r) => r.invoiceId));
+  const pageCandidates = candidates.filter((c) => pageIds.has(c.inv.id));
+  const invoiceIds = pageCandidates.map((c) => c.inv.id);
   const dunningToInvoice = new Map<string, string>();
-  for (const c of candidates) {
+  for (const c of pageCandidates) {
     for (const d of c.inv.dunnings) dunningToInvoice.set(d.id, c.inv.id);
   }
   const dunningIds = Array.from(dunningToInvoice.keys());
@@ -179,61 +250,14 @@ export async function loadDunningOverview(orgId: string, now: Date = new Date(),
     }
   }
 
-  const rows: DunningOverviewRow[] = [];
-  let openTotalCents = 0;
 
-  for (const { inv, openCents, dueDate, daysOverdue, last, currentStage } of candidates) {
-    const schedule = dunningScheduleFor({
-      invoiceDueDate: dueDate,
-      lastDunning: last ? { order: currentStage!.order, dueDate: last.dueDate, sentAt: last.sentAt } : null,
-      stages,
-      reachedStageIds: reachedStageIds(inv.dunnings),
-      gracePeriodDays: settings.gracePeriodDays,
-      now,
-    });
-
-    rows.push({
-      invoiceId: inv.id,
-      number: inv.number,
-      customerName: inv.customer.name,
-      grossCents: inv.grossTotalCents,
-      paidCents: inv.paidAmountCents,
-      openCents,
-      dueDate,
-      daysOverdue,
-      currentStage,
-      nextStage: schedule.nextStage ? { name: schedule.nextStage.name, order: schedule.nextStage.order } : null,
-      nextDunningAt: schedule.dueAt,
-      dunningState: inv.dunningState,
-      pausedUntil: inv.dunningPausedUntil,
-      lastContactAt: lastContactByInvoiceId.get(inv.id) ?? null,
-    });
-
-    openTotalCents += openCents;
-  }
-
-  // Aging-Buckets ueber den geteilten, generalisierten Helfer (Task-4-Brief, Fix-Runde 1):
-  // dieselbe Grenzwahl (7/30/60 Tage, minDays: 1 -> daysOverdue===0 zaehlt nicht, §25) wie
-  // bisher; das Array-Ergebnis wird hier in die feste Vier-Schluessel-Form zurueckgebaut,
-  // damit sich am oeffentlichen `DunningOverview`-Vertrag (Route/OverviewWidgets/Tests)
-  // nichts aendert.
-  const agingArray = agingBuckets(
-    rows.map((r) => ({ dueDate: r.dueDate, cents: r.openCents })),
-    now,
-    [7, 30, 60],
-    { minDays: 1 },
-  );
-  const aging: AgingBuckets = {
-    d1_7: { count: agingArray[0].count, cents: agingArray[0].cents },
-    d8_30: { count: agingArray[1].count, cents: agingArray[1].cents },
-    d31_60: { count: agingArray[2].count, cents: agingArray[2].cents },
-    d60plus: { count: agingArray[3].count, cents: agingArray[3].cents },
-  };
-
-  rows.sort((a, b) => b.daysOverdue - a.daysOverdue);
+  for (const r of pageRows) r.lastContactAt = lastContactByInvoiceId.get(r.invoiceId) ?? null;
 
   return {
     widgets: { overdueCount: rows.length, openTotalCents, aging },
-    rows,
+    rows: pageRows,
+    total: rows.length,
+    offset,
+    limit,
   };
 }

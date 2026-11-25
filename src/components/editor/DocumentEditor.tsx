@@ -7,13 +7,14 @@
  * PDF-Vorschau-Sheet (Task 5). Noch NICHT in eine Seite eingebunden — das uebernimmt
  * Task 6.
  */
-import { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { draftReducer, emptyDraft, toInvoicePayload, toDocumentPayload, toDeliveryNotePayload, validateDraft, type DraftState } from "@/lib/editor/draft";
 import { computeDraftTotals } from "@/lib/editor/totals";
 import type { EditorMode } from "@/lib/editor/constants";
 import type { EffectivePrintOptions } from "@/lib/pdf/theme";
 import type { PrintOptionsOverride } from "@/schemas";
+import type { EditorCustomerContext } from "@/schemas/lookup";
 import type { LayoutId } from "@/lib/pdf/layouts/ids";
 import type { ProductOption } from "./ProductPicker";
 import type { AttachmentItem } from "@/components/AttachmentPanel";
@@ -124,15 +125,15 @@ function flattenIssues(issues: SaveErrorIssue[] | undefined): string[] {
 export function DocumentEditor({
   mode,
   initial,
-  customers,
+  customers: initialCustomers,
   products,
   taxRates,
   paymentMethods = [],
   invoiceDueDays,
   defaultCurrency,
   autoDeliveryDate = true,
-  contacts = [],
-  addresses = [],
+  contacts: initialContacts = [],
+  addresses: initialAddresses = [],
   layouts,
   effectivePrintOptions,
   printOverride,
@@ -151,6 +152,17 @@ export function DocumentEditor({
   // damit sie noch IN DERSELBEN Sitzung ueber die Produktsuche wiederverwendbar sind,
   // ohne einen Seiten-Reload — die `products`-Prop selbst ist unveraendert vom Server.
   const [productList, setProductList] = useState<ProductOption[]>(products);
+  // Kundenkontext: nur vorbelegte bzw. im Editor gewaehlte Kunden samt Ansprechpartnern/Adressen
+  // (kein Gesamtbestand); jede Auswahl im Kunden-Picker ersetzt den Eintrag dieses Kunden.
+  const [customers, setCustomers] = useState<RecipientCustomerOption[]>(initialCustomers);
+  const [contacts, setContacts] = useState<ContactOption[]>(initialContacts);
+  const [addresses, setAddresses] = useState<AddressOption[]>(initialAddresses);
+  const registerCustomerContext = useCallback((ctx: EditorCustomerContext) => {
+    const id = ctx.customer.id;
+    setCustomers((list) => [...list.filter((c) => c.id !== id), ctx.customer]);
+    setContacts((list) => [...list.filter((c) => c.customerId !== id), ...ctx.contacts.map((c) => ({ ...c, customerId: id }))]);
+    setAddresses((list) => [...list.filter((a) => a.customerId !== id), ...ctx.addresses.map((a) => ({ ...a, customerId: id }))]);
+  }, []);
   const isEdit = Boolean(draft.id);
   // Anzeige: Belegwert > Kundenvorgabe (steckt im Draft, sobald gewaehlt) > Einstellung > EUR.
   const displayCurrency = draft.currency || defaultCurrency || "EUR";
@@ -386,6 +398,7 @@ export function DocumentEditor({
           customers={customers}
           contacts={contacts}
           addresses={addresses}
+          onCustomerContext={registerCustomerContext}
           offerLastDocument={offerLastDocument}
         />
         <MetaBlock mode={mode} isEdit={isEdit} draft={draft} dispatch={dispatch} customers={customers} paymentMethods={paymentMethods} invoiceDueDays={invoiceDueDays} taxCents={totals.taxCents} />

@@ -27,8 +27,18 @@ const initial = (over: Partial<RecurringInitialValues> = {}): RecurringInitialVa
 
 const form = (init?: RecurringInitialValues) =>
   renderToStaticMarkup(
-    <NewRecurringForm customers={[{ id: "c1", name: "Kunde" }]} products={[]} taxRates={[19, 7, 0]} mode={init ? "edit" : "create"} recurringId="r1" customerName="Kunde" initial={init} />,
+    <NewRecurringForm products={[]} taxRates={[19, 7, 0]} mode={init ? "edit" : "create"} recurringId="r1" customerName="Kunde" initial={init} />,
   );
+
+describe("Abo-Formular: Kunde", () => {
+  it("rendert eine Such-Auswahl mit Pflichtfeld, keine Kundenliste", () => {
+    const html = form();
+    expect(html).not.toMatch(/Kunde<\/span><select/);
+    expect(html).not.toContain('value="c1"');
+    expect(html).toMatch(/<input[^>]*aria-label="Kunde"[^>]*/);
+    expect(html).toMatch(/<input[^>]*role="combobox"[^>]*required|<input[^>]*required[^>]*role="combobox"/);
+  });
+});
 
 describe("Abo-Formular: Sammelrechnung", () => {
   it("zeigt den Schalter, aber ohne Schalter kein Ueberschriftsfeld", () => {
