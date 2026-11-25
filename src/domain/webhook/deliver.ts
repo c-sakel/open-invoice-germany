@@ -18,6 +18,7 @@ import { dbInternal } from "@/lib/db";
 import { decryptSecret, WEBHOOK_SECRET_PURPOSE } from "@/lib/crypto/secrets";
 import { assertPublicHttpsUrl, SsrfBlockedError } from "./ssrf";
 import { buildSignatureHeader } from "./sign";
+import { onWebhookDead } from "@/domain/notifications/hooks";
 import type { WebhookDelivery, WebhookEndpoint } from "@/generated/prisma/client";
 
 export const BACKOFF_MINUTES = [1, 5, 30, 120, 600] as const;
@@ -47,6 +48,12 @@ export function buildDeliveryBody(delivery: Pick<WebhookDelivery, "id" | "event"
   });
 }
 
+/** Meldet eine endgueltig gescheiterte Zustellung; die Test-Zustellung ist ausgenommen (das Ergebnis sieht der Bediener direkt). */
+async function alertDead(delivery: DeliveryWithEndpoint, now: Date): Promise<void> {
+  if (delivery.event === "webhook.test") return;
+  await onWebhookDead(delivery.orgId, { endpointId: delivery.endpointId, deliveryId: delivery.id, event: delivery.event, at: now });
+}
+
 /** Fuehrt GENAU EINEN Zustellversuch fuer `delivery` aus und verbucht das Ergebnis
  *  (Status/attempts/nextAttemptAt/lastError) in der DB. Wiederverwendet von
  *  `runWebhookDeliveries` (Scheduler), `sendTestDelivery` und `replayWebhookDelivery`. */
@@ -60,6 +67,7 @@ export async function attemptDelivery(
       where: { id: delivery.id },
       data: { status: "DEAD", lastAttemptAt: now, lastError: "Endpunkt ist deaktiviert." },
     });
+    await alertDead(delivery, now);
     return { outcome: "dead", status: null, error: "Endpunkt ist deaktiviert." };
   }
 
@@ -75,6 +83,7 @@ export async function attemptDelivery(
       where: { id: delivery.id },
       data: { status: "DEAD", lastAttemptAt: now, lastError: message },
     });
+    await alertDead(delivery, now);
     return { outcome: "dead", status: null, error: message };
   }
 
@@ -87,6 +96,7 @@ export async function attemptDelivery(
       where: { id: delivery.id },
       data: { status: "DEAD", lastAttemptAt: now, lastError: message.slice(0, ERROR_MAX_CHARS) },
     });
+    await alertDead(delivery, now);
     return { outcome: "dead", status: null, error: message };
   }
 
@@ -151,6 +161,7 @@ export async function attemptDelivery(
       where: { id: delivery.id },
       data: { status: "DEAD", attempts, responseCode: status, responseBody, lastAttemptAt: now, lastError },
     });
+    await alertDead(delivery, now);
     return { outcome: "dead", status, error: lastError };
   }
 

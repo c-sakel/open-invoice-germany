@@ -18,6 +18,7 @@ import { isOssBuyer } from "@/domain/reporting/oss-calc";
 import { checkOssNotifications } from "@/domain/reporting/oss-notify";
 import { checkKuNotifications } from "@/domain/reporting/ku-notify";
 import { createNotification } from "@/domain/notifications/create";
+import { berlinDateKey } from "@/lib/berlin-time";
 import { isMandatoryNotificationType, loadNotificationSettings, type NotificationType } from "@/domain/notifications/settings";
 
 async function safeNotify(orgId: string, type: NotificationType, fn: () => Promise<unknown>): Promise<void> {
@@ -321,4 +322,49 @@ export async function notifyOnlinePaymentWithinTx(tx: Prisma.TransactionClient, 
     },
     select: { id: true },
   });
+}
+
+/**
+ * Hintergrundaufgabe zweimal hintereinander fehlgeschlagen (scheduler/runner.ts). Pflicht-Alarm fuer JEDE
+ * Organisation (der Lauf ist instanzweit), eine Meldung je Aufgabe und Berliner Tag. Nur feste Bausteine,
+ * nie Servertext.
+ */
+export async function onSchedulerFailed(job: string, runId: string, at: Date): Promise<void> {
+  try {
+    const orgs = await dbInternal.organization.findMany({ select: { id: true } });
+    for (const org of orgs) {
+      await safeNotify(org.id, "SCHEDULER_FAILED", () =>
+        createNotification({
+          orgId: org.id,
+          type: "SCHEDULER_FAILED",
+          title: `Hintergrundaufgabe "${job}" fehlgeschlagen`,
+          body: "Die Aufgabe ist zweimal hintereinander fehlgeschlagen. Details unter Einstellungen, Automatisierung.",
+          link: "/einstellungen/automatisierung",
+          entityType: "SCHEDULER_RUN",
+          entityId: runId,
+          dedupeKey: `SCHEDULER_FAILED:${job}:${berlinDateKey(at)}`,
+          at,
+        }),
+      );
+    }
+  } catch (e) {
+    console.error("notifications hook: SCHEDULER_FAILED fehlgeschlagen", e);
+  }
+}
+
+/** Webhook-Zustellung endgueltig gescheitert (DEAD). Eine Meldung je Endpunkt und Berliner Tag. */
+export async function onWebhookDead(orgId: string, input: { endpointId: string; deliveryId: string; event: string; at: Date }): Promise<void> {
+  await safeNotify(orgId, "WEBHOOK_DEAD", () =>
+    createNotification({
+      orgId,
+      type: "WEBHOOK_DEAD",
+      title: "Webhook endgültig nicht zugestellt",
+      body: `Ereignis ${input.event} konnte nicht zugestellt werden. Das Zustellprotokoll zeigt den Grund.`,
+      link: "/einstellungen/webhooks",
+      entityType: "WEBHOOK_DELIVERY",
+      entityId: input.deliveryId,
+      dedupeKey: `WEBHOOK_DEAD:${input.endpointId}:${berlinDateKey(input.at)}`,
+      at: input.at,
+    }),
+  );
 }

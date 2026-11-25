@@ -35,6 +35,8 @@ export const NOTIFICATION_TYPES = {
   INBOUND_MAIL_ERROR: "Postfach-Abruf gestört",
   BANK_FETCH_ACTION: "Kontoabruf braucht Ihre Freigabe",
   BANK_FETCH_ERROR: "Kontoabruf gestört",
+  SCHEDULER_FAILED: "Hintergrundaufgabe fehlgeschlagen",
+  WEBHOOK_DEAD: "Webhook endgültig nicht zugestellt",
 } as const;
 
 export type NotificationType = keyof typeof NOTIFICATION_TYPES;
@@ -46,7 +48,20 @@ export const ALL_NOTIFICATION_TYPES = Object.keys(NOTIFICATION_TYPES) as Notific
  * von gespeicherten `enabledTypes` (auch fuer Bestandszeilen, die diese Typen nie kannten),
  * und sind in der Einstellungs-UI nicht abwaehlbar.
  */
-export const MANDATORY_NOTIFICATION_TYPES: readonly NotificationType[] = ["ARCHIVE_TAMPERED", "ARCHIVE_FAILED", "CHAIN_BROKEN", "FX_FETCH_FAILED", "RECURRING_NOT_SENT"];
+export const MANDATORY_NOTIFICATION_TYPES: readonly NotificationType[] = ["ARCHIVE_TAMPERED", "ARCHIVE_FAILED", "CHAIN_BROKEN", "FX_FETCH_FAILED", "RECURRING_NOT_SENT", "SCHEDULER_FAILED"];
+
+/**
+ * Typen, die (bei aktivem `alarmEmail`) zusaetzlich sofort per E-Mail gemeldet werden: Pflicht-Alarme
+ * plus Zustell-/Betriebsstoerungen.
+ */
+export const ALARM_MAIL_TYPES: readonly NotificationType[] = [
+  ...MANDATORY_NOTIFICATION_TYPES,
+  "RECURRING_FAILED",
+  "WEBHOOK_DEAD",
+  "EMAIL_BOUNCED",
+  "DUNNING_NOT_SENT",
+  "POSTAL_FAILED",
+];
 
 export function isMandatoryNotificationType(type: NotificationType): boolean {
   return MANDATORY_NOTIFICATION_TYPES.includes(type);
@@ -60,6 +75,18 @@ export interface NotificationSettingsValue {
   enabledTypes: NotificationType[];
   emailDigest: boolean;
   lastDigestAt: Date | null;
+  alarmEmail: boolean;
+  lastAlarmMailAt: Date | null;
+}
+
+function toValue(row: { enabledTypesJson: string; emailDigest: boolean; lastDigestAt: Date | null; alarmEmail: boolean; lastAlarmMailAt: Date | null }): NotificationSettingsValue {
+  return {
+    enabledTypes: parseEnabledTypes(row.enabledTypesJson),
+    emailDigest: row.emailDigest,
+    lastDigestAt: row.lastDigestAt,
+    alarmEmail: row.alarmEmail,
+    lastAlarmMailAt: row.lastAlarmMailAt,
+  };
 }
 
 function parseEnabledTypes(json: string): NotificationType[] {
@@ -80,19 +107,21 @@ function parseEnabledTypes(json: string): NotificationType[] {
 export async function loadNotificationSettings(orgId: string): Promise<NotificationSettingsValue> {
   const existing = await dbInternal.notificationSettings.findUnique({ where: { orgId } });
   if (existing) {
-    return { enabledTypes: parseEnabledTypes(existing.enabledTypesJson), emailDigest: existing.emailDigest, lastDigestAt: existing.lastDigestAt };
+    return toValue(existing);
   }
   const row = await dbInternal.notificationSettings.upsert({
     where: { orgId },
     create: { orgId, enabledTypesJson: JSON.stringify(ALL_NOTIFICATION_TYPES), emailDigest: false },
     update: {},
   });
-  return { enabledTypes: parseEnabledTypes(row.enabledTypesJson), emailDigest: row.emailDigest, lastDigestAt: row.lastDigestAt };
+  return toValue(row);
 }
 
 export interface SaveNotificationSettingsInput {
   enabledTypes: NotificationType[];
   emailDigest: boolean;
+  /** Alarme sofort per E-Mail; fehlt der Wert, bleibt die Einstellung unveraendert. */
+  alarmEmail?: boolean;
 }
 
 /** Speichert die Benachrichtigungs-Einstellungen (Upsert, da anfangs keine Zeile existiert). */
@@ -100,13 +129,18 @@ export async function saveNotificationSettings(orgId: string, input: SaveNotific
   const enabledTypesJson = JSON.stringify(withMandatory(input.enabledTypes.filter((t) => ALL_NOTIFICATION_TYPES.includes(t))));
   const row = await dbInternal.notificationSettings.upsert({
     where: { orgId },
-    create: { orgId, enabledTypesJson, emailDigest: input.emailDigest },
-    update: { enabledTypesJson, emailDigest: input.emailDigest },
+    create: { orgId, enabledTypesJson, emailDigest: input.emailDigest, ...(input.alarmEmail === undefined ? {} : { alarmEmail: input.alarmEmail }) },
+    update: { enabledTypesJson, emailDigest: input.emailDigest, ...(input.alarmEmail === undefined ? {} : { alarmEmail: input.alarmEmail }) },
   });
-  return { enabledTypes: parseEnabledTypes(row.enabledTypesJson), emailDigest: row.emailDigest, lastDigestAt: row.lastDigestAt };
+  return toValue(row);
 }
 
 /** Setzt `lastDigestAt` nach einem erfolgreich versendeten Digest (job.ts). */
 export async function markDigestSent(orgId: string, at: Date): Promise<void> {
   await dbInternal.notificationSettings.update({ where: { orgId }, data: { lastDigestAt: at } });
+}
+
+/** Setzt `lastAlarmMailAt` (Alarm-Mail-Takt, alarm-mail.ts). */
+export async function markAlarmMailSent(orgId: string, at: Date): Promise<void> {
+  await dbInternal.notificationSettings.update({ where: { orgId }, data: { lastAlarmMailAt: at } });
 }

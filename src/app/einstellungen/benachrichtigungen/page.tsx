@@ -17,7 +17,7 @@ export default async function BenachrichtigungenEinstellungenPage() {
         Steuert, welche Ereignisse In-App-Benachrichtigungen erzeugen (Glocke oben rechts, „/benachrichtigungen“). Der Scheduler-Job „notifications“ prüft dies bei jedem Lauf (siehe Einstellungen →
         Automatisierung).
       </p>
-      <NotificationSettingsForm allTypes={Object.entries(NOTIFICATION_TYPES)} mandatoryTypes={[...MANDATORY_NOTIFICATION_TYPES]} initial={{ enabledTypes: settings.enabledTypes, emailDigest: settings.emailDigest }} />
+      <NotificationSettingsForm allTypes={Object.entries(NOTIFICATION_TYPES)} mandatoryTypes={[...MANDATORY_NOTIFICATION_TYPES]} initial={{ enabledTypes: settings.enabledTypes, emailDigest: settings.emailDigest, alarmEmail: settings.alarmEmail }} />
     </div>
   );
 }

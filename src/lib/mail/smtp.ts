@@ -64,6 +64,10 @@ export function classifySmtpError(err: unknown): MailSendOutcome {
     return "NOT_SENT";
   }
   if (command && (NOT_SENT_COMMANDS.has(command) || command.startsWith("AUTH"))) return "NOT_SENT";
+  // DATA mit Serverantwort: entweder die Ablehnung des DATA-Befehls (EENVELOPE) oder die Antwort auf das
+  // End-"." der Nachricht (EMESSAGE). Beides ist eine ausdrueckliche 4xx/5xx-Ablehnung, die Nachricht ist
+  // nach RFC 5321 nicht eingereiht. Abbrueche (Socket, Timeout) tragen nie einen responseCode mit DATA.
+  // Teilannahme je Empfaenger gibt es nur bei LMTP, das hier nicht genutzt wird.
   if (command === "DATA" && typeof f.responseCode === "number") return "NOT_SENT";
   return "UNKNOWN";
 }

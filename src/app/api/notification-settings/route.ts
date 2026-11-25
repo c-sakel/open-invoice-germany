@@ -15,13 +15,14 @@ export async function GET() {
 const putSchema = z.object({
   enabledTypes: z.array(z.enum(ALL_NOTIFICATION_TYPES as [string, ...string[]])),
   emailDigest: z.boolean(),
+  alarmEmail: z.boolean().optional(),
 });
 
 export async function PUT(req: Request) {
   try {
     const org = await getActiveOrg();
     const body = putSchema.parse(await req.json());
-    const settings = await saveNotificationSettings(org.id, body as { enabledTypes: typeof ALL_NOTIFICATION_TYPES; emailDigest: boolean });
+    const settings = await saveNotificationSettings(org.id, body as { enabledTypes: typeof ALL_NOTIFICATION_TYPES; emailDigest: boolean; alarmEmail?: boolean });
     return NextResponse.json({ settings });
   } catch (e) {
     if (e instanceof z.ZodError) return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });

@@ -51,6 +51,12 @@ describe("classifySmtpError", () => {
   it("DATA mit Antwortcode -> NOT_SENT", () => {
     expect(classifySmtpError(err({ code: "EMESSAGE", command: "DATA", responseCode: 452 }))).toBe("NOT_SENT");
   });
+  it("Ablehnung nach dem End-Punkt (EMESSAGE/DATA/554) -> NOT_SENT", () => {
+    expect(classifySmtpError(err({ code: "EMESSAGE", command: "DATA", responseCode: 554 }))).toBe("NOT_SENT");
+  });
+  it("Ablehnung des DATA-Befehls (EENVELOPE/DATA/554) -> NOT_SENT", () => {
+    expect(classifySmtpError(err({ code: "EENVELOPE", command: "DATA", responseCode: 554 }))).toBe("NOT_SENT");
+  });
   it("Timeout nach DATA ohne Antwortcode -> UNKNOWN", () => {
     expect(classifySmtpError(err({ code: "ETIMEDOUT", command: "DATA" }))).toBe("UNKNOWN");
   });
