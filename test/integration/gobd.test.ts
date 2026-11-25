@@ -319,7 +319,10 @@ describe("GoBD: Nummernkreis + Unveränderbarkeit", () => {
     expect(inv!.status).toBe("FINALIZED");
     expect(inv!.grossTotalCents).toBe(11900); // 100 € + 19 %
     expect(inv!.recurringInvoiceId).toBe(rec.id);
-    expect(inv!.deliveryDate!.toISOString().slice(0, 10)).toBe("2026-06-01"); // Leistungsdatum = Periode
+    // Kein Einzel-Leistungsdatum; Leistungszeitraum (inklusive Grenzen) im Voraus: 01.06.–30.06.
+    expect(inv!.deliveryDate).toBeNull();
+    expect(inv!.deliveryStart!.toISOString().slice(0, 10)).toBe("2026-06-01");
+    expect(inv!.deliveryEnd!.toISOString().slice(0, 10)).toBe("2026-06-30");
 
     const after = await prisma.recurringInvoice.findUnique({ where: { id: rec.id } });
     expect(after!.issuedCount).toBe(1);

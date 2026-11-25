@@ -77,6 +77,10 @@ export interface DocStrings {
     deliveryNoteAddress: string;
   };
   /** Bezugsbeleg-Namen im Meta-Block "Bezug: zu <Beleg> <Nr.>" (je Quelltyp). */
+  /** Abo-Rechnungen (Datumsangaben bereits in der Belegsprache formatiert). */
+  recurring: {
+    periodHeader: (from: string, to: string) => string;
+  };
   sourceLabels: {
     ANGEBOT: string;
     AUFTRAGSBESTAETIGUNG: string;

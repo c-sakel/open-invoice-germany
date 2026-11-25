@@ -91,6 +91,7 @@ const PARTNER_SELECT = {
   autoFinalize: true,
   autoSend: true,
   emailTemplateId: true,
+  billingTiming: true,
 } as const;
 
 /**

@@ -506,7 +506,7 @@ describe("Phase 7, Task 2 — Wiederkehrende Rechnungen (recurringAutoFinalizeDe
   // Waehrung auf DocumentSettings.defaultCurrency zurueck) ist bereits oben abgedeckt
   // ("Abo ohne explizite Waehrung bekommt DocumentSettings.defaultCurrency").
 
-  it("recurringInsertPeriodText an: erzeugte Rechnung bekommt Kopftext 'Abrechnungszeitraum dd.mm.yyyy – dd.mm.yyyy'", async () => {
+  it("recurringInsertPeriodText an: erzeugte Rechnung bekommt Kopftext 'Leistungszeitraum dd.mm.yyyy – dd.mm.yyyy'", async () => {
     await saveDocumentSettings(orgId, { recurringInsertPeriodText: true });
     const rec = await createRecurring(orgId, {
       customerId,
@@ -523,7 +523,7 @@ describe("Phase 7, Task 2 — Wiederkehrende Rechnungen (recurringAutoFinalizeDe
     });
     const emitted = await emitRecurringNow(rec.id, { now: FIX_DATE });
     const invoice = await dbInternal.invoice.findUniqueOrThrow({ where: { id: emitted.invoiceId } });
-    expect(invoice.headerText).toMatch(/^Abrechnungszeitraum \d{2}\.\d{2}\.\d{4} – \d{2}\.\d{2}\.\d{4}$/);
+    expect(invoice.headerText).toMatch(/^Leistungszeitraum \d{2}\.\d{2}\.\d{4} – \d{2}\.\d{2}\.\d{4}$/);
   });
 
   // Phase 14a, Task 1 (R5): Abo-Rechnungen laufen jetzt ueber createDraftInvoiceWithinTx —

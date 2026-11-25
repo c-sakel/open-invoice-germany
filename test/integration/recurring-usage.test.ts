@@ -167,7 +167,8 @@ describe("Lauf mit Verbrauch", () => {
     expect(inv.lines).toHaveLength(2);
     const api = inv.lines[1]!;
     expect(api).toMatchObject({ description: "API-Aufrufe", quantityMilli: 10_000_000, lineNetCents: 2000, unitNetPriceMilliCents: 200 });
-    expect(api.servicePeriodStart?.toISOString().slice(0, 10)).toBe("2187-02-28");
+    // BG-26 = Laufperiode (inklusive Grenzen, 01.03.–31.03.), nicht der Beginn aus der Verbrauchszuordnung (28.02.).
+    expect(api.servicePeriodStart?.toISOString().slice(0, 10)).toBe("2187-03-01");
     expect(api.servicePeriodEnd?.toISOString().slice(0, 10)).toBe("2187-03-31");
     expect(inv.netTotalCents).toBe(4900);
 
@@ -236,7 +237,8 @@ describe("Lauf mit Verbrauch", () => {
     const d2 = await emitted(draft.rec.id, D("2187-05-01"));
     const l2 = await dbInternal.invoiceLine.findMany({ where: { invoiceId: d2.invoiceId }, orderBy: { position: "asc" }, select: { quantityMilli: true, servicePeriodStart: true } });
     expect(l2[1]?.quantityMilli).toBe(5_000_000);
-    expect(l2[1]?.servicePeriodStart?.toISOString().slice(0, 10)).toBe("2187-02-28");
+    // Der freigegebene Verbrauch wird im naechsten Lauf abgerechnet; BG-26 ist dessen Laufperiode (01.04.–30.04.).
+    expect(l2[1]?.servicePeriodStart?.toISOString().slice(0, 10)).toBe("2187-04-01");
 
     const fin = await makeAbo();
     await recordUsage(orgId, fin.rec.id, { recurringLineId: fin.usageLineId, quantityMilli: 2_000_000, usageDate: "2187-03-10" }, { source: "UI", actor: "t", now: NOW });
@@ -270,7 +272,7 @@ describe("Fix-Welle 18f-1", () => {
     const r = await dbInternal.recurringInvoice.findUniqueOrThrow({ where: { id: rec.id }, select: { nextRunDate: true } });
     expect(r.nextRunDate.toISOString().slice(0, 10)).toBe("2187-03-28");
     const inv = await dbInternal.invoice.findUniqueOrThrow({ where: { id: second.invoiceId }, select: { headerText: true } });
-    expect(inv.headerText).toBe("Abrechnungszeitraum 28.01.2187 – 28.02.2187");
+    expect(inv.headerText).toBe("Leistungszeitraum 29.01.2187 – 28.02.2187");
   });
 
   it("Abo ohne ITEM und ohne USAGE (nur Text, direkt angelegt) wird wie vor 18f abgerechnet, nicht uebersprungen", async () => {

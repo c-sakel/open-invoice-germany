@@ -85,7 +85,7 @@ export async function emitOne(
       );
     }
 
-    const built = await buildRunLines(tx, rec, periodDate, { fixedServicePeriod: false });
+    const built = await buildRunLines(tx, rec, periodDate);
 
     if (hasUsageLines && !built.hasItems) {
       // Verbrauchsabo ohne abrechenbare Position (kein Verbrauch): keine Rechnung, Periode rueckt weiter.

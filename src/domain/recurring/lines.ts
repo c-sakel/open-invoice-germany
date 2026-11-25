@@ -98,32 +98,32 @@ export function toRecurringLineRows(
   });
 }
 
-/** Summe der offenen Verbraeuche einer Abo-Zeile mit Zeitraum (Phase 18f). */
+/** Summe der offenen Verbraeuche einer Abo-Zeile mit Zeitraum (Speichersemantik: Beginn exklusiv, nur Zuordnung). */
 export type BillableUsage = { quantityMilli: number; periodStart: Date; periodEnd: Date };
 
 /**
  * Gespeicherte Zeilen 1:1 als Rechnungszeilen (Typ, Langtext, Art.-Nr., Rabatte, Produktbezug).
- * Phase 18f: USAGE-Zeilen tragen Menge = Summe der Verbraeuche und deren Zeitraum (BG-26);
- * ohne Verbrauch entfallen sie. Ohne `usage`-Map (Altaufrufer) entfallen alle USAGE-Zeilen.
+ * USAGE-Zeilen tragen Menge = Summe der Verbraeuche; ohne Verbrauch entfallen sie. Ohne `usage`-Map
+ * entfallen alle USAGE-Zeilen. BG-26 ist je ITEM-Zeile die Laufperiode `period` (inklusive Grenzen,
+ * auch bei Verbrauch: der Beginn aus der Speichersemantik waere einen Tag zu frueh).
  */
 export function recurringLinesToInvoiceLines(
   rows: readonly RecurringStoredLine[],
-  usage?: ReadonlyMap<string, BillableUsage>,
+  usage: ReadonlyMap<string, BillableUsage> | undefined,
+  period: { start: Date; end: Date },
 ): CreateInvoiceInput["lines"] {
   const out: CreateInvoiceInput["lines"] = [];
   for (const l of rows) {
     const lineType = toLineType(l.lineType);
     const isItem = lineType === "ITEM";
     let quantityMilli = isItem ? l.quantityMilli : 0;
-    let servicePeriodStart: Date | undefined;
-    let servicePeriodEnd: Date | undefined;
     if (isItem && l.billing === "USAGE") {
       const used = l.id ? usage?.get(l.id) : undefined;
       if (!used) continue;
       quantityMilli = used.quantityMilli;
-      servicePeriodStart = used.periodStart;
-      servicePeriodEnd = used.periodEnd;
     }
+    const servicePeriodStart = isItem ? period.start : undefined;
+    const servicePeriodEnd = isItem ? period.end : undefined;
     out.push({
       lineType,
       productId: l.productId ?? undefined,

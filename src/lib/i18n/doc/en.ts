@@ -58,6 +58,7 @@ export const en: DocStrings = {
     deliveryAddress: "Delivery address:",
     deliveryNoteAddress: "Delivery address:",
   },
+  recurring: { periodHeader: (from, to) => `Service period ${from} – ${to}` },
   sourceLabels: { ANGEBOT: "quotation", AUFTRAGSBESTAETIGUNG: "order", PROFORMA: "proforma invoice", DELIVERY_NOTE: "delivery note" },
   system: { draftNumber: "DRAFT", previewWatermark: "PREVIEW" },
   layoutLabels: {
