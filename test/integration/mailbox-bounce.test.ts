@@ -32,11 +32,11 @@ async function mkOrg(name: string): Promise<string> {
   return orgId;
 }
 
-async function mkLog(orgId: string, providerId: string | null, sentAt: Date = new Date(NOW.getTime() - DAY), status = "SENT"): Promise<string> {
+async function mkLog(orgId: string, providerId: string | null, sentAt: Date = new Date(NOW.getTime() - DAY), status = "SENT", to = "kunde@example.net"): Promise<string> {
   seq += 1;
   return (
     await dbInternal.emailLog.create({
-      data: { orgId, docType: "INVOICE", docId: `doc-${seq}`, toJson: JSON.stringify(["kunde@example.net"]), subject: "Ihre Rechnung", bodySnapshot: "Text", status, providerId, sentAt },
+      data: { orgId, docType: "INVOICE", docId: `doc-${seq}`, toJson: JSON.stringify([to]), subject: "Ihre Rechnung", bodySnapshot: "Text", status, providerId, sentAt },
       select: { id: true },
     })
   ).id;
@@ -129,6 +129,40 @@ describe("Rueckslaeufer im Postfach", () => {
     expect(await dbInternal.notification.count({ where: { orgId, type: "RECURRING_NOT_SENT", dedupeKey: { endsWith: ":BOUNCED:0" } } })).toBe(1);
     await run(orgId, [mail("2", "dsn-headers-only.eml")]);
     expect(await dbInternal.notification.count({ where: { orgId, type: "RECURRING_NOT_SENT" } })).toBe(1);
+  });
+
+  it("Teilabbruch: Protokoll BOUNCED, Outbox noch SENT -> Wiederholung zieht Outbox und Meldung nach", async () => {
+    const orgId = await mkOrg("Teilabbruch");
+    const logId = await mkLog(orgId, "<orig@example.org>", new Date(NOW.getTime() - DAY), "BOUNCED");
+    const outbox = await dbInternal.invoiceAutoSend.create({
+      data: { orgId, invoiceId: `inv-${logId}`, status: "SENT", attempts: 1, emailLogId: logId },
+      select: { id: true },
+    });
+    await run(orgId, [mail("1", "dsn-postfix-failed.eml")]);
+    expect(await results(orgId)).toEqual(["1:BOUNCE_MATCHED"]);
+    expect((await dbInternal.invoiceAutoSend.findUniqueOrThrow({ where: { id: outbox.id } })).status).toBe("BOUNCED");
+    expect(await dbInternal.notification.count({ where: { orgId, type: "RECURRING_NOT_SENT" } })).toBe(1);
+    expect(await dbInternal.notification.count({ where: { orgId, type: "EMAIL_BOUNCED" } })).toBe(1);
+    await run(orgId, [mail("2", "dsn-postfix-failed.eml")]);
+    expect(await results(orgId)).toEqual(["1:BOUNCE_MATCHED", "2:BOUNCE_UNMATCHED"]);
+    expect(await dbInternal.notification.count({ where: { orgId, type: "EMAIL_BOUNCED" } })).toBe(1);
+  });
+
+  it("failed mit Status 4.x ist IGNORED, das Protokoll bleibt SENT", async () => {
+    const orgId = await mkOrg("Vier");
+    const logId = await mkLog(orgId, "<orig@example.org>");
+    const raw = Buffer.from(fixture("dsn-postfix-failed.eml").toString("latin1").replace("Status: 5.1.1", "Status: 4.2.2"), "latin1");
+    await run(orgId, [{ uid: "1", raw }]);
+    expect(await results(orgId)).toEqual(["1:BOUNCE_IGNORED"]);
+    expect((await dbInternal.emailLog.findUniqueOrThrow({ where: { id: logId } })).status).toBe("SENT");
+  });
+
+  it("Final-Recipient einer fremden Domain ordnet nichts zu (Faelschungsschutz)", async () => {
+    const orgId = await mkOrg("Fremd");
+    const logId = await mkLog(orgId, "<orig@example.org>", new Date(NOW.getTime() - DAY), "SENT", "kunde@andere-domain.example.com");
+    await run(orgId, [mail("1", "dsn-postfix-failed.eml")]);
+    expect(await results(orgId)).toEqual(["1:BOUNCE_UNMATCHED"]);
+    expect((await dbInternal.emailLog.findUniqueOrThrow({ where: { id: logId } })).status).toBe("SENT");
   });
 
   it("wertet Berichte auch von Absendern ausserhalb der Allowlist aus; normale Fremdmails bleiben abgelehnt", async () => {

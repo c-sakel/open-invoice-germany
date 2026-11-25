@@ -20,6 +20,8 @@ export interface ParsedDsn {
   action: "failed" | "delayed" | "other";
   status: string | null;
   originalMessageIdHash: string | null;
+  /** Domains der Final-Recipient-Felder (kleingeschrieben, hoechstens 20); nie ganze Adressen. */
+  finalRecipientDomains: string[];
 }
 
 export interface ParsedMail {
@@ -49,6 +51,7 @@ const workerSchema = z.object({
       action: z.enum(["failed", "delayed", "other"]),
       status: z.string().regex(/^[245]\.\d{1,3}\.\d{1,3}$/).nullable(),
       originalMessageIdHash: z.string().regex(/^[0-9a-f]{64}$/).nullable(),
+      finalRecipientDomains: z.array(z.string().regex(/^[a-z0-9.-]{1,253}$/)).max(20),
     })
     .nullable(),
   attachments: z

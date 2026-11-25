@@ -9,7 +9,7 @@
  * feste Codes, nie Inhalt der Mail.
  *
  * Zustellberichte (RFC 3464: multipart/report; report-type=delivery-status) liefern statt Anlagen nur
- * `dsn` { action, status, originalMessageIdHash }: keine Adressen, keine Texte, nichts wird gerendert.
+ * `dsn` { action, status, originalMessageIdHash, finalRecipientDomains }: keine Adressen, keine Texte, nichts wird gerendert.
  */
 import { createHash } from "node:crypto";
 import { domainToASCII } from "node:url";
@@ -87,7 +87,7 @@ function headBlock(text) {
 function isDeliveryReport(mail) {
   const h = (mail.headers ?? []).find((x) => x && x.key === "content-type");
   const v = typeof h?.value === "string" ? h.value.toLowerCase() : "";
-  return /^\s*multipart\/report\b/.test(v) && /report-type\s*=\s*"?delivery-status"?/.test(v);
+  return /^\s*multipart\/report\b/.test(v) && /report-type\s*=\s*"?delivery-status(?:[;\s"]|$)/.test(v);
 }
 
 function parseDsn(mail) {
@@ -98,6 +98,7 @@ function parseDsn(mail) {
   const blocks = unfold(latin1(status.content)).split(/\r?\n\r?\n/).slice(0, 100);
   let action = null;
   let statusCode = null;
+  const finalRecipientDomains = [];
   for (const block of blocks) {
     let blockAction = null;
     let blockStatus = null;
@@ -107,6 +108,12 @@ function parseDsn(mail) {
       const name = m[1].toLowerCase();
       if (name === "action" && blockAction === null) blockAction = m[2].trim().toLowerCase().split(/\s+/)[0] ?? "";
       if (name === "status" && blockStatus === null) blockStatus = m[2].trim().split(/\s+/)[0] ?? "";
+      if (name === "final-recipient" && finalRecipientDomains.length < 20) {
+        // Nur die Domain der Empfaengeradresse (Abgleich mit dem Versandprotokoll), nie die Adresse selbst.
+        const at = /@([A-Za-z0-9.-]{1,253})\s*$/.exec(m[2].trim());
+        const d = at ? at[1].toLowerCase().replace(/\.$/, "") : "";
+        if (d !== "" && !finalRecipientDomains.includes(d)) finalRecipientDomains.push(d);
+      }
     }
     if (blockAction === null) continue;
     const kind = blockAction === "failed" ? "failed" : blockAction === "delayed" ? "delayed" : "other";
@@ -129,7 +136,7 @@ function parseDsn(mail) {
       originalMessageIdHash = messageIdHash(angle ? angle[1] : m[1]);
     }
   }
-  return { action, status: statusCode, originalMessageIdHash };
+  return { action, status: statusCode, originalMessageIdHash, finalRecipientDomains };
 }
 
 function isCandidate(att) {

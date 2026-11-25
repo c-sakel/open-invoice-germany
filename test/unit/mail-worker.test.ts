@@ -150,24 +150,24 @@ describe("Zustellberichte (RFC 3464)", () => {
 
   it("Postfix-Bericht: failed, 5.1.1, Hash der Original-Message-Id, keine Anlagen", async () => {
     const r = await parseMailIsolated(eml("dsn-postfix-failed.eml"));
-    expect(r.ok && r.mail.dsn).toEqual({ action: "failed", status: "5.1.1", originalMessageIdHash: expected });
+    expect(r.ok && r.mail.dsn).toEqual({ action: "failed", status: "5.1.1", originalMessageIdHash: expected, finalRecipientDomains: ["example.net"] });
     expect(r.ok && r.mail.attachments).toEqual([]);
     expect(expected).toMatch(/^[0-9a-f]{64}$/);
   });
 
   it("Exchange-Bericht mit gefalteten Zeilen", async () => {
     const r = await parseMailIsolated(eml("dsn-exchange-failed.eml"));
-    expect(r.ok && r.mail.dsn).toEqual({ action: "failed", status: "5.4.1", originalMessageIdHash: expected });
+    expect(r.ok && r.mail.dsn).toEqual({ action: "failed", status: "5.4.1", originalMessageIdHash: expected, finalRecipientDomains: ["example.net"] });
   });
 
   it("Verzoegerungsbericht: delayed", async () => {
     const r = await parseMailIsolated(eml("dsn-delayed.eml"));
-    expect(r.ok && r.mail.dsn).toEqual({ action: "delayed", status: "4.4.1", originalMessageIdHash: expected });
+    expect(r.ok && r.mail.dsn).toEqual({ action: "delayed", status: "4.4.1", originalMessageIdHash: expected, finalRecipientDomains: ["example.net"] });
   });
 
   it("nur text/rfc822-headers reicht fuer den Hash", async () => {
     const r = await parseMailIsolated(eml("dsn-headers-only.eml"));
-    expect(r.ok && r.mail.dsn).toEqual({ action: "failed", status: "5.2.2", originalMessageIdHash: expected });
+    expect(r.ok && r.mail.dsn).toEqual({ action: "failed", status: "5.2.2", originalMessageIdHash: expected, finalRecipientDomains: ["example.net"] });
   });
 
   it("normale Mail mit PDF: dsn null, Anlage wie bisher", async () => {
@@ -179,7 +179,7 @@ describe("Zustellberichte (RFC 3464)", () => {
   it("Status-Feld mit Muell ergibt status null", async () => {
     const raw = Buffer.from(Buffer.from(eml("dsn-postfix-failed.eml")).toString("latin1").replace("Status: 5.1.1", "Status: 5.x; DROP"), "latin1");
     const r = await parseMailIsolated(new Uint8Array(raw));
-    expect(r.ok && r.mail.dsn).toEqual({ action: "failed", status: null, originalMessageIdHash: expected });
+    expect(r.ok && r.mail.dsn).toEqual({ action: "failed", status: null, originalMessageIdHash: expected, finalRecipientDomains: ["example.net"] });
   });
 
   it("ohne multipart/report keine Auswertung, auch wenn ein Teil delivery-status heisst", async () => {
