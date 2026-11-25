@@ -2254,7 +2254,7 @@ BT50=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"billin
 [ "$BT50" = "ARREARS" ] || fail "Bestandsabo rec50 hat billingTiming '$BT50', erwartet ARREARS"
 COL50=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select column_name || '|' || data_type || '|' || is_nullable from information_schema.columns where table_schema='public' and table_name='RecurringInvoice' and column_name='billingTiming'")
 [ "$COL50" = "billingTiming|text|NO" ] || fail "RecurringInvoice.billingTiming hat '$COL50', erwartet billingTiming|text|NO"
-docker exec "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL' >/dev/null
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL' >/dev/null
 INSERT INTO "RecurringInvoice" ("id","orgId","customerId","title","startDate","nextRunDate","updatedAt")
   VALUES ('rec50b','org50','cust50','Neues Abo','2026-03-01','2026-04-01',NOW());
 SQL
