@@ -11,7 +11,7 @@ import { EditorCurrencyContext } from "@/components/editor/currency-context";
 import { parseDecimalInput } from "@/lib/money";
 import { PRICE_FIELD_ERROR, toPrice } from "@/lib/editor/parse";
 import { SearchSelect } from "@/components/ui/SearchSelect";
-import { loadCustomerById, loadCustomersByIds, searchCustomers } from "@/components/ui/customer-lookup";
+import { loadActiveCustomersByIds, loadCustomerById, searchCustomers } from "@/components/ui/customer-lookup";
 import { editorCustomerContextSchema } from "@/schemas/lookup";
 
 interface ProductOption {
@@ -139,15 +139,20 @@ export function NewRecurringForm({
   async function selectCustomer(id: string | null) {
     setCustomerId(id ?? "");
     const pick = ++customerPick.current;
-    if (currencyTouched) return;
-    changeCurrency(defaultCurrency);
+    if (!currencyTouched) changeCurrency(defaultCurrency);
     if (!id) return;
     try {
       const res = await fetch(`/api/lookup/customers/${encodeURIComponent(id)}`, { headers: { accept: "application/json" } });
       if (!res.ok) return;
       const ctx = editorCustomerContextSchema.parse(await res.json());
-      // Nur die letzte Auswahl zaehlt; manuelle Waehrungswahl waehrenddessen bleibt erhalten.
-      if (pick === customerPick.current) changeCurrency(ctx.customer.defaultCurrency ?? defaultCurrency);
+      if (pick !== customerPick.current) return; // Nur die letzte Auswahl zaehlt.
+      if (ctx.customer.isArchived) {
+        setCustomerId("");
+        setError("Archivierte Kunden können keinem neuen Abo zugeordnet werden.");
+        return;
+      }
+      // Manuelle Waehrungswahl bleibt erhalten.
+      if (!currencyTouched) changeCurrency(ctx.customer.defaultCurrency ?? defaultCurrency);
     } catch {
       // Waehrung bleibt bei der Einstellung; der Server wendet die Kette Kunde > Einstellung > EUR an.
     }
@@ -296,7 +301,7 @@ export function NewRecurringForm({
               value={customerId === "" ? null : customerId}
               onChange={(id) => void selectCustomer(id)}
               search={searchCustomers}
-              loadByIds={loadCustomersByIds}
+              loadByIds={loadActiveCustomersByIds}
               loadSelected={loadCustomerById}
               recentKey="customer"
               required

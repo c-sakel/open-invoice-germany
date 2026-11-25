@@ -22,14 +22,14 @@ export default async function KundenPage({ searchParams }: { searchParams: Promi
   const exportQuery = exportParams.size > 0 ? `?${exportParams.toString()}` : "";
 
   let page: Awaited<ReturnType<typeof listCustomersPage>> = { rows: [], total: 0, limit: CUSTOMER_LIST_PAGE_SIZE, offset: 0, q: query };
-  try {
-    const org = await getActiveOrg();
+  const org = await getActiveOrg().catch(() => null);
+  // Ohne eingerichtete Organisation gibt es keine Kunden, die Liste bleibt leer. Alle uebrigen
+  // Fehler (Datenbank, Validierung) gehen an die Fehlerseite statt als "0 Kunden" angezeigt zu werden.
+  if (org) {
     // Selbstheilung (Phase 7, §34): Bestandskunden ohne Kundennummer bekommen beim ersten
     // Laden der Liste eine — idempotent, kein Effekt bei bereits vergebenen Nummern.
     await ensureCustomerNumbers(org.id);
     page = await listCustomersPage(org.id, input);
-  } catch {
-    // Keine Organisation eingerichtet -> keine Kunden vorhanden, Liste bleibt leer.
   }
   const customers = page.rows;
 

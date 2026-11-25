@@ -201,7 +201,8 @@ export async function loadDunningOverview(orgId: string, now: Date = new Date(),
     d60plus: { count: agingArray[3].count, cents: agingArray[3].cents },
   };
 
-  rows.sort((a, b) => b.daysOverdue - a.daysOverdue);
+  // Stabile Reihenfolge fuer das Offset-Blaettern: bei gleichem Ueberfaelligkeitstag entscheidet die Id.
+  rows.sort((a, b) => b.daysOverdue - a.daysOverdue || (a.invoiceId < b.invoiceId ? -1 : a.invoiceId > b.invoiceId ? 1 : 0));
 
   const offset = Math.max(0, Math.floor(filter.offset ?? 0));
   const limit = Math.max(1, Math.floor(filter.limit ?? DUNNING_PAGE_SIZE));

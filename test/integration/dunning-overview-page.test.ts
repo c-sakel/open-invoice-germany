@@ -44,6 +44,18 @@ describe("loadDunningOverview seitenweise", () => {
     expect(overlap).toHaveLength(0);
   });
 
+  it("gleicher Ueberfaelligkeitstag: feste Reihenfolge nach Id, Seiten lueckenlos ohne Doppelte", async () => {
+    const all = await loadDunningOverview(org.orgId, NOW, { limit: DUNNING_ALL_ROWS });
+    const tied = all.rows.filter((r) => r.daysOverdue === all.rows[0].daysOverdue).map((r) => r.invoiceId);
+    expect(tied.length).toBeGreaterThan(1);
+    expect(tied).toEqual([...tied].sort());
+    const paged: string[] = [];
+    for (let offset = 0; offset < COUNT; offset += 20) {
+      paged.push(...(await loadDunningOverview(org.orgId, NOW, { offset, limit: 20 })).rows.map((r) => r.invoiceId));
+    }
+    expect(paged).toEqual(all.rows.map((r) => r.invoiceId));
+  });
+
   it("Filter stageOrder reduziert total", async () => {
     const all = await loadDunningOverview(org.orgId, NOW, { limit: DUNNING_ALL_ROWS });
     const staged = all.rows.find((r) => r.currentStage);
