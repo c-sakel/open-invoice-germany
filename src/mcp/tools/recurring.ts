@@ -18,7 +18,7 @@ import { listUsageQuerySchema } from "@/schemas/recurring-usage";
 import { intervalLabel } from "@/lib/recurring";
 import { NotFoundError, InvalidOperationError } from "@/domain/errors";
 import { TaxRateNotAllowedError } from "@/domain/settings/tax-rates";
-import { currencyCodeSchema, DocLanguageSchema, createRecurringSchema, updateRecurringSchema } from "@/schemas";
+import { MissedPeriodsChoice, currencyCodeSchema, DocLanguageSchema, createRecurringSchema, updateRecurringSchema } from "@/schemas";
 import { editorLineSchema, ToolError, type McpToolsContext, type Result } from "./context";
 
 /** Abo-Positionsschema: Positionsschema des Editors plus Abrechnungsart (Phase 18f). */
@@ -267,17 +267,18 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
     {
       title: "Abo-Status setzen (pausieren/fortsetzen/beenden)",
       description:
-        "Setzt den Status eines Abos auf ACTIVE (laeuft normal weiter), PAUSED (keine Rechnungen bis zum erneuten Aktivieren) oder ENDED (dauerhaft beendet). Duenner Wrapper um update_recurring_invoice — identische Domain-Funktion, kein Bypass.",
+        "Setzt den Status eines Abos auf ACTIVE (laeuft normal weiter), PAUSED (keine Rechnungen bis zum erneuten Aktivieren) oder ENDED (dauerhaft beendet). Duenner Wrapper um update_recurring_invoice — identische Domain-Funktion, kein Bypass. Beim Fortsetzen eines pausierten Abos mit versäumten Zeiträumen ist missedPeriods (SKIP oder BILL) Pflicht.",
       inputSchema: {
         recurring: z.string().describe("Abo-ID oder -Titel"),
         state: z.enum(["ACTIVE", "PAUSED", "ENDED"]),
+        missedPeriods: MissedPeriodsChoice.optional().describe("Pflicht beim Fortsetzen mit Rückstand: SKIP = versäumte Zeiträume überspringen, BILL = nachträglich abrechnen"),
       },
     },
-    async ({ recurring, state }): Promise<Result> => {
+    async ({ recurring, state, missedPeriods }): Promise<Result> => {
       try {
         const org = await ctx.requireOrg();
         const match = await ctx.resolveRecurring(org.id, recurring);
-        const updated = await updateRecurringInvoice(org.id, match.id, { status: state }, "mcp");
+        const updated = await updateRecurringInvoice(org.id, match.id, { status: state, ...(missedPeriods ? { missedPeriods } : {}) }, "mcp");
         return ctx.ok(`Abo-Status gesetzt: "${updated.title}" ist jetzt ${updated.status}.`);
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);

@@ -1005,8 +1005,11 @@ export const createRecurringSchema = recurringObjectSchema
   .transform((v) => ({ ...v, lines: resolveLineCategories(v.lines, v.taxScheme) }));
 export type CreateRecurringInput = z.infer<typeof createRecurringSchema>;
 
+// Fortsetzen mit Rueckstand: SKIP = versaeumte Zeitraeume ueberspringen, BILL = nachtraeglich abrechnen.
+export const MissedPeriodsChoice = z.enum(["SKIP", "BILL"]);
 export const updateRecurringStatusSchema = z.object({
   status: z.enum(["ACTIVE", "PAUSED", "ENDED"]),
+  missedPeriods: MissedPeriodsChoice.optional(),
 });
 export type UpdateRecurringStatusInput = z.infer<typeof updateRecurringStatusSchema>;
 
@@ -1024,6 +1027,8 @@ export const updateRecurringSchema = z.object({
   billingTiming: BillingTiming.optional(),
   // Pflicht beim Wechsel der Abrechnungsart, wenn bereits Rechnungen erzeugt wurden (sonst 409 mit Luecke/Ueberlappung).
   acknowledgeTimingChange: z.boolean().optional(),
+  // Pflicht beim Fortsetzen (PAUSED -> ACTIVE) mit Rueckstand, sonst 409 MISSED_PERIODS_REQUIRED.
+  missedPeriods: MissedPeriodsChoice.optional(),
   // Fix-Runde 1 (Koordinator, Abo-Bearbeiten-UI): startDate ist nachtraeglich aenderbar —
   // siehe updateRecurringInvoice() fuer die Ruling-Behandlung von nextRunDate.
   startDate: z.coerce.date().optional(),

@@ -51,3 +51,19 @@ export class RecurringTimingChangeError extends RecurringError {
     this.details = details;
   }
 }
+
+/**
+ * Fortsetzen eines pausierten Abos mit Rueckstand (naechster Stichtag liegt vor heute) ohne Auswahl:
+ * der Aufrufer muss `missedPeriods` (SKIP = ueberspringen, BILL = nachtraeglich abrechnen) angeben (REST/UI 409).
+ */
+export class RecurringMissedPeriodsError extends RecurringError {
+  readonly code = "MISSED_PERIODS_REQUIRED" as const;
+  readonly missedCount: number;
+  constructor(missedCount: number) {
+    super(
+      `Das Abo ist pausiert und hat ${missedCount} versäumte Zeiträume. Zum Fortsetzen missedPeriods angeben: SKIP (überspringen) oder BILL (nachträglich abrechnen).`,
+    );
+    this.name = "RecurringMissedPeriodsError";
+    this.missedCount = missedCount;
+  }
+}

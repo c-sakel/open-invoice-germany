@@ -8,6 +8,9 @@ import { LineItemsTable } from "@/components/LineItemsTable";
 import { intervalLabel, previewPeriods, type BillingTiming, type RecurInterval } from "@/lib/recurring";
 import { StatusBadge } from "@/components/StatusBadge";
 import { RecurringActions } from "@/components/RecurringActions";
+import { berlinDateKey } from "@/lib/berlin-time";
+import { countMissedStichtage } from "@/domain/payment-rule/resume-plan";
+import { effectiveAnchorDay } from "@/domain/recurring/usage-period";
 import { listUsage } from "@/domain/recurring/usage";
 import { listCollectivePartners, listRecurringInvoices } from "@/domain/recurring/list";
 import { CollectiveCard } from "./_parts/CollectiveCard";
@@ -77,6 +80,19 @@ export default async function AboDetail({ params }: { params: Promise<{ id: stri
     },
     3,
   );
+  const deDay = (d: Date): string => berlinDateKey(d).split("-").reverse().join(".");
+  const first = periods[0];
+  const nextPeriod = first ? { start: deDay(first.start), end: deDay(first.end) } : undefined;
+  const missedCount =
+    rec.status === "PAUSED"
+      ? countMissedStichtage({
+          nextRunDate: rec.nextRunDate,
+          interval: rec.interval as RecurInterval,
+          intervalCount: rec.intervalCount,
+          anchorDay: effectiveAnchorDay(rec, hasUsage),
+          now: new Date(),
+        })
+      : 0;
   const arrearsHint = timing === "ARREARS" && !hasUsage;
   const s = STATUS_LABEL[rec.status] ?? { text: rec.status, cls: "bg-well text-ink-soft" };
 
@@ -122,7 +138,17 @@ export default async function AboDetail({ params }: { params: Promise<{ id: stri
           <Link href={`/abos/${rec.id}/bearbeiten`} className="rounded-md border border-rule-strong bg-sheet px-3 py-1.5 text-sm font-medium text-ink-soft hover:bg-paper">
             Bearbeiten
           </Link>
-          <RecurringActions id={rec.id} status={rec.status} collective={rec.collectiveBilling} />
+          <RecurringActions
+            id={rec.id}
+            status={rec.status}
+            collective={rec.collectiveBilling}
+            nextPeriod={nextPeriod}
+            autoFinalize={rec.autoFinalize}
+            autoSend={rec.autoSend}
+            recipient={rec.customer.email}
+            missedCount={missedCount}
+            billingTiming={timing}
+          />
         </div>
       </div>
 

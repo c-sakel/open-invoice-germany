@@ -11,14 +11,17 @@ import { itemTaxRates, planLineSync, toRecurringLineRows } from "@/domain/recurr
 import { lockRow } from "@/lib/db-lock";
 import { addDays, normalizeToNoon, periodRange, type BillingTiming, type RecurInterval } from "@/lib/recurring";
 import { assertTimingFitsLines, resolveFirstSchedule, timingChangeDetails } from "@/domain/recurring/timing";
-import { RecurringTimingChangeError } from "@/domain/recurring/errors";
+import { RecurringMissedPeriodsError, RecurringTimingChangeError } from "@/domain/recurring/errors";
+import { resumePausedRecurringWithinTx } from "@/domain/recurring/resume";
+import { countMissedStichtage } from "@/domain/payment-rule/resume-plan";
+import { effectiveAnchorDay } from "@/domain/recurring/usage-period";
 import { updateRecurringSchema, resolveLineCategories, type TaxScheme as TaxSchemeValue, type UpdateRecurringInput } from "@/schemas";
 import { NotFoundError, InvalidOperationError } from "@/domain/errors";
 import { RecurringError } from "@/domain/recurring/create";
 import { logActivity } from "@/domain/activity/log";
 import { assertAllowedTaxRates, ratesOfLines } from "@/domain/settings/tax-rates";
 
-export async function updateRecurringInvoice(orgId: string, id: string, raw: unknown, actor = "system") {
+export async function updateRecurringInvoice(orgId: string, id: string, raw: unknown, actor = "system", opts: { now?: Date } = {}) {
   const input: UpdateRecurringInput = updateRecurringSchema.parse(raw);
 
   return dbInternal.$transaction(async (tx) => {
@@ -65,6 +68,23 @@ export async function updateRecurringInvoice(orgId: string, id: string, raw: unk
       throw new InvalidOperationError(
         `Abo kann nicht reaktiviert werden: issuedCount (${existing.issuedCount}) hat maxRuns (${effectiveMaxRuns}) bereits erreicht. Zuerst maxRuns erhoehen oder entfernen.`,
       );
+    }
+
+    // Fortsetzen (PAUSED -> ACTIVE) mit Rueckstand: Auswahl Pflicht, Umsetzung ueber den gemeinsamen Fortsetzen-Pfad.
+    if (input.status === "ACTIVE" && existing.status === "PAUSED") {
+      const now = opts.now ?? new Date();
+      const missed = countMissedStichtage({
+        nextRunDate: existing.nextRunDate,
+        interval: existing.interval as RecurInterval,
+        intervalCount: existing.intervalCount,
+        anchorDay: effectiveAnchorDay(existing, existing.lines.some((l) => l.billing === "USAGE")),
+        now,
+      });
+      if (missed > 0) {
+        if (input.missedPeriods === undefined) throw new RecurringMissedPeriodsError(missed);
+        const res = await resumePausedRecurringWithinTx(tx, orgId, id, { missedPeriods: input.missedPeriods, now, actor });
+        if (!res.resumed && res.ended) throw new RecurringError(res.note);
+      }
     }
 
     // Fix-Runde 1 (Koordinator, Abo-Bearbeiten-UI): startDate ist nachtraeglich aenderbar.

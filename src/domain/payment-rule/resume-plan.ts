@@ -42,3 +42,21 @@ export function planSkipMissed(input: SkipMissedInput): SkipMissedPlan {
   }
   return { kind: "ADVANCE", nextRunDate: cur, skipped };
 }
+
+/** Anzahl versaeumter Stichtage (vor dem heutigen Berliner Tag), hoechstens MAX_SKIP_STEPS. */
+export function countMissedStichtage(input: {
+  nextRunDate: Date;
+  interval: RecurInterval;
+  intervalCount: number;
+  anchorDay: number | null;
+  now: Date;
+}): number {
+  const today = berlinDateKey(input.now);
+  let cur = input.nextRunDate;
+  let n = 0;
+  while (localKey(cur) < today && n < MAX_SKIP_STEPS) {
+    cur = advanceDate(cur, input.interval, input.intervalCount, input.anchorDay);
+    n += 1;
+  }
+  return n;
+}

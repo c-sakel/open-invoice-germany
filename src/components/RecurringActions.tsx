@@ -1,37 +1,81 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ConfirmDialog, type ConfirmDialogHandle } from "@/components/ui/ConfirmDialog";
 
-export function RecurringActions({ id, status, collective = false }: { id: string; status: string; collective?: boolean }) {
+type MissedChoice = "SKIP" | "BILL";
+
+export function RecurringActions({
+  id,
+  status,
+  collective = false,
+  nextPeriod,
+  autoFinalize = false,
+  autoSend = false,
+  recipient,
+  missedCount = 0,
+  billingTiming = "ADVANCE",
+}: {
+  id: string;
+  status: string;
+  collective?: boolean;
+  /** Leistungszeitraum der nächsten Rechnung (bereits formatiert), für den Bestätigungsdialog. */
+  nextPeriod?: { start: string; end: string };
+  autoFinalize?: boolean;
+  autoSend?: boolean;
+  recipient?: string | null;
+  /** Versäumte Stichtage eines pausierten Abos (0 = kein Rückstand). */
+  missedCount?: number;
+  billingTiming?: "ADVANCE" | "ARREARS";
+}) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [missed, setMissed] = useState(missedCount);
+  // R11: Vorbelegung im Voraus = überspringen, nachträglich = abrechnen.
+  const [choice, setChoice] = useState<MissedChoice>(billingTiming === "ARREARS" ? "BILL" : "SKIP");
+  const runDialog = useRef<ConfirmDialogHandle>(null);
+  const resumeDialog = useRef<ConfirmDialogHandle>(null);
 
-  async function setStatus(next: "ACTIVE" | "PAUSED" | "ENDED") {
+  async function setStatus(next: "ACTIVE" | "PAUSED" | "ENDED", missedPeriods?: MissedChoice) {
     setBusy(next);
     setError(null);
     const res = await fetch(`/api/recurring/${id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ status: next }),
+      body: JSON.stringify(missedPeriods ? { status: next, missedPeriods } : { status: next }),
     });
     setBusy(null);
     if (!res.ok) {
-      const j = (await res.json().catch(() => ({}))) as { error?: string };
+      const j = (await res.json().catch(() => ({}))) as { error?: string; reason?: string; details?: { missedCount?: number } };
+      if (res.status === 409 && j.reason === "MISSED_PERIODS_REQUIRED") {
+        // Rückstand ist seit dem Laden der Seite entstanden: Auswahl nachholen.
+        setMissed(j.details?.missedCount ?? 1);
+        resumeDialog.current?.open();
+        return;
+      }
       setError(j.error ?? "Änderung fehlgeschlagen.");
       return;
     }
+    resumeDialog.current?.close();
     router.refresh();
   }
 
+  function resume() {
+    if (missed > 0) resumeDialog.current?.open();
+    else void setStatus("ACTIVE");
+  }
+
   async function runNow() {
+    if (busy !== null) return;
     setBusy("run");
     setError(null);
     setInfo(null);
     const res = await fetch(`/api/recurring/${id}/run`, { method: "POST" });
     setBusy(null);
+    runDialog.current?.close();
     if (!res.ok) {
       const j = (await res.json().catch(() => ({}))) as { error?: string };
       setError(j.error ?? "Erzeugen fehlgeschlagen.");
@@ -62,7 +106,7 @@ export function RecurringActions({ id, status, collective = false }: { id: strin
     <div className="space-y-2">
       <div className="flex flex-wrap gap-2">
         {status === "ACTIVE" && (
-          <button onClick={runNow} disabled={busy !== null} className={`${btn} border-pen/30 bg-pen text-on-accent hover:bg-pen-strong`}>
+          <button onClick={() => runDialog.current?.open()} disabled={busy !== null} className={`${btn} border-pen/30 bg-pen text-on-accent hover:bg-pen-strong`}>
             {busy === "run" ? "Erzeuge…" : "Jetzt Rechnung erzeugen"}
           </button>
         )}
@@ -72,7 +116,7 @@ export function RecurringActions({ id, status, collective = false }: { id: strin
           </button>
         )}
         {status === "PAUSED" && (
-          <button onClick={() => setStatus("ACTIVE")} disabled={busy !== null} className={`${btn} border-ledger/30 bg-sheet text-ledger hover:bg-ledger/10`}>
+          <button onClick={resume} disabled={busy !== null} className={`${btn} border-ledger/30 bg-sheet text-ledger hover:bg-ledger/10`}>
             Fortsetzen
           </button>
         )}
@@ -82,6 +126,44 @@ export function RecurringActions({ id, status, collective = false }: { id: strin
           </button>
         )}
       </div>
+      <ConfirmDialog
+        ref={runDialog}
+        title="Rechnung erzeugen"
+        message={
+          <div className="space-y-2">
+            <p>{nextPeriod ? `Rechnung für ${nextPeriod.start} – ${nextPeriod.end} erzeugen?` : "Rechnung für den nächsten Zeitraum erzeugen?"}</p>
+            {collective && <p>Fällige Abos dieses Kunden mit Sammelschalter werden gemeinsam abgerechnet.</p>}
+            {autoFinalize && <p>Die Rechnung wird festgeschrieben und erhält eine Rechnungsnummer.</p>}
+            {autoSend && <p>Die Rechnung wird festgeschrieben und {recipient ? `an ${recipient}` : "an den Kunden"} versendet.</p>}
+            {!autoFinalize && !autoSend && <p>Es wird ein Entwurf angelegt.</p>}
+          </div>
+        }
+        confirmLabel="Jetzt erzeugen"
+        busy={busy === "run"}
+        onConfirm={() => void runNow()}
+      />
+      <ConfirmDialog
+        ref={resumeDialog}
+        title="Abo fortsetzen"
+        message={
+          <fieldset className="space-y-2">
+            <legend className="mb-2">
+              {missed === 1 ? "1 versäumter Zeitraum" : `${missed} versäumte Zeiträume`} seit der Pause. Wie soll das Abo fortgesetzt werden?
+            </legend>
+            <label className="flex items-start gap-2">
+              <input type="radio" name={`missed-${id}`} checked={choice === "SKIP"} onChange={() => setChoice("SKIP")} className="mt-1" />
+              <span>Versäumte Zeiträume überspringen (nächste Rechnung zum nächsten Stichtag)</span>
+            </label>
+            <label className="flex items-start gap-2">
+              <input type="radio" name={`missed-${id}`} checked={choice === "BILL"} onChange={() => setChoice("BILL")} className="mt-1" />
+              <span>Versäumte Zeiträume nachträglich abrechnen (je Zeitraum eine Rechnung beim nächsten Lauf)</span>
+            </label>
+          </fieldset>
+        }
+        confirmLabel="Fortsetzen bestätigen"
+        busy={busy === "ACTIVE"}
+        onConfirm={() => void setStatus("ACTIVE", choice)}
+      />
       {collective && status === "ACTIVE" && (
         <p className="text-xs text-ink-muted">Rechnet fällige Abos dieses Kunden mit Sammelschalter gemeinsam ab.</p>
       )}
