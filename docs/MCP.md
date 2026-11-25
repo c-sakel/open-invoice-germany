@@ -225,7 +225,7 @@ Das Kundenportal gibt Kunden über einen persönlichen Link Einsicht in ihre Rec
 
 | Tool | Zweck | Beispiel |
 |---|---|---|
-| `create_dunning` | Nächste fällige Mahnstufe erzeugen (Verzugszins § 288 BGB + Mahnkosten ab Stufe 2 + 40-€-Pauschale B2B, `force` überspringt die Fälligkeitsprüfung) | „Erstelle die nächste Mahnstufe." |
+| `create_dunning` | Nächste fällige Mahnstufe erzeugen (Verzugszins § 288 BGB ab Verzugseintritt, Antwort nennt „Zinsen ab <Datum> (<Grund>)“ bzw. „keine Zinsen: Verzug noch nicht eingetreten“, + Mahnkosten ab Stufe 2 + 40-€-Pauschale B2B, `force` überspringt die Fälligkeitsprüfung) | „Erstelle die nächste Mahnstufe." |
 | `send_dunning` | Eine erstellte Mahnung per E-Mail versenden (dieselbe Mailpipeline wie Rechnungen/Angebote) | „Sende für RE-2026-00342 eine Zahlungserinnerung." |
 | `set_dunning_state` | Mahnprozess einer Rechnung pausieren (mit Datum), beenden oder wieder aktivieren | „Pausiere den Mahnprozess für RE-2026-00342 bis Monatsende." |
 | `list_overdue_invoices` | Mahnübersicht: alle überfälligen, offenen Rechnungen (Widgets + Zeilen, Fälligkeits-Aging), optional nach Mahnprozess-Status gefiltert | „Welche Rechnungen sind überfällig?" |

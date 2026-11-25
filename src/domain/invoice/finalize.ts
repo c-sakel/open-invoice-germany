@@ -379,6 +379,13 @@ export async function finalizeWithinTx(
     settingEnabled: (await loadDocumentSettings(invoice.orgId, tx)).consumerDefaultNotice,
   });
 
+  // Skonto-Basis (brutto) einfrieren: der Zahlbetrag nach dem Festschreiben (Schlussrechnung: Brutto minus
+  // Abschlaege), nur wenn eine Skonto-Frist gesetzt ist. PDF, E-Rechnung und Bankabgleich rechnen darauf.
+  const hasSkonto =
+    ((invoice.skonto1Permille ?? 0) > 0 && (invoice.skonto1Days ?? 0) > 0) ||
+    ((invoice.skonto2Permille ?? 0) > 0 && (invoice.skonto2Days ?? 0) > 0);
+  const skontoBaseCents = hasSkonto ? (payableCents ?? totals.grossTotalCents) : null;
+
   // 3) Atomarer Status-Claim: nur wenn noch DRAFT. Verhindert unter Nebenläufigkeit
   //    (Postgres READ COMMITTED) doppelte Festschreibung + doppelten Nummern-Verbrauch.
   const claim = await tx.invoice.updateMany({
@@ -406,6 +413,7 @@ export async function finalizeWithinTx(
       fxRateSource: fx.fxRateSource,
       taxTotalEurCents: fx.taxTotalEurCents,
       netTotalEurCents: fx.netTotalEurCents,
+      skontoBaseCents,
       ...(invoice.type === "FINAL" ? { prepaidCents, payableCents } : {}),
     },
   });
@@ -467,6 +475,7 @@ export async function finalizeWithinTx(
       status: "FINALIZED",
       grossTotalCents: totals.grossTotalCents,
       snapshotSource,
+      ...(skontoBaseCents !== null ? { skontoBaseCents } : {}),
       // Bezahllink: nur Anbieter und Dokumentanzeige, nie das Token.
       ...(payLinkChoice ? { payLink: { provider: payLinkChoice.provider, onDocument: payLinkChoice.onDocument } } : {}),
       // Phase 16b: eingefrorener Kurs in der Hash-Kette (nur Fremdwaehrung; EUR ohne Kurs).

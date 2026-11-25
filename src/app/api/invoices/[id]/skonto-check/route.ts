@@ -3,8 +3,8 @@ import { z } from "zod";
 import { dbInternal } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
 import { skontoCheckQuerySchema } from "@/schemas";
-import { skontoTerms, detectSkonto } from "@/lib/pricing/skonto";
-import { payableBaseCents } from "@/domain/invoice/amounts";
+import { detectSkonto } from "@/lib/pricing/skonto";
+import { payableBaseCents, skontoTermsForInvoice } from "@/domain/invoice/amounts";
 
 export const runtime = "nodejs";
 
@@ -29,6 +29,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
         issueDate: true,
         grossTotalCents: true,
         payableCents: true,
+        skontoBaseCents: true,
         paidAmountCents: true,
         skonto1Permille: true,
         skonto1Days: true,
@@ -44,14 +45,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     // rechnet auf grossTotalCents, Buchung auf payableCents).
     const baseCents = payableBaseCents(invoice);
     const openBeforeCents = baseCents - invoice.paidAmountCents;
-    const terms = skontoTerms({
-      issueDate: invoice.issueDate,
-      grossTotalCents: baseCents,
-      skonto1Permille: invoice.skonto1Permille,
-      skonto1Days: invoice.skonto1Days,
-      skonto2Permille: invoice.skonto2Permille,
-      skonto2Days: invoice.skonto2Days,
-    });
+    const terms = skontoTermsForInvoice(invoice, openBeforeCents);
     const paidAt = query.paidAt ?? new Date();
     const match = detectSkonto(terms, paidAt, query.amountCents, openBeforeCents);
     const restCents = openBeforeCents - query.amountCents;

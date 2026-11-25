@@ -8,6 +8,7 @@ import { buildDocumentTextContext } from "@/domain/email/context";
 import { renderTemplate } from "@/lib/template/render";
 import { roundHalfUp } from "@/lib/money";
 import { lineGrossCents } from "@/lib/pricing/line";
+import { skontoBaseCents as resolveSkontoBase } from "@/domain/invoice/amounts";
 import { skontoTerms, paymentTermsText, xrechnungSkontoNote } from "@/lib/pricing/skonto";
 import { resolvePayeeName } from "@/lib/payee-name";
 import { resolveBuyerEndpoint, resolveSellerEndpoint } from "./eas";
@@ -77,6 +78,9 @@ export interface MapInput {
   // Phase 5 (§14 Abs.5 S.2 UStG) — Snapshot der Schlussrechnung: Σ bereits vereinnahmter
   // Abschlaege (brutto). Nur bei type FINAL relevant (sonst 0 per Schema-Default).
   prepaidCents?: number;
+  // Eingefrorene Skonto-Basis (brutto) und Zahlbetrag der Festschreibung; NULL = Zahlbetrag.
+  skontoBaseCents?: number | null;
+  payableCents?: number | null;
   // Phase 5 — Abzugs-Snapshot je Abschlagsrechnung (bereits ueber alle Steuersaetze
   // aggregiert, siehe load.ts). Nur bei type FINAL gesetzt; NIE live nachgeladen.
   deductions?: Array<{ number: string; issueDate: Date; netCents: number; taxCents: number; grossCents: number }>;
@@ -281,9 +285,16 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
   // Phase 4a — Skonto (BT-20): #SKONTO#-Syntax vor dem Menschentext, sofern Skonto-
   // Konditionen gesetzt sind. Ohne Skonto ist paymentTermsNote === paymentTerms
   // (byte-identisch zum bisherigen Verhalten fuer Alt-Belege).
+  // Skonto-Basis: eingefroren oder Zahlbetrag. BASISBETRAG nur, wenn sie vom Zahlbetrag BT-115 abweicht.
+  const bt115 = invoice.grossTotalCents - paidCents;
+  const skontoBase = resolveSkontoBase({
+    grossTotalCents: invoice.grossTotalCents,
+    payableCents: invoice.payableCents ?? (isFinal ? bt115 : null),
+    skontoBaseCents: invoice.skontoBaseCents,
+  });
   const skTerms = skontoTerms({
     issueDate: invoice.issueDate,
-    grossTotalCents: invoice.grossTotalCents,
+    grossTotalCents: skontoBase,
     skonto1Permille: invoice.skonto1Permille ?? null,
     skonto1Days: invoice.skonto1Days ?? null,
     skonto2Permille: invoice.skonto2Permille ?? null,
@@ -307,7 +318,7 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
   const creditFallbackNote =
     invoice.type === "CREDIT_NOTE" && !paymentTermsHuman ? CREDIT_FALLBACK_NOTE[lang] : null;
   const baseTermsNote =
-    skTerms.length > 0 && paymentTermsHuman ? xrechnungSkontoNote(skTerms, paymentTermsHuman) : (paymentTermsHuman ?? creditFallbackNote);
+    skTerms.length > 0 && paymentTermsHuman ? xrechnungSkontoNote(skTerms, paymentTermsHuman, skontoBase !== bt115 && skontoBase > 0 ? { basisCents: skontoBase } : undefined) : (paymentTermsHuman ?? creditFallbackNote);
   // Online-Bezahllink: Satz am Ende von BT-20, nach den #SKONTO#-Zeilen.
   const payLinkUrl = invoice.payLinkUrl ?? null;
   const payLinkSentence = payLinkUrl ? docStrings(lang).paymentMeans.payOnline(payLinkUrl) : null;

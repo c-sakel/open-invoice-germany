@@ -50,3 +50,14 @@ describe("Mapper: Verzugshinweis (BT-20)", () => {
     expect("consumerDefaultNotice" in base).toBe(false);
   });
 });
+
+describe("Mapper: Skonto bei Gutschrift/Storno (kein BASISBETRAG)", () => {
+  it("Gutschrift mit Skonto-Feldern: kein BASISBETRAG, keine Ausnahme", () => {
+    const d = buildEInvoiceData(input({ type: "CREDIT_NOTE", grossTotalCents: 11900, skonto1Permille: 20, skonto1Days: 10, paymentTerms: "Zahlbar in 30 Tagen." }));
+    expect(d.paymentTermsNote ?? "").not.toContain("BASISBETRAG");
+  });
+  it("Storno (negativer Betrag) mit Skonto: kein BASISBETRAG", () => {
+    const d = buildEInvoiceData(input({ type: "CANCELLATION", grossTotalCents: -11900, netTotalCents: -10000, taxTotalCents: -1900, skonto1Permille: 20, skonto1Days: 10, paymentTerms: "Zahlbar in 30 Tagen." }));
+    expect(d.paymentTermsNote ?? "").not.toContain("BASISBETRAG");
+  });
+});
