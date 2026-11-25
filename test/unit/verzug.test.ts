@@ -166,3 +166,37 @@ describe("zugangDay Zeitzone", () => {
     expect(zugangDay({ channel: "NONE", at }).toISOString().slice(0, 10)).toBe("2281-04-03");
   });
 });
+
+describe("verzugStart: Zeitzonen, Kalender und § 193 BGB", () => {
+  const zug = (at: Date) => zugangDay({ channel: "EMAIL", at }).toISOString().slice(0, 10);
+  it("Sommerzeit: 22:30 UTC am 31.03. ist 00:30 MESZ am 01.04. -> Zugang 02.04.", () => {
+    expect(zug(new Date(Date.UTC(2281, 2, 31, 22, 30)))).toBe("2281-04-02");
+  });
+  it("Winterzeit: 23:30 UTC am 31.01. ist 00:30 MEZ am 01.02. -> Zugang 02.02.", () => {
+    expect(zug(new Date(Date.UTC(2281, 0, 31, 23, 30)))).toBe("2281-02-02");
+  });
+  it("Schaltjahr 2280: Mail am 28.02. -> Zugang 29.02.; 30 Tage nach Fälligkeit 01.02. und Zugang -> 02.03.", () => {
+    const y = (m: number, dd: number, h = 12) => new Date(Date.UTC(2280, m - 1, dd, h));
+    expect(zugangDay({ channel: "EMAIL", at: y(2, 28) }).toISOString().slice(0, 10)).toBe("2280-02-29");
+    const r = verzugStart({ ...input(), dueDate: y(2, 1, 0), issueDate: y(1, 20, 0), invoiceDispatches: [{ channel: "EMAIL", at: y(1, 30) }], now: y(6, 1) });
+    expect(iso(r.from)).toBe("2280-03-02");
+  });
+  it("Jahreswechsel: fällig 20.12., Zugang 21.12. -> 30 Tage = 20.01. des Folgejahres", () => {
+    const r = verzugStart(
+      input({ dueDate: new Date(Date.UTC(2281, 11, 20)), issueDate: new Date(Date.UTC(2281, 11, 1)), invoiceDispatches: [{ channel: "EMAIL", at: new Date(Date.UTC(2281, 11, 20, 12)) }], now: new Date(Date.UTC(2282, 1, 15, 12)) }),
+    );
+    expect(iso(r.from)).toBe("2282-01-20");
+  });
+  it("§ 193 BGB wird bewusst nicht angewandt: Fristende auf Sonntag bleibt der Sonntag", () => {
+    // fällig 15.03.2281 + 30 Tage = 14.04.2281 (Sonntag); Verzugsbeginn bleibt dieser Tag.
+    const r = verzugStart(input({ invoiceDispatches: [mail(3, 1)] }));
+    expect(iso(r.from)).toBe("2281-04-14");
+  });
+  it("B2C mit Hinweis, Zugang bekannt, Mahnung früher als 30-Tage-Frist -> MAHNUNG", () => {
+    const r = verzugStart(
+      input({ isConsumer: true, consumerNotice: true, invoiceDispatches: [mail(3, 1)], priorDunnings: [{ createdAt: d(3, 20), dispatches: [mail(3, 20)] }] }),
+    );
+    expect(iso(r.from)).toBe("2281-03-21");
+    expect(r.basis).toBe("MAHNUNG");
+  });
+});

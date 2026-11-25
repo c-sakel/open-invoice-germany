@@ -4,6 +4,7 @@ import { DunningActions } from "@/components/dunning/DunningActions";
 import { SendEmailDialog } from "@/components/SendEmailDialog";
 import { SendByPostDialog } from "@/components/postal/SendByPostDialog";
 import { DUNNING_LEVEL_TITLE } from "@/lib/dunning";
+import { verzugBasisLabel } from "@/domain/dunning/verzug";
 import { deDate, type InvoiceDetail } from "./invoice-view-model";
 
 /** Mahnblock (Phase 11d, Task 3) — naechste Mahnstufe + Mahnprozess-Status + Aktionen,
@@ -77,6 +78,7 @@ export function PaymentSection({
                 {d.stage?.name ?? DUNNING_LEVEL_TITLE[d.level] ?? `${d.level}. Mahnung`} · {d.number} · {deDate(d.sentAt)}
                 {d.feeCents > 0 ? ` · Mahnkosten ${formatCents(d.feeCents, currency)}` : ""}
                 {d.interestAmountCents > 0 ? ` · Zinsen ${formatCents(d.interestAmountCents, currency)}` : ""}
+                {d.interestFrom ? ` (ab ${deDate(d.interestFrom)}, ${verzugBasisLabel(d.interestBasis)})` : d.interestBasis === "NONE" ? " · keine Zinsen: Verzug noch nicht eingetreten" : ""}
                 {d.flatFee40Cents > 0 ? ` · Pauschale ${formatCents(d.flatFee40Cents, currency)}` : ""}
               </span>
               <div className="flex items-center gap-2">

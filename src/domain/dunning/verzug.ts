@@ -40,6 +40,9 @@ export function zugangDay(dispatch: Dispatch): Date {
   return addDays(berlinCalendarDay(dispatch.at), dispatch.channel === "EMAIL" ? 1 : 3);
 }
 
+/**
+ * Fristablauf an Sonn-/Feiertagen: § 193 BGB wird bewusst NICHT angewandt (keine Verschiebung des Verzugsbeginns).
+ */
 export function verzugStart(i: VerzugInput): { from: Date | null; basis: VerzugBasis } {
   const dueDay = berlinCalendarDay(i.dueDate);
   const today = berlinCalendarDay(i.now);
@@ -83,4 +86,18 @@ export function verzugStart(i: VerzugInput): { from: Date | null; basis: VerzugB
   }
   if (!from || from.getTime() >= today.getTime()) return { from: null, basis: "NONE" };
   return { from, basis };
+}
+
+/** Lesbarer Grund des Verzugsbeginns (UI, MCP). */
+export function verzugBasisLabel(basis: string | null): string {
+  switch (basis) {
+    case "MAHNUNG":
+      return "Verzug durch Mahnung";
+    case "ENTGELT_30":
+      return "30 Tage nach Fälligkeit und Zugang";
+    case "ENTGELT_30_LEISTUNG":
+      return "30 Tage nach Fälligkeit und Leistung";
+    default:
+      return "Verzug noch nicht eingetreten";
+  }
 }
