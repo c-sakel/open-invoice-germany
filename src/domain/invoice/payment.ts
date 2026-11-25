@@ -19,8 +19,8 @@ import { emitEvent } from "@/domain/webhook/emit";
 import { serializePayment } from "@/api/serializers/payment";
 import { serializeInvoice } from "@/api/serializers/invoice";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
-import { skontoTerms, detectSkonto, type SkontoTerm } from "@/lib/pricing/skonto";
-import { payableBaseCents } from "@/domain/invoice/amounts";
+import { detectSkonto, type SkontoTerm } from "@/lib/pricing/skonto";
+import { payableBaseCents, skontoTermsForInvoice } from "@/domain/invoice/amounts";
 import { incrementPaidAmount } from "./paid-amount";
 import { NotFoundError } from "@/domain/errors";
 import { enqueuePaymentRuleRuns } from "@/domain/payment-rule/enqueue";
@@ -108,7 +108,7 @@ export async function recordPaymentWithinTx(
     where: { id: invoiceId },
     select: {
       id: true, status: true, type: true, orgId: true, number: true, customerId: true, currency: true,
-      issueDate: true, grossTotalCents: true, paidAmountCents: true, payableCents: true,
+      issueDate: true, grossTotalCents: true, paidAmountCents: true, payableCents: true, skontoBaseCents: true,
       skonto1Permille: true, skonto1Days: true, skonto2Permille: true, skonto2Days: true,
     },
   });
@@ -218,14 +218,7 @@ export async function recordPaymentWithinTx(
   const restCents = baseCents - newPaid;
 
   if (restCents > 0) {
-    const terms = skontoTerms({
-      issueDate: inv.issueDate,
-      grossTotalCents: baseCents,
-      skonto1Permille: inv.skonto1Permille,
-      skonto1Days: inv.skonto1Days,
-      skonto2Permille: inv.skonto2Permille,
-      skonto2Days: inv.skonto2Days,
-    });
+    const terms = skontoTermsForInvoice(inv, openBeforeCents);
     const match = detectSkonto(terms, paidAt, input.amountCents, openBeforeCents);
 
     if (match) {

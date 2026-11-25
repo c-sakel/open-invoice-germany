@@ -58,6 +58,25 @@ describe("Jetzt Rechnung erzeugen", () => {
   });
 });
 
+describe("Dialogtexte bei Festschreiben und Versand", () => {
+  it("autoFinalize + autoSend: ein Satz mit Empfänger", () => {
+    render(<RecurringActions id="a1" status="ACTIVE" nextPeriod={period} autoFinalize autoSend recipient="kunde@example.org" />);
+    fireEvent.click(screen.getByRole("button", { name: "Jetzt Rechnung erzeugen" }));
+    const text = screen.getByRole("dialog", { name: RUN, hidden: true }).textContent ?? "";
+    expect(text).toContain("festgeschrieben und an kunde@example.org versendet");
+    expect(text).not.toContain("erhält eine Rechnungsnummer");
+  });
+
+  it("autoSend ohne autoFinalize: Entwurf, kein Versand", () => {
+    render(<RecurringActions id="a1" status="ACTIVE" nextPeriod={period} autoSend recipient="kunde@example.org" />);
+    fireEvent.click(screen.getByRole("button", { name: "Jetzt Rechnung erzeugen" }));
+    const text = screen.getByRole("dialog", { name: RUN, hidden: true }).textContent ?? "";
+    expect(text).toContain("Entwurf");
+    expect(text).toContain("kein Versand");
+    expect(text).not.toContain("versendet");
+  });
+});
+
 describe("Fortsetzen", () => {
   const confirmBtn = () => screen.getByRole("button", { name: "Fortsetzen bestätigen", hidden: true }) as HTMLButtonElement;
 

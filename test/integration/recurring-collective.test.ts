@@ -7,7 +7,6 @@ import { createBestandRecurring } from "../helpers/recurring-bestand";
 import { describe, it, expect, beforeAll } from "vitest";
 import { dbInternal, prisma, GobdImmutabilityError } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
-import { createRecurring } from "@/domain/recurring/create";
 import { emitOne, emitRecurringNow, runDueRecurring, isSkipped } from "@/domain/recurring/run";
 import { emitCollective } from "@/domain/recurring/collective-run";
 import { RecurringNotDueError } from "@/domain/recurring/errors";

@@ -6,7 +6,6 @@ import { createBestandRecurring } from "../helpers/recurring-bestand";
 import { describe, it, expect, beforeAll } from "vitest";
 import { dbInternal } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
-import { createRecurring } from "@/domain/recurring/create";
 import { runDueRecurring, type EmittedInvoice } from "@/domain/recurring/run";
 import { recordUsage } from "@/domain/recurring/usage";
 import { cancelInvoice } from "@/domain/invoice/cancel";

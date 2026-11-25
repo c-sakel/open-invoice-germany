@@ -9,6 +9,7 @@ import { dbInternal } from "@/lib/db";
 import { assignDocumentNumber } from "@/domain/numbering/ranges";
 import { computeInterestSegments } from "@/lib/dunning";
 import { loadBaseRates } from "@/domain/dunning/base-rate";
+import { verzugStart, type Dispatch } from "@/domain/dunning/verzug";
 import { dunningScheduleFor, latestDunning, reachedStageIds, type StageLike } from "@/domain/dunning/schedule";
 import { loadDunningSettings } from "@/domain/dunning/settings";
 import { appendChangeLog } from "@/domain/audit";
@@ -89,7 +90,7 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
         // die "letzte Mahnung" jetzt einheitlich ueber alle drei Aufrufer hinweg (siehe
         // dort), nicht mehr per DB-seitigem orderBy+take.
         dunnings: {
-          select: { createdAt: true, dueDate: true, sentAt: true, level: true, stageId: true, stage: { select: { order: true } } },
+          select: { id: true, createdAt: true, dueDate: true, sentAt: true, level: true, stageId: true, stage: { select: { order: true } } },
         },
       },
     });
@@ -157,21 +158,68 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
     // ZUSAETZLICH ueber ALLE bisherigen Mahnungen dieser Rechnung zaehlen, in derselben Tx.
     const flatFeeCount = await tx.dunning.count({ where: { invoiceId, flatFee40Cents: { gt: 0 } } });
     const alreadyHasFlat = flatFeeCount > 0;
-    const applyFlatFee = stage.includeB2BFlatFee && !isConsumer && !alreadyHasFlat;
 
-    // Ruling (task-2-facts.md): Zinsen werden je Mahnung neu auf die Gesamt-Ueberfaelligkeit
-    // seit RECHNUNGSFAELLIGKEIT berechnet (nicht kumulativ ab der letzten Mahnung) und
-    // ersetzen den zuvor ausgewiesenen Betrag, statt ihn zu addieren.
-    // Task 3 (R6/R7): Basiszinssatz-HISTORIE statt eines einzelnen `settings.baseInterestRateBp`
-    // — `loadBaseRates` heilt eine fehlende Historie idempotent aus derselben Bestandszeile
-    // (Selbstheilung, Task 2). Zinszeitraum ist `dueDate` (Rechnungsfaelligkeit) -> `now`
-    // (Mahnungs-Erstellungszeitpunkt) — identisch zu `schedule.daysOverdue` (dieselbe
-    // `daysBetween`-Formel), nur mit den tatsaechlichen Datumsgrenzen statt der reinen Tageszahl,
-    // damit an jeder Basiszins-Halbjahresgrenze innerhalb der Periode gestueckelt werden kann.
+    // Zinsen laufen erst ab Verzugseintritt (§ 286 BGB), nicht ab Rechnungsfaelligkeit: durch
+    // Mahnung nach Faelligkeit (Zugang) oder 30 Tage nach Faelligkeit und Zugang der Rechnung
+    // (Verbraucher nur mit dem beim Festschreiben eingefrorenen Hinweis). Zugangstag laut
+    // `verzugStart`; erster Zinstag (`interestFrom`) ist der Tag NACH Zugang (Mahnung) bzw. nach Fristende (30 Tage), § 187 Abs. 1 BGB analog. Faellt der Fristablauf auf einen
+    // Sa/So/bundesweiten Feiertag, endet die 30-Tage-Frist erst am naechsten Werktag (§ 193 BGB).
+    // Je Mahnung neu auf die gesamte
+    // Zeit seit Verzugsbeginn berechnet und ersetzt den zuvor ausgewiesenen Betrag (nicht kumulativ).
+    // Basiszinssatz-HISTORIE (`loadBaseRates` heilt eine fehlende Historie idempotent); Zinszeitraum
+    // `v.from` -> `now`, an jeder Halbjahresgrenze gestueckelt. Ohne Verzug: 0 Cent, keine Abschnitte.
     const rates = await loadBaseRates(tx, inv.orgId);
+    const priorIds = inv.dunnings.map((x) => x.id);
+    const invoiceMails = await tx.emailLog.findMany({
+      where: { orgId: inv.orgId, docType: "INVOICE", docId: invoiceId, status: { in: ["SENT", "DELIVERED"] }, sentAt: { not: null } },
+      select: { sentAt: true },
+    });
+    const dunningMails = priorIds.length
+      ? await tx.emailLog.findMany({
+          where: { orgId: inv.orgId, docType: "DUNNING", docId: { in: priorIds }, status: { in: ["SENT", "DELIVERED"] }, sentAt: { not: null } },
+          select: { docId: true, sentAt: true },
+        })
+      : [];
+    const postJobs = await tx.postalJob.findMany({
+      where: {
+        orgId: inv.orgId,
+        mode: "LIVE",
+        submittedAt: { not: null },
+        // Positivliste: nur nachweislich eingereichte/zugestellte Auftraege (nicht DRAFT, HOLD,
+        // PENDING, SUBMITTING, UNKNOWN, CANCELLED, FAILED). Lieber zu spaet als zu frueh verzinsen.
+        status: { in: ["QUEUED", "DONE"] },
+        OR: [
+          { docType: "INVOICE", docId: invoiceId },
+          ...(priorIds.length ? [{ docType: "DUNNING", docId: { in: priorIds } }] : []),
+        ],
+      },
+      select: { docType: true, docId: true, submittedAt: true },
+    });
+    const invoiceDispatches: Dispatch[] = [
+      ...invoiceMails.flatMap((m) => (m.sentAt ? [{ channel: "EMAIL" as const, at: m.sentAt }] : [])),
+      ...postJobs.flatMap((j) => (j.docType === "INVOICE" && j.submittedAt ? [{ channel: "POST" as const, at: j.submittedAt }] : [])),
+    ];
+    const dispatchesOfDunning = (id: string): Dispatch[] => [
+      ...dunningMails.flatMap((m) => (m.docId === id && m.sentAt ? [{ channel: "EMAIL" as const, at: m.sentAt }] : [])),
+      ...postJobs.flatMap((j) => (j.docType === "DUNNING" && j.docId === id && j.submittedAt ? [{ channel: "POST" as const, at: j.submittedAt }] : [])),
+    ];
+    const v = verzugStart({
+      isConsumer,
+      consumerNotice: inv.consumerDefaultNotice,
+      dueDate,
+      serviceDate: inv.deliveryEnd ?? inv.deliveryDate,
+      issueDate: inv.issueDate,
+      invoiceDispatches,
+      priorDunnings: inv.dunnings.map((x) => ({ createdAt: x.createdAt, dispatches: dispatchesOfDunning(x.id) })),
+      now,
+    });
+    // Pauschale (§ 288 Abs. 5 BGB: "bei Verzug") und Mahnkosten (Verzugsschaden) nur, wenn der Verzug zum Mahnzeitpunkt
+    // eingetreten ist; sonst 0 (der Hinweis auf fehlenden Verzug bleibt). Unabhaengig vom Zinsschalter der Stufe.
+    const inVerzug = v.verzugAt !== null;
+    const applyFlatFee = stage.includeB2BFlatFee && !isConsumer && !alreadyHasFlat && inVerzug;
     const seg = computeInterestSegments({
       openAmountCents: openAmount,
-      from: dueDate,
+      from: v.from ?? now,
       to: now,
       isConsumer,
       rates,
@@ -182,8 +230,8 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
     // wird nach dem Schreiben nie neu berechnet (R8, GoBD).
     const interestSegmentsJson = stage.calculateInterest ? JSON.stringify(seg.segments) : null;
     const flatFee = applyFlatFee && !isConsumer ? 4000 : 0;
-    const feeCents = charging ? stage.feeCents : 0;
-    const lateFeeCents = charging ? (opts.lateFeeCents ?? 0) : 0;
+    const feeCents = charging && inVerzug ? stage.feeCents : 0;
+    const lateFeeCents = charging && inVerzug ? (opts.lateFeeCents ?? 0) : 0;
 
     // B3 (Final-Review): ueber assignDocumentNumber() — siehe invoice/finalize.ts.
     const number = await assignDocumentNumber(tx, inv.orgId, "DUNNING", now);
@@ -212,6 +260,8 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
         interestRatePoints: isConsumer ? 5 : 9,
         interestAmountCents: interestCents,
         interestSegmentsJson,
+        interestFrom: stage.calculateInterest ? v.from : null,
+        interestBasis: stage.calculateInterest ? v.basis : null,
         lateFeeCents,
         flatFee40Cents: flatFee,
         feeCents,
@@ -238,6 +288,8 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
         order: stage.order,
         claimBaseCents: openAmount,
         interestCents,
+        interestFrom: stage.calculateInterest && v.from ? v.from.toISOString().slice(0, 10) : null,
+        interestBasis: stage.calculateInterest ? v.basis : null,
         flatFee40Cents: flatFee,
         feeCents,
         createdBy,

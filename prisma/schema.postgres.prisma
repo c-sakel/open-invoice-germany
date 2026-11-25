@@ -425,6 +425,8 @@ model Invoice {
   // PARTIAL/DOWNPAYMENT); bei FINAL = grossTotalCents - prepaidCents. Zahlungen/
   // Mahnwesen rechnen mit COALESCE(payableCents, grossTotalCents).
   payableCents              Int?
+  // Skonto-Basis (brutto), beim Festschreiben eingefroren. NULL = Zahlbetrag (payableCents bzw. grossTotalCents).
+  skontoBaseCents           Int?
   xmlFormat                 String? // XRECHNUNG | ZUGFERD
   xmlHash                   String?
   pdfPath                   String?
@@ -621,6 +623,10 @@ model Dunning {
   // interestCents}]. NULL bei Bestandsmahnungen (additive Spalte) und bei genau einem
   // Abschnitt — das PDF zeigt dann weiterhin die bisherige Einzelzeile.
   interestSegmentsJson     String?
+  // Erster Zinstag (Tag nach Verzugseintritt, inklusiv); NULL bei Bestand oder Stufe ohne Zinsen.
+  interestFrom             DateTime?
+  // Grundlage des Verzugsbeginns: MAHNUNG | ENTGELT_30 | ENTGELT_30_LEISTUNG | NONE; NULL bei Bestand.
+  interestBasis            String?
   lateFeeCents             Int       @default(0) // nur konkrete Kosten, KEINE Pauschale
   flatFee40Cents           Int       @default(0) // §288 Abs.5, nur B2B
   pdfPath                  String?

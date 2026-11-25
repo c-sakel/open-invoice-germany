@@ -9,12 +9,13 @@ import { resolveLineOssCategories } from "@/domain/product/oss-snapshot";
 import { dbInternal } from "@/lib/db";
 import { itemTaxRates, planLineSync, toRecurringLineRows } from "@/domain/recurring/lines";
 import { lockRow } from "@/lib/db-lock";
-import { addDays, normalizeToNoon, periodRange, type BillingTiming, type RecurInterval } from "@/lib/recurring";
+import { addDays, isMonthBased, normalizeToNoon, periodRange, type BillingTiming, type RecurInterval } from "@/lib/recurring";
 import { assertTimingFitsLines, resolveFirstSchedule, timingChangeDetails } from "@/domain/recurring/timing";
 import { RecurringMissedPeriodsError, RecurringTimingChangeError } from "@/domain/recurring/errors";
 import { resumePausedRecurringWithinTx } from "@/domain/recurring/resume";
 import { countMissedStichtage } from "@/domain/payment-rule/resume-plan";
 import { effectiveAnchorDay } from "@/domain/recurring/usage-period";
+import { findLastBilled } from "@/domain/recurring/last-billed";
 import { updateRecurringSchema, resolveLineCategories, type TaxScheme as TaxSchemeValue, type UpdateRecurringInput } from "@/schemas";
 import { NotFoundError, InvalidOperationError } from "@/domain/errors";
 import { RecurringError } from "@/domain/recurring/create";
@@ -126,12 +127,14 @@ export async function updateRecurringInvoice(orgId: string, id: string, raw: unk
     // Intervall-/Ankeränderungen auf der alten Semantik (sonst würden Starttage 29.–31. plötzlich abgelehnt).
     const legacySchedule =
       existing.billingTiming === "ARREARS" && existing.anchorDay === null && existing.nextRunDate.getTime() === existing.startDate.getTime();
+    // Ankertag nur bei monats-/quartals-/jahresbasiertem Rhythmus; bei DAY/WEEKLY wird eine Angabe ignoriert.
+    const anchorInput = isMonthBased(effectiveInterval) ? input.anchorDay : undefined;
     const intervalChanged =
       (input.interval !== undefined && input.interval !== existing.interval) ||
       (input.intervalCount !== undefined && input.intervalCount !== existing.intervalCount);
     const reschedule =
       existing.issuedCount === 0 &&
-      (startDate !== undefined || timingChanged || (!legacySchedule && (intervalChanged || input.anchorDay != null)));
+      (startDate !== undefined || timingChanged || (!legacySchedule && (intervalChanged || anchorInput != null)));
     if (resumedWithMissed && reschedule) {
       throw new InvalidOperationError(
         "Fortsetzen mit versäumten Zeiträumen und Änderung von Startdatum, Intervall, Ankertag oder Abrechnungsart sind nicht in einem Schritt möglich. Zuerst fortsetzen, dann ändern.",
@@ -140,10 +143,10 @@ export async function updateRecurringInvoice(orgId: string, id: string, raw: unk
     let nextRunDate: Date | undefined;
     let derivedAnchorDay: number | null | undefined;
     if (reschedule) {
-      const first = resolveFirstSchedule(effectiveTiming, effectiveStartDate, effectiveInterval, effectiveCount, input.anchorDay);
+      const first = resolveFirstSchedule(effectiveTiming, effectiveStartDate, effectiveInterval, effectiveCount, anchorInput);
       nextRunDate = first.stichtag;
       derivedAnchorDay = first.anchorDay;
-    } else if (input.anchorDay != null && input.anchorDay !== existing.anchorDay) {
+    } else if (anchorInput != null && anchorInput !== existing.anchorDay) {
       // Ohne Neuberechnung gilt dieselbe Regel wie bei der Anlage: Ankertag nur wie berechnet.
       throw new RecurringError("Ankertag muss dem Tag des ersten Stichtags entsprechen.");
     }
@@ -154,16 +157,14 @@ export async function updateRecurringInvoice(orgId: string, id: string, raw: unk
         throw new RecurringError("Die Abrechnungsart kann nicht geändert werden, solange offene Verbräuche existieren. Verbräuche zuerst abrechnen oder stornieren.");
       }
       if (existing.issuedCount > 0 && input.acknowledgeTimingChange !== true) {
-        const last = await tx.invoice.findFirst({
-          where: { orgId, recurringInvoiceId: id },
-          orderBy: [{ createdAt: "desc" }],
-          select: { deliveryStart: true, deliveryEnd: true, deliveryDate: true },
-        });
+        // Einzel- und Sammelrechnungen (Entwürfe/stornierte zählen nicht); Bestand ohne Zeitraum: Leistungsdatum = Stichtag.
+        const last = await findLastBilled(tx, orgId, id);
         let lastBilled: { start: Date; end: Date } | null = null;
-        if (last?.deliveryStart && last.deliveryEnd) {
-          lastBilled = { start: last.deliveryStart, end: last.deliveryEnd };
+        if (last?.period) {
+          lastBilled = last.period;
         } else if (last?.deliveryDate) {
           // Bestand ohne Leistungszeitraum: Leistungsdatum = Stichtag (Ende), Beginn = voriger Stichtag + 1 Tag.
+          // Mit den ALTEN Intervallwerten gerechnet, die diese Rechnung erzeugt haben (nicht mit einem im selben Patch geänderten).
           lastBilled = { start: addDays(periodRange(last.deliveryDate, existing.interval as RecurInterval, existing.intervalCount, existing.anchorDay).start, 1), end: last.deliveryDate };
         }
         throw new RecurringTimingChangeError(
@@ -172,7 +173,7 @@ export async function updateRecurringInvoice(orgId: string, id: string, raw: unk
             stichtag: existing.nextRunDate,
             interval: effectiveInterval,
             count: effectiveCount,
-            anchorDay: input.anchorDay !== undefined ? input.anchorDay : existing.anchorDay,
+            anchorDay: anchorInput !== undefined ? anchorInput : existing.anchorDay,
             endDate: effectiveEndDate,
           }),
         );
@@ -180,7 +181,7 @@ export async function updateRecurringInvoice(orgId: string, id: string, raw: unk
     }
 
     // Phase 18f: Perioden offener Verbraeuche haengen an Stichtag/Intervall/Anker — Aenderung waere veraltet.
-    const newAnchorDay = derivedAnchorDay !== undefined ? derivedAnchorDay : input.anchorDay;
+    const newAnchorDay = derivedAnchorDay !== undefined ? derivedAnchorDay : anchorInput;
     const scheduleChanged =
       (input.interval !== undefined && input.interval !== existing.interval) ||
       (input.intervalCount !== undefined && input.intervalCount !== existing.intervalCount) ||

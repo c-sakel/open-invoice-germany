@@ -68,8 +68,9 @@ describe("Fortsetzen mit Rückstand", () => {
     expect(key(s.nextRunDate)).toBe("2262-04-15");
     expect(s.issuedCount).toBe(0);
     expect(await dbInternal.invoice.count({ where: { orgId, recurringInvoiceId: id } })).toBe(0);
-    const log = await dbInternal.activityLog.findFirst({ where: { orgId, entityId: id, type: "RECURRING_RESUMED_BY_RULE" }, select: { dataJson: true } });
+    const log = await dbInternal.activityLog.findFirst({ where: { orgId, entityId: id, type: "RECURRING_RESUMED" }, select: { dataJson: true } });
     expect(log?.dataJson).toContain('"skipped":3');
+    expect(await dbInternal.activityLog.count({ where: { orgId, entityId: id, type: "RECURRING_RESUMED_BY_RULE" } })).toBe(0);
   });
 
   it("BILL: ACTIVE, nächster Lauf erzeugt 3 Rechnungen mit lückenlosen Zeiträumen", async () => {

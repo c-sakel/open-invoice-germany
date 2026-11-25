@@ -6,6 +6,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { dbInternal } from "@/lib/db";
 import { formatCents } from "@/lib/money";
 import { createDunning, DunningError } from "@/domain/dunning/create";
+import { verzugBasisLabel } from "@/domain/dunning/verzug";
 import { sendDunning } from "@/domain/dunning/send";
 import { setDunningState } from "@/domain/dunning/state";
 import { DUNNING_ALL_ROWS, loadDunningOverview } from "@/domain/dunning/overview";
@@ -40,7 +41,13 @@ export function registerDunningTools(server: McpServer, ctx: McpToolsContext): v
         const org = await ctx.requireOrg();
         const inv = await ctx.resolveInvoice(org.id, invoice);
         const res = await createDunning(inv.id, { force, createdBy: "mcp", orgId: org.id });
-        return ctx.ok(`${res.stage.name} ${res.dunning.number} erstellt · offen ${formatCents(res.openAmountCents)} · Gesamtforderung ${formatCents(res.totalCents)}.`);
+        const d = res.dunning;
+        const zins = !res.stage.calculateInterest
+          ? ""
+          : d.interestFrom
+            ? ` · Zinsen ab ${d.interestFrom.toISOString().slice(0, 10)} (${verzugBasisLabel(d.interestBasis)})`
+            : " · keine Zinsen: Verzug noch nicht eingetreten";
+        return ctx.ok(`${res.stage.name} ${d.number} erstellt · offen ${formatCents(res.openAmountCents)} · Gesamtforderung ${formatCents(res.totalCents)}${zins}.`);
       } catch (e) {
         if (e instanceof NotFoundError) return ctx.fail(e.message);
         if (e instanceof DunningError) return ctx.fail(e.message);

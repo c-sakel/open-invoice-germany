@@ -225,7 +225,7 @@ Das Kundenportal gibt Kunden über einen persönlichen Link Einsicht in ihre Rec
 
 | Tool | Zweck | Beispiel |
 |---|---|---|
-| `create_dunning` | Nächste fällige Mahnstufe erzeugen (Verzugszins § 288 BGB + Mahnkosten ab Stufe 2 + 40-€-Pauschale B2B, `force` überspringt die Fälligkeitsprüfung) | „Erstelle die nächste Mahnstufe." |
+| `create_dunning` | Nächste fällige Mahnstufe erzeugen (Verzugszins § 288 BGB ab Verzugseintritt, Antwort nennt „Zinsen ab <Datum> (<Grund>)“ bzw. „keine Zinsen: Verzug noch nicht eingetreten“, + Mahnkosten ab Stufe 2 + 40-€-Pauschale B2B, `force` überspringt die Fälligkeitsprüfung) | „Erstelle die nächste Mahnstufe." |
 | `send_dunning` | Eine erstellte Mahnung per E-Mail versenden (dieselbe Mailpipeline wie Rechnungen/Angebote) | „Sende für RE-2026-00342 eine Zahlungserinnerung." |
 | `set_dunning_state` | Mahnprozess einer Rechnung pausieren (mit Datum), beenden oder wieder aktivieren | „Pausiere den Mahnprozess für RE-2026-00342 bis Monatsende." |
 | `list_overdue_invoices` | Mahnübersicht: alle überfälligen, offenen Rechnungen (Widgets + Zeilen, Fälligkeits-Aging), optional nach Mahnprozess-Status gefiltert | „Welche Rechnungen sind überfällig?" |
@@ -412,6 +412,8 @@ Eine E-Mail-Vorlage vom Typ Zahlungsbestätigung lässt sich nur in der Oberflä
 | `replay_webhook_delivery` | Eine bestehende Zustellung als NEUE Zustellung erneut versuchen (Original bleibt unverändert) | „Wiederhole die fehlgeschlagene Zustellung xyz." |
 
 ### Abos (wiederkehrende Rechnungen)
+
+`create_recurring` und `update_recurring_invoice` nehmen `billingTiming` (`ADVANCE` im Voraus, Standard; `ARREARS` nachträglich, Standard bei Verbrauchspositionen) entgegen; `update_recurring_invoice` zusätzlich `acknowledgeTimingChange` (nach der ersten Rechnung Pflicht für einen Wechsel, sonst Fehler mit Lücke oder Überschneidung). `anchorDay` wird bei neuen Abos aus dem Leistungsbeginn abgeleitet; ein abweichender Wert wird abgelehnt (früher war jeder Tag 1 bis 28 frei wählbar), bei täglichem und wöchentlichem Rhythmus wird die Angabe ignoriert. `list_recurring` zeigt `billingTiming` und `nextPeriods` (die nächsten drei Zeiträume mit `runDate`, `start`, `end`). `set_recurring_state` und `update_recurring_invoice` nehmen für das Fortsetzen mit versäumten Zeiträumen `missedPeriods` (`SKIP` oder `BILL`); ohne Angabe lehnt das Fortsetzen ab. Der Mail-Platzhalter `document.servicePeriod` liefert den Leistungszeitraum.
 
 `create_recurring` und `update_recurring_invoice` nehmen `collectiveBilling` und `invoiceHeading` (Pflicht bei `collectiveBilling`, höchstens 200 Zeichen) entgegen, `list_recurring` zeigt beide Felder. `run_recurring` meldet Sammelrechnungen mit der Zahl der Abos und, falls die Gruppe auf einen Verbrauchspartner wartet, „zurückgestellt".
 

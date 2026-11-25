@@ -538,6 +538,26 @@ const finalTwoDownpayments = () =>
     sourceLabel: "Angebot",
   });
 
+// 14b) Schlussrechnung mit Skonto (2 % / 7 Tage) auf dem Zahlbetrag: BT-115 = 4.760,00 = Skonto-Basis,
+// daher #SKONTO#TAGE=7#PROZENT=2.00# ohne BASISBETRAG (Skontobetrag 95,20).
+const finalTwoDownpaymentsSkonto = () =>
+  buildSample({
+    number: "RE-2040-0004",
+    type: "FINAL",
+    issueDate: new Date("2040-04-01"),
+    dueDate: new Date("2040-04-15"),
+    deliveryDate: new Date("2040-04-01"),
+    lines: [{ description: "Beratung vor Ort (Gesamtleistung)", quantityMilli: 100000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S" }],
+    prepaidCents: 714000,
+    deductions: [
+      { number: "AR-2040-0001", issueDate: new Date("2040-02-01"), netCents: 300000, taxCents: 57000, grossCents: 357000 },
+      { number: "AR-2040-0002", issueDate: new Date("2040-03-01"), netCents: 300000, taxCents: 57000, grossCents: 357000 },
+    ],
+    skonto1: { permille: 20, days: 7 },
+    sourceNumber: "AN-2040-0003",
+    sourceLabel: "Angebot",
+  });
+
 // Phase 12b (Task 6) — je eine Fixture fuer die bislang ungetesteten Steuerkategorien
 // (AE/K/G/E) plus § 19. Testjahr 2041, damit die Beispiele nicht mit den 2034er-/
 // 2040er-Fixtures kollidieren. Die Hinweistexte sind wortgleich zu SCHEME_NOTICE
@@ -858,6 +878,7 @@ const SAMPLES: Record<string, () => EInvoiceData> = {
   "downpayment-386": downpayment386,
   "partial-percent": partialPercent,
   "final-two-downpayments": finalTwoDownpayments,
+  "final-two-downpayments-skonto": finalTwoDownpaymentsSkonto,
   "reverse-charge-ae": reverseChargeAe,
   "ig-lieferung-k": igLieferungK,
   "ausfuhr-g": ausfuhrG,

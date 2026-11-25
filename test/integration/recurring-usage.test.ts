@@ -9,7 +9,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { dbInternal } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
-import { createRecurring, RecurringError } from "@/domain/recurring/create";
+import { RecurringError } from "@/domain/recurring/create";
 import { updateRecurringInvoice } from "@/domain/recurring/update";
 import { emitRecurringNow, runDueRecurring, isSkipped } from "@/domain/recurring/run";
 import { recordUsage, voidUsage, listUsage, markUsageBilled, UsageError } from "@/domain/recurring/usage";
@@ -265,14 +265,14 @@ describe("Fix-Welle 18f-1", () => {
     expect([ok.usage.periodStart.toISOString().slice(0, 10), ok.usage.periodEnd.toISOString().slice(0, 10)]).toEqual(["2187-03-31", "2187-04-30"]);
   });
 
-  it("Abo ohne Verbrauchszeile (FIXED) behaelt Stichtage und Periodentext wie vor 18f", async () => {
+  it("Abo ohne Verbrauchszeile (FIXED) behaelt Stichtage wie vor 18f; der Zeitraum beginnt hinter der letzten Rechnung", async () => {
     const rec = await createBestandRecurring(orgId, input({ title: "Nur fest", startDate: D("2187-01-31"), lines: [fixedLine], showPeriodText: true }));
     await emitted(rec.id, D("2187-01-31"));
     const second = await emitted(rec.id, D("2187-02-28"));
     const r = await dbInternal.recurringInvoice.findUniqueOrThrow({ where: { id: rec.id }, select: { nextRunDate: true } });
     expect(r.nextRunDate.toISOString().slice(0, 10)).toBe("2187-03-28");
     const inv = await dbInternal.invoice.findUniqueOrThrow({ where: { id: second.invoiceId }, select: { headerText: true } });
-    expect(inv.headerText).toBe("Leistungszeitraum 29.01.2187 – 28.02.2187");
+    expect(inv.headerText).toBe("Leistungszeitraum 01.02.2187 – 28.02.2187"); // nicht 29.01.: 29.–31.01. sind mit der ersten Rechnung abgerechnet
   });
 
   it("Abo ohne ITEM und ohne USAGE (nur Text, direkt angelegt) wird wie vor 18f abgerechnet, nicht uebersprungen", async () => {

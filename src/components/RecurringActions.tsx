@@ -137,10 +137,10 @@ export function RecurringActions({
           <div className="space-y-2">
             <p>{nextPeriod ? `Rechnung für ${nextPeriod.start} – ${nextPeriod.end} erzeugen?` : "Rechnung für den nächsten Zeitraum erzeugen?"}</p>
             {collective && <p>Fällige Abos dieses Kunden mit Sammelschalter werden gemeinsam abgerechnet.</p>}
-            {autoFinalize && <p>Die Rechnung wird festgeschrieben und erhält eine Rechnungsnummer.</p>}
-            {autoSend && recipient && <p>Die Rechnung wird festgeschrieben und an {recipient} versendet.</p>}
-            {autoSend && !recipient && <p>Die Rechnung wird festgeschrieben. Versand nicht möglich: beim Kunden ist keine E-Mail-Adresse hinterlegt.</p>}
-            {!autoFinalize && !autoSend && <p>Es wird ein Entwurf angelegt.</p>}
+            {autoFinalize && !autoSend && <p>Die Rechnung wird festgeschrieben und erhält eine Rechnungsnummer.</p>}
+            {autoFinalize && autoSend && recipient && <p>Die Rechnung wird festgeschrieben und an {recipient} versendet.</p>}
+            {autoFinalize && autoSend && !recipient && <p>Die Rechnung wird festgeschrieben. Versand nicht möglich: beim Kunden ist keine E-Mail-Adresse hinterlegt.</p>}
+            {!autoFinalize && <p>Es wird ein Entwurf angelegt{autoSend ? "; ohne Festschreiben erfolgt kein Versand." : "."}</p>}
           </div>
         }
         confirmLabel="Jetzt erzeugen"
@@ -178,9 +178,7 @@ export function RecurringActions({
                         : "Jede dieser Rechnungen wird festgeschrieben und erhält eine Rechnungsnummer."}
                   </p>
                 )}
-                {!autoFinalize && autoSend && (
-                  <p>{recipient ? `Jede dieser Rechnungen wird festgeschrieben und an ${recipient} versendet.` : "Jede dieser Rechnungen wird festgeschrieben. Versand nicht möglich: beim Kunden ist keine E-Mail-Adresse hinterlegt."}</p>
-                )}
+                {!autoFinalize && autoSend && <p>Es werden Entwürfe angelegt; ohne Festschreiben erfolgt kein Versand.</p>}
               </div>
             )}
           </fieldset>

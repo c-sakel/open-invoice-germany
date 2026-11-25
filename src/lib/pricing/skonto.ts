@@ -142,8 +142,15 @@ export function paymentTermsText(terms: readonly SkontoTerm[], netDueDate: Date 
 /**
  * BT-20-Freitext-Syntax für XRechnung/ZUGFeRD, z. B.:
  * "#SKONTO#TAGE=7#PROZENT=2.00#\n#SKONTO#TAGE=14#PROZENT=1.00#\nZahlbar ..."
+ * Mit `basisCents` je Zeile `#BASISBETRAG=5950.00#` (Skonto-Basis weicht vom Zahlbetrag ab).
  */
-export function xrechnungSkontoNote(terms: readonly SkontoTerm[], text: string): string {
-  const lines = terms.map((t) => `#SKONTO#TAGE=${t.days}#PROZENT=${formatPercentBt20(t.permille)}#`);
+export function xrechnungSkontoNote(terms: readonly SkontoTerm[], text: string, opts?: { basisCents?: number }): string {
+  let suffix = "";
+  if (opts?.basisCents !== undefined) {
+    const c = opts.basisCents;
+    if (!Number.isSafeInteger(c) || c < 0) throw new Error("Skonto-Basisbetrag muss eine nicht negative ganze Cent-Zahl sein");
+    suffix = `BASISBETRAG=${Math.trunc(c / 100)}.${String(c % 100).padStart(2, "0")}#`;
+  }
+  const lines = terms.map((t) => `#SKONTO#TAGE=${t.days}#PROZENT=${formatPercentBt20(t.permille)}#${suffix}`);
   return [...lines, text].join("\n");
 }

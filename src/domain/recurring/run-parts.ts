@@ -22,6 +22,7 @@ import { collectBillableUsage, markUsageBilled } from "./usage";
 import type { EmitOutcome, EmittedInvoice } from "./run-types";
 import { enqueueAutoSendWithinTx } from "./auto-send";
 import { effectiveAnchorDay } from "./usage-period";
+import { findLastBilled } from "./last-billed";
 
 export const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -72,7 +73,17 @@ export async function buildRunLines(
   }
   const anchorDay = effectiveAnchorDay(rec, hasUsageLines);
   // Leistungszeitraum (inklusive Grenzen) dieses Laufs: an Kopf (BG-14) und jeder ITEM-Zeile (BG-26).
-  const { start, end } = billingPeriod(rec.billingTiming as BillingTiming, periodDate, rec.interval as RecurInterval, rec.intervalCount, anchorDay, rec.endDate);
+  // Bestandsabos ohne Ankertag: Beginn hinter das Ende der letzten Abrechnung (keine Doppelung nach dem Klemmen).
+  const previous = rec.billingTiming === "ARREARS" && anchorDay === null ? await findLastBilled(tx, rec.orgId, rec.id) : null;
+  const { start, end } = billingPeriod(
+    rec.billingTiming as BillingTiming,
+    periodDate,
+    rec.interval as RecurInterval,
+    rec.intervalCount,
+    anchorDay,
+    rec.endDate,
+    previous?.period?.end ?? previous?.deliveryDate ?? null,
+  );
   const period = { start, end };
   const base = recurringLinesToInvoiceLines(rec.lines, usage, period);
   return {
