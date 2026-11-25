@@ -251,6 +251,14 @@ export async function dispatchAutoSend(id: string, now: Date, provider?: MailPro
   // Protokolle VOR dem Versuch merken: nach einer Ausnahme zaehlt jedes neue Protokoll als "Versand begonnen"
   // (unabhaengig von Uhr und Testdatum).
   const known = new Set((await dbInternal.emailLog.findMany({ where: { orgId: row.orgId, docType: "INVOICE", docId: row.invoiceId }, select: { id: true } })).map((l) => l.id));
+  // Besitz unmittelbar vor dem Versand bestaetigen und `claimedAt` erneuern: hat ein anderer Lauf die Zeile als haengend
+  // uebernommen (z. B. nach sehr langer Vorbereitung), wird hier nicht mehr gesendet. Der SMTP-Versuch selbst ist durch
+  // die Zeitlimits des Transports auf wenige Minuten begrenzt und liegt damit weit unter der Haenge-Schwelle.
+  const stillOwned = await dbInternal.invoiceAutoSend.updateMany({
+    where: { id: row.id, status: "SENDING", claimToken },
+    data: { claimedAt: new Date() },
+  });
+  if (stillOwned.count === 0) return { status: "NOT_CLAIMED" };
   const attempt = await sendRecurringInvoiceEmail(row.orgId, row.invoiceId, provider, rec?.emailTemplateId ?? null);
 
   let result: AttemptResult;
