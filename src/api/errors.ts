@@ -30,6 +30,7 @@ import { InvoiceUpdateError } from "@/domain/invoice/update";
 import { DeliveryNoteError, DeliveryNoteValidationError, DeliveryNoteNotDraftError } from "@/domain/delivery-note/errors";
 import { OverDeliveryError } from "@/domain/delivery-note/quantities";
 import { RecurringError } from "@/domain/recurring/create";
+import { RecurringMissedPeriodsError, RecurringTimingChangeError } from "@/domain/recurring/errors";
 import { AttachmentValidationError } from "@/lib/attachments/storage";
 import { PricingError } from "@/lib/pricing/errors";
 import { MailNotConfiguredError } from "@/domain/email/settings";
@@ -206,6 +207,12 @@ export function mapApiError(e: unknown): { status: number; body: ApiErrorBody } 
   if (e instanceof UsageError) {
     const status = e.code === "NOT_FOUND" ? 404 : e.code === "CONFLICT" ? 409 : 422;
     return { status, body: { error: { code: e.code, message: e.message } } };
+  }
+  if (e instanceof RecurringTimingChangeError) {
+    return { status: 409, body: { error: { code: "CONFLICT", message: e.message, reason: "TIMING_CHANGE_UNACKNOWLEDGED", details: e.details } } };
+  }
+  if (e instanceof RecurringMissedPeriodsError) {
+    return { status: 409, body: { error: { code: "CONFLICT", message: e.message, reason: e.code, details: { missedCount: e.missedCount } } } };
   }
   if (e instanceof ValidationError) {
     return { status: 400, body: { error: { code: "VALIDATION", message: e.message } } };

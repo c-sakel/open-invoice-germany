@@ -14,16 +14,21 @@ import { withApi } from "@/api/auth";
 import { apiData } from "@/api/response";
 import { apiDataResponseSchema, type RouteSpec } from "@/api/spec";
 import { serializeRecurring, recurringSchema } from "@/api/serializers/recurring";
+import { MissedPeriodsChoice } from "@/schemas";
 import { updateRecurringInvoice } from "@/domain/recurring/update";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const bodySchema = z.object({ state: z.enum(["ACTIVE", "PAUSED", "ENDED"]) });
+const bodySchema = z.object({
+  state: z.enum(["ACTIVE", "PAUSED", "ENDED"]),
+  // Pflicht beim Fortsetzen eines pausierten Abos mit Rueckstand (sonst 409, reason MISSED_PERIODS_REQUIRED).
+  missedPeriods: MissedPeriodsChoice.optional(),
+});
 
 export const POST = withApi<{ id: string }>(async (_req, ctx) => {
-  const { state } = bodySchema.parse(ctx.body);
-  const updated = await updateRecurringInvoice(ctx.orgId, ctx.params.id, { status: state }, ctx.actor);
+  const { state, missedPeriods } = bodySchema.parse(ctx.body);
+  const updated = await updateRecurringInvoice(ctx.orgId, ctx.params.id, { status: state, ...(missedPeriods ? { missedPeriods } : {}) }, ctx.actor);
   return apiData(serializeRecurring(updated));
 }, { scope: "write" });
 

@@ -444,8 +444,10 @@ describe("Recurring: Kopftext folgt showPeriodText (R4/R5)", () => {
     const emitted = await emitRecurringNow(rec.id, { now: new Date("2065-01-01T10:00:00.000Z") });
     const invoice = await dbInternal.invoice.findUniqueOrThrow({ where: { id: emitted.invoiceId } });
     expect(invoice.headerText).toBe("Vielen Dank fuer Ihren Auftrag.");
-    expect(invoice.deliveryStart).toBeNull();
-    expect(invoice.deliveryEnd).toBeNull();
+    // BG-14 gilt unabhaengig vom Kopftext; kein Einzel-Leistungsdatum (BT-72).
+    expect(invoice.deliveryDate).toBeNull();
+    expect(invoice.deliveryStart?.toISOString().slice(0, 10)).toBe("2065-01-01");
+    expect(invoice.deliveryEnd?.toISOString().slice(0, 10)).toBe("2065-01-31");
   });
 
   it("showPeriodText an: Zeitraumtext im Kopf, BG-14 (deliveryStart/deliveryEnd = Periodengrenzen) gesetzt", async () => {
@@ -466,9 +468,9 @@ describe("Recurring: Kopftext folgt showPeriodText (R4/R5)", () => {
 
     const emitted = await emitRecurringNow(rec.id, { now: new Date("2065-01-01T10:00:00.000Z") });
     const invoice = await dbInternal.invoice.findUniqueOrThrow({ where: { id: emitted.invoiceId } });
-    expect(invoice.headerText).toMatch(/^Abrechnungszeitraum /);
-    expect(invoice.deliveryStart).not.toBeNull();
-    expect(invoice.deliveryEnd?.toISOString().slice(0, 10)).toBe("2065-01-01");
-    expect(invoice.deliveryStart?.toISOString().slice(0, 10)).toBe("2064-12-01");
+    expect(invoice.headerText).toBe("Leistungszeitraum 01.01.2065 – 31.01.2065");
+    expect(invoice.deliveryDate).toBeNull();
+    expect(invoice.deliveryEnd?.toISOString().slice(0, 10)).toBe("2065-01-31");
+    expect(invoice.deliveryStart?.toISOString().slice(0, 10)).toBe("2065-01-01");
   });
 });

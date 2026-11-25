@@ -39,6 +39,15 @@ function buildCases(): Case[] {
       key: `${layoutId}/credit`,
       render: () => renderInvoicePdf({ ...referenzInvoice(), type: "CREDIT_NOTE" }, theme()),
     });
+    // Abo-Rechnung im Voraus: Leistungszeitraum (BG-14) statt Leistungsdatum im Kopf.
+    cases.push({
+      key: `${layoutId}/invoice-zeitraum`,
+      render: () =>
+        renderInvoicePdf(
+          { ...referenzInvoice(), deliveryDate: null, deliveryStart: new Date("2073-10-01T12:00:00Z"), deliveryEnd: new Date("2073-10-31T12:00:00Z") },
+          theme(),
+        ),
+    });
     cases.push({ key: `${layoutId}/delivery`, render: () => renderDeliveryNotePdf(sampleDeliveryNote(), theme()) });
     cases.push({ key: `${layoutId}/dunning`, render: () => renderDunningPdf(sampleDunning(), theme()) });
   }
@@ -72,7 +81,7 @@ describe("PDF-Regression der festen Layouts", () => {
     }
     expect(existsSync(FIXTURE)).toBe(true);
     const expected = JSON.parse(readFileSync(FIXTURE, "utf8")) as Record<string, string>;
-    expect(Object.keys(expected)).toHaveLength(38);
+    expect(Object.keys(expected)).toHaveLength(45);
     expect(sorted).toEqual(expected); // Sammelmeldung aller abweichenden Schluessel
   }, 120_000);
 });

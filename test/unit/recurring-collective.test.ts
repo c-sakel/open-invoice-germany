@@ -19,7 +19,7 @@ function cand(id: string, over: Partial<CollectiveCandidate> = {}): CollectiveCa
     id, orgId: "o1", customerId: "c1", status: "ACTIVE", collectiveBilling: true,
     nextRunDate: new Date("2205-03-01T00:00:00Z"), createdAt: new Date("2205-01-01T00:00:00Z"),
     currency: "EUR", taxScheme: "REGULAR", language: "de", paymentTermsDays: 14,
-    autoFinalize: false, autoSend: false, emailTemplateId: null, ...over,
+    autoFinalize: false, autoSend: false, emailTemplateId: null, billingTiming: "ARREARS", ...over,
   };
 }
 
@@ -61,6 +61,7 @@ describe("splitReasons", () => {
     ["autoFinalize", { autoFinalize: true }],
     ["autoSend", { autoSend: true }],
     ["emailTemplateId", { autoSend: true, emailTemplateId: "t1" }],
+    ["billingTiming", { billingTiming: "ADVANCE" }],
   ] as const)("Grund %s", (field, over) => {
     expect(splitReasons(cand("a", { autoSend: field === "emailTemplateId" }), cand("b", over))).toEqual([field]);
   });
@@ -149,11 +150,12 @@ describe("collectiveHeaderText", () => {
     const t = collectiveHeaderText([
       block("A", [], { periodStart: new Date("2205-02-01T00:00:00Z"), periodEnd: new Date("2205-03-01T00:00:00Z") }),
       block("B", [], { periodStart: new Date("2205-01-01T00:00:00Z"), periodEnd: new Date("2205-02-01T00:00:00Z") }),
-    ]);
-    expect(t).toBe("Abrechnungszeitraum 01.01.2205 – 01.03.2205");
+    ], "de");
+    expect(t).toBe("Leistungszeitraum 01.01.2205 – 01.03.2205");
+    expect(collectiveHeaderText([block("A", [])], "en")).toContain("Service period");
   });
   it("einer aus -> undefined", () => {
-    expect(collectiveHeaderText([block("A", []), block("B", [], { showPeriodText: false })])).toBeUndefined();
+    expect(collectiveHeaderText([block("A", []), block("B", [], { showPeriodText: false })], "de")).toBeUndefined();
   });
 });
 

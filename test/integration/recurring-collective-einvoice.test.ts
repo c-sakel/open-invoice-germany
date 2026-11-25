@@ -2,10 +2,10 @@
  * E-Rechnung und PDF einer Sammelrechnung aus Abos: je Position eine Rechnungszeile, keine
  * Gliederungszeilen im XML, Leistungszeitraum je Position und am Beleg, Storno. Eigenes Jahr 2208.
  */
+import { createBestandRecurring } from "../helpers/recurring-bestand";
 import { describe, it, expect, beforeAll } from "vitest";
 import { dbInternal } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
-import { createRecurring } from "@/domain/recurring/create";
 import { runDueRecurring, type EmittedInvoice } from "@/domain/recurring/run";
 import { recordUsage } from "@/domain/recurring/usage";
 import { cancelInvoice } from "@/domain/invoice/cancel";
@@ -37,14 +37,14 @@ beforeAll(async () => {
     select: { id: true },
   });
   customerId = c.id;
-  const a = await createRecurring(
+  const a = await createBestandRecurring(
     orgId,
     createRecurringSchema.parse({
       customerId, title: "INTERNTITEL-WARTUNG", startDate: START, collectiveBilling: true, invoiceHeading: "Wartung", autoFinalize: true, showPeriodText: true,
       lines: [{ lineType: "ITEM", description: "Wartungsvertrag", unitNetPriceCents: 4900, ...base }],
     }),
   );
-  const b = await createRecurring(
+  const b = await createBestandRecurring(
     orgId,
     createRecurringSchema.parse({
       customerId, title: "INTERNTITEL-HOSTING", startDate: START, collectiveBilling: true, invoiceHeading: "Hosting", autoFinalize: true, showPeriodText: true,
@@ -78,7 +78,7 @@ describe("Sammelrechnung — E-Rechnung und PDF", () => {
     expect(xml).not.toMatch(/<cbc:Name>(Wartung|Hosting)<\/cbc:Name>/);
     expect(count(xml, /<cac:InvoicePeriod>/g)).toBeGreaterThanOrEqual(4); // Kopf + je Position
     const dates = [...xml.matchAll(/<cbc:(?:Start|End)Date>([^<]*)/g)].map((m) => m[1]);
-    expect(dates).toEqual(Array.from({ length: 4 }, () => ["2208-02-01", "2208-03-01"]).flat()); // Kopf (Min/Max) + 3 Positionen
+    expect(dates).toEqual(Array.from({ length: 4 }, () => ["2208-02-02", "2208-03-01"]).flat()); // Kopf (Min/Max) + 3 Positionen (Bestand nachtraeglich: inklusive Grenzen)
     expect(validateXRechnung(data!, xml).errors).toEqual([]);
     expect(xml).not.toContain("INTERNTITEL");
   });
@@ -127,21 +127,21 @@ describe("Sammelrechnung — Zeitraum und Hinweise bei unterschiedlichen Rhythme
       select: { id: true },
     });
     const common = { customerId: c.id, startDate: START, collectiveBilling: true, autoFinalize: true, showPeriodText: true };
-    const monthly = await createRecurring(
+    const monthly = await createBestandRecurring(
       orgId,
       createRecurringSchema.parse({
         ...common, title: "INTERNTITEL-MONAT", invoiceHeading: "Wartung", notes: "Bitte Zugang melden",
         lines: [{ lineType: "ITEM", description: "Wartung monatlich", unitNetPriceCents: 1000, ...base }],
       }),
     );
-    const quarterly = await createRecurring(
+    const quarterly = await createBestandRecurring(
       orgId,
       createRecurringSchema.parse({
         ...common, title: "INTERNTITEL-QUARTAL", invoiceHeading: "Lizenz", interval: "QUARTERLY", notes: "Lizenzschluessel per Post",
         lines: [{ lineType: "ITEM", description: "Lizenz Quartal", unitNetPriceCents: 3000, ...base }],
       }),
     );
-    const noNote = await createRecurring(
+    const noNote = await createBestandRecurring(
       orgId,
       createRecurringSchema.parse({
         ...common, title: "INTERNTITEL-OHNE", invoiceHeading: "Support",
@@ -159,17 +159,17 @@ describe("Sammelrechnung — Zeitraum und Hinweise bei unterschiedlichen Rhythme
 
   it("Kopfzeitraum (BG-14, BT-73/BT-74) = frueheste Start bis spaeteste Ende ueber alle Positionen", async () => {
     const inv = await dbInternal.invoice.findFirstOrThrow({ where: { id: mixed.invoiceId, orgId }, select: { deliveryStart: true, deliveryEnd: true, lines: { where: { lineType: "ITEM" }, select: { description: true, servicePeriodStart: true, servicePeriodEnd: true } } } });
-    // Die abgelaufene Periode wird abgerechnet: Stichtag minus ein Rhythmus bis zum Stichtag (je Abo).
+    // Bestand (nachtraeglich): Periode = Tag nach dem vorigen Stichtag bis zum Stichtag (inklusive Grenzen, je Abo).
     const byDesc = new Map(inv.lines.map((l) => [l.description, l]));
-    expect(byDesc.get("Wartung monatlich")!.servicePeriodStart!.toISOString().slice(0, 10)).toBe("2208-02-01");
-    expect(byDesc.get("Lizenz Quartal")!.servicePeriodStart!.toISOString().slice(0, 10)).toBe("2207-12-01");
+    expect(byDesc.get("Wartung monatlich")!.servicePeriodStart!.toISOString().slice(0, 10)).toBe("2208-02-02");
+    expect(byDesc.get("Lizenz Quartal")!.servicePeriodStart!.toISOString().slice(0, 10)).toBe("2207-12-02");
     for (const l of inv.lines) expect(l.servicePeriodEnd!.toISOString().slice(0, 10)).toBe("2208-03-01");
-    expect(inv.deliveryStart!.toISOString().slice(0, 10)).toBe("2207-12-01");
+    expect(inv.deliveryStart!.toISOString().slice(0, 10)).toBe("2207-12-02");
     expect(inv.deliveryEnd!.toISOString().slice(0, 10)).toBe("2208-03-01");
     const data = (await loadEInvoiceData(mixed.invoiceId, orgId))?.data;
     const xml = buildXRechnungUBL(data!);
     const dates = [...xml.matchAll(/<cbc:(?:Start|End)Date>([^<]*)/g)].map((m) => m[1]);
-    expect(dates.slice(0, 2)).toEqual(["2207-12-01", "2208-03-01"]);
+    expect(dates.slice(0, 2)).toEqual(["2207-12-02", "2208-03-01"]);
     expect(validateXRechnung(data!, xml).errors).toEqual([]);
   });
 

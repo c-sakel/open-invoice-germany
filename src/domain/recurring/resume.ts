@@ -13,13 +13,22 @@ export interface ResumeResult {
   nextRunDate?: Date;
   /** Das Enddatum liegt im uebersprungenen Zeitraum: nichts fortgesetzt, Abo bleibt pausiert. */
   ended?: boolean;
+  /** Bedienerpfad (strict): SKIP wuerde offenen Verbrauch still abrechnen lassen, nichts fortgesetzt. */
+  blocked?: boolean;
 }
 
 export async function resumePausedRecurringWithinTx(
   tx: Prisma.TransactionClient,
   orgId: string,
   recurringId: string,
-  opts: { missedPeriods: "SKIP" | "BILL"; now: Date; actor: string; invoiceId?: string },
+  opts: {
+    missedPeriods: "SKIP" | "BILL";
+    now: Date;
+    actor: string;
+    invoiceId?: string;
+    /** Bedienerpfad: SKIP mit offenem Verbrauch (BILL_FALLBACK) ablehnen statt still abzurechnen. Regel-Pfad: Fallback. */
+    strict?: boolean;
+  },
 ): Promise<ResumeResult> {
   await lockRow(tx, "RecurringInvoice", recurringId, orgId);
   const rec = await tx.recurringInvoice.findFirst({
@@ -57,6 +66,7 @@ export async function resumePausedRecurringWithinTx(
       skipped = plan.skipped;
       note = `fortgesetzt, ${skipped} Periode(n) uebersprungen`;
     } else if (plan.kind === "BILL_FALLBACK") {
+      if (opts.strict) return { resumed: false, note: plan.reason, skippedPeriods: 0, blocked: true };
       note = `fortgesetzt, ${plan.reason}`;
     }
   } else {
@@ -67,8 +77,9 @@ export async function resumePausedRecurringWithinTx(
     data: { status: "ACTIVE", ...(nextRunDate ? { nextRunDate } : {}) },
   });
   if (res.count === 0) return { resumed: false, note: "laeuft bereits", skippedPeriods: 0 };
+  // Bedienerpfad (strict) und Regel nach Zahlungseingang tragen verschiedene Typen: der Audit-Text nennt den Auslöser.
   await logActivity(tx, {
-    orgId, entityType: "RECURRING", entityId: rec.id, type: "RECURRING_RESUMED_BY_RULE", actor: opts.actor, at: opts.now,
+    orgId, entityType: "RECURRING", entityId: rec.id, type: opts.strict ? "RECURRING_RESUMED" : "RECURRING_RESUMED_BY_RULE", actor: opts.actor, at: opts.now,
     data: { invoiceId: opts.invoiceId ?? null, missedPeriods: opts.missedPeriods, skipped },
   });
   return { resumed: true, note, skippedPeriods: skipped, ...(nextRunDate ? { nextRunDate } : {}) };

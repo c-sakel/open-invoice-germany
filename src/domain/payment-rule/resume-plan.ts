@@ -3,6 +3,8 @@ import { advanceDate, type RecurInterval } from "@/lib/recurring";
 import { berlinDateKey } from "@/lib/berlin-time";
 
 export const MAX_SKIP_STEPS = 400;
+/** Hoechstzahl Rechnungen je Abo und Lauf (Abo-Lauf, runDueRecurring); weitere folgen im naechsten Lauf. */
+export const MAX_INVOICES_PER_RUN = 24;
 
 export interface SkipMissedInput {
   nextRunDate: Date;
@@ -41,4 +43,22 @@ export function planSkipMissed(input: SkipMissedInput): SkipMissedPlan {
     return { kind: "BILL_FALLBACK", reason: "Offener Verbrauch in uebersprungenen Perioden, Rueckstand wird abgerechnet." };
   }
   return { kind: "ADVANCE", nextRunDate: cur, skipped };
+}
+
+/** Anzahl versaeumter Stichtage (vor dem heutigen Berliner Tag), hoechstens MAX_SKIP_STEPS. */
+export function countMissedStichtage(input: {
+  nextRunDate: Date;
+  interval: RecurInterval;
+  intervalCount: number;
+  anchorDay: number | null;
+  now: Date;
+}): number {
+  const today = berlinDateKey(input.now);
+  let cur = input.nextRunDate;
+  let n = 0;
+  while (localKey(cur) < today && n < MAX_SKIP_STEPS) {
+    cur = advanceDate(cur, input.interval, input.intervalCount, input.anchorDay);
+    n += 1;
+  }
+  return n;
 }

@@ -95,6 +95,12 @@ function resolveRecipientEmail(contact: ContactSnapshot | null, docTypeOverride:
   return customerEmail;
 }
 
+/** Leistungszeitraum (BG-14) als "{Beginn} – {Ende}" in Belegsprache; leer ohne vollstaendigen Zeitraum. */
+export function servicePeriodText(start: Date | null | undefined, end: Date | null | undefined, lang: DocLanguage): string {
+  if (!start || !end) return "";
+  return `${formatDateLang(start, lang)} – ${formatDateLang(end, lang)}`;
+}
+
 /** Belegkontext. Betraege sind optional (`null` = kein Betrag am Belegtyp, z. B. Lieferschein). */
 function docCtx(
   type: EmailDocType,
@@ -106,8 +112,10 @@ function docCtx(
   taxCents: number | null,
   currency: string,
   lang: DocLanguage = "de",
+  servicePeriod = "",
 ) {
   return {
+    servicePeriod,
     type: docTypeLabel(type, lang),
     number: number ?? "",
     date: formatDateLang(date, lang),
@@ -231,7 +239,7 @@ export async function buildTemplateContext(
         customField: customFields,
         company: { ...company, name: seller.legalName },
         payment,
-        document: docCtx(docType, inv.number, inv.issueDate, inv.dueDate, inv.grossTotalCents, inv.netTotalCents, inv.taxTotalCents, inv.currency, lang),
+        document: docCtx(docType, inv.number, inv.issueDate, inv.dueDate, inv.grossTotalCents, inv.netTotalCents, inv.taxTotalCents, inv.currency, lang, servicePeriodText(inv.deliveryStart, inv.deliveryEnd, lang)),
         invoice: {
           number: inv.number ?? "",
           date: formatDateLang(inv.issueDate, lang),
@@ -377,7 +385,7 @@ export function sampleTemplateContext(docType: EmailTemplateDocType): TemplateCo
     ANGEBOT: docCtx("ANGEBOT", "AN-2026-0042", today, dueDate, 119000, 100000, 19000, "EUR"),
     AUFTRAGSBESTAETIGUNG: docCtx("AUFTRAGSBESTAETIGUNG", "AB-2026-0042", today, dueDate, 119000, 100000, 19000, "EUR"),
     PROFORMA: docCtx("PROFORMA", "PF-2026-0042", today, dueDate, 119000, 100000, 19000, "EUR"),
-    INVOICE: docCtx("INVOICE", "RE-2026-0042", today, dueDate, 119000, 100000, 19000, "EUR"),
+    INVOICE: docCtx("INVOICE", "RE-2026-0042", today, dueDate, 119000, 100000, 19000, "EUR", "de", servicePeriodText(today, dueDate, "de")),
     CREDIT_NOTE: docCtx("CREDIT_NOTE", "GS-2026-0042", today, dueDate, 119000, 100000, 19000, "EUR"),
     DUNNING: docCtx("DUNNING", "MA-2026-0042", today, dueDate, 119000, null, null, "EUR"),
     DELIVERY_NOTE: docCtx("DELIVERY_NOTE", "LS-2026-0042", today, dueDate, null, null, null, "EUR"),

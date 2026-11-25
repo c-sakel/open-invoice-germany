@@ -5,6 +5,7 @@ import { getActiveOrg } from "@/lib/org";
 import { getCurrentUserId } from "@/lib/auth/server";
 import { updateRecurringInvoice } from "@/domain/recurring/update";
 import { RecurringError } from "@/domain/recurring/create";
+import { RecurringMissedPeriodsError, RecurringTimingChangeError } from "@/domain/recurring/errors";
 import { NotFoundError, InvalidOperationError } from "@/domain/errors";
 import { TaxRateNotAllowedError } from "@/domain/settings/tax-rates";
 
@@ -34,8 +35,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       return NextResponse.json(updated);
     }
 
-    const { status } = updateRecurringStatusSchema.parse(body);
-    const updated = await updateRecurringInvoice(org.id, id, { status }, actor);
+    const { status, missedPeriods } = updateRecurringStatusSchema.parse(body);
+    const updated = await updateRecurringInvoice(org.id, id, { status, ...(missedPeriods ? { missedPeriods } : {}) }, actor);
     return NextResponse.json({ id: updated.id, status: updated.status });
   } catch (e) {
     if (e instanceof z.ZodError) return NextResponse.json({ error: "Ungültige Eingabe." }, { status: 400 });
@@ -44,6 +45,10 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     // Fix-Welle 12c (I2): derselbe Konflikt liefert am /api/v1-Zwilling bereits 409
     // (src/api/errors.ts) — vorher fiel dieser Fall unter den generischen 400-Zweig.
     if (e instanceof TaxRateNotAllowedError) return NextResponse.json({ error: e.message }, { status: 409 });
+    if (e instanceof RecurringTimingChangeError) return NextResponse.json({ error: e.message, reason: "TIMING_CHANGE_UNACKNOWLEDGED", details: e.details }, { status: 409 });
+    if (e instanceof RecurringMissedPeriodsError) {
+      return NextResponse.json({ error: e.message, reason: e.code, details: { missedCount: e.missedCount } }, { status: 409 });
+    }
     if (e instanceof RecurringError) return NextResponse.json({ error: e.message }, { status: 400 });
     console.error("PATCH /api/recurring/[id]:", e);
     return NextResponse.json({ error: "Abo konnte nicht geändert werden." }, { status: 400 });

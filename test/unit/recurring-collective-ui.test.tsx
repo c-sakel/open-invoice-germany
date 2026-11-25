@@ -21,6 +21,7 @@ const initial = (over: Partial<RecurringInitialValues> = {}): RecurringInitialVa
   showPeriodText: true,
   notes: "",
   currency: "EUR",
+  billingTiming: "ARREARS",
   lines: [],
   ...over,
 });
@@ -37,6 +38,13 @@ describe("Abo-Formular: Kunde", () => {
     expect(html).not.toContain('value="c1"');
     expect(html).toMatch(/<input[^>]*aria-label="Kunde"[^>]*/);
     expect(html).toMatch(/<input[^>]*role="combobox"[^>]*required|<input[^>]*required[^>]*role="combobox"/);
+  });
+});
+
+describe("Abo-Formular: Abrechnungsart-Initialwert", () => {
+  it("Bearbeiten zeigt die gespeicherte Abrechnungsart", () => {
+    expect(form(initial({ billingTiming: "ADVANCE" }))).toMatch(/<input[^>]*value="ADVANCE"[^>]*checked=""|<input[^>]*checked=""[^>]*value="ADVANCE"/);
+    expect(form(initial({ billingTiming: "ARREARS" }))).toMatch(/<input[^>]*value="ARREARS"[^>]*checked=""|<input[^>]*checked=""[^>]*value="ARREARS"/);
   });
 });
 

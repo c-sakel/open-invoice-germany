@@ -3,10 +3,10 @@
  * Folgegruppe, maxRuns/Enddatum je Abo, Fehler, Versand und GoBD-Guard. Eigenes Jahr 2205
  * (Invoice.number global eindeutig), eigene Organisation, kein Netz.
  */
+import { createBestandRecurring } from "../helpers/recurring-bestand";
 import { describe, it, expect, beforeAll } from "vitest";
 import { dbInternal, prisma, GobdImmutabilityError } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
-import { createRecurring } from "@/domain/recurring/create";
 import { emitOne, emitRecurringNow, runDueRecurring, isSkipped } from "@/domain/recurring/run";
 import { emitCollective } from "@/domain/recurring/collective-run";
 import { RecurringNotDueError } from "@/domain/recurring/errors";
@@ -42,7 +42,7 @@ async function customer(email: string | null = "sammel@example.org"): Promise<st
 const item = (description: string, cents: number) => ({ lineType: "ITEM", description, quantityMilli: 1000, unit: "C62", unitNetPriceCents: cents, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 });
 
 async function abo(customerId: string, title: string, cents: number, extra: Record<string, unknown> = {}) {
-  return createRecurring(
+  return createBestandRecurring(
     orgId,
     createRecurringSchema.parse({
       customerId,
@@ -114,17 +114,20 @@ describe("Sammelrechnung im Lauf", () => {
     await abo(c, "P2", 500, { showPeriodText: false });
     const out = (await run(a)).flatMap((s) => s.emitted)[0];
     const lines = (await invoiceLines(out.invoiceId)).filter((l) => l.lineType === "ITEM");
+    // BG-26 je Position gilt immer (auch ohne Zeitraumtext); der Kopftext folgt showPeriodText.
     expect(lines[0].servicePeriodStart).not.toBeNull();
-    expect(lines[1].servicePeriodStart).toBeNull();
-    const inv = await dbInternal.invoice.findUniqueOrThrow({ where: { id: out.invoiceId }, select: { headerText: true, deliveryStart: true, deliveryEnd: true } });
+    expect(lines[1].servicePeriodStart).not.toBeNull();
+    const inv = await dbInternal.invoice.findUniqueOrThrow({ where: { id: out.invoiceId }, select: { headerText: true, deliveryDate: true, deliveryStart: true, deliveryEnd: true } });
+    expect(inv.deliveryDate).toBeNull();
     expect(inv.deliveryStart?.getTime()).toBe(lines[0].servicePeriodStart?.getTime());
+    expect(inv.headerText ?? "").not.toContain("Leistungszeitraum");
 
     const c2 = await customer();
     const m = await abo(c2, "M1", 1000, { showPeriodText: true });
     await abo(c2, "Q1", 500, { showPeriodText: true, interval: "MONTHLY", intervalCount: 3 });
     const out2 = (await run(m)).flatMap((s) => s.emitted).find((e) => e.collectiveRecurringIds)!;
     const inv2 = await dbInternal.invoice.findUniqueOrThrow({ where: { id: out2.invoiceId }, select: { headerText: true } });
-    expect(inv2.headerText).toContain("Abrechnungszeitraum");
+    expect(inv2.headerText).toContain("Leistungszeitraum");
   });
 
   it("abweichende Waehrung -> zwei Einzelrechnungen mit COLLECTIVE_SPLIT; anderer Kunde und pausierter Partner nicht beteiligt", async () => {

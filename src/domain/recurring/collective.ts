@@ -4,8 +4,7 @@
  * Berechnung und Pruefung der Betraege uebernimmt weiterhin der gemeinsame Rechnungspfad.
  */
 import { berlinDateKey } from "@/lib/berlin-time";
-import type { DocLanguage } from "@/lib/i18n/doc";
-import { formatDateDe } from "@/lib/template/format";
+import { docStrings, formatDocDate, type DocLanguage } from "@/lib/i18n/doc";
 import type { CreateInvoiceInput } from "@/schemas";
 
 export const COLLECTIVE_MAX_MEMBERS = 50;
@@ -17,7 +16,8 @@ export type CollectiveKeyField =
   | "paymentTermsDays"
   | "autoFinalize"
   | "autoSend"
-  | "emailTemplateId";
+  | "emailTemplateId"
+  | "billingTiming";
 
 export interface CollectiveCandidate {
   id: string;
@@ -34,6 +34,7 @@ export interface CollectiveCandidate {
   autoFinalize: boolean;
   autoSend: boolean;
   emailTemplateId: string | null;
+  billingTiming: string;
 }
 
 const KEY_FIELDS: readonly CollectiveKeyField[] = [
@@ -44,6 +45,7 @@ const KEY_FIELDS: readonly CollectiveKeyField[] = [
   "autoFinalize",
   "autoSend",
   "emailTemplateId",
+  "billingTiming",
 ];
 
 /** Klartext je abweichendem Schluesselfeld (fuer die Anzeige, warum ein Abo nicht mit in die Sammelrechnung kommt). */
@@ -55,6 +57,7 @@ export const COLLECTIVE_REASON_LABEL: Record<CollectiveKeyField, string> = {
   autoFinalize: "Festschreiben weicht ab",
   autoSend: "Versand weicht ab",
   emailTemplateId: "Mailvorlage weicht ab",
+  billingTiming: "Abrechnungsart weicht ab",
 };
 
 /** Berliner Kalendertag des Stichtags. */
@@ -166,12 +169,12 @@ export function collectivePeriod(lines: CreateInvoiceInput["lines"]): { start: D
   return start && end ? { start, end } : null;
 }
 
-/** Kopftext "Abrechnungszeitraum dd.mm.yyyy – dd.mm.yyyy" nur, wenn alle Bloecke den Zeitraumtext wollen. */
-export function collectiveHeaderText(blocks: readonly CollectiveBlock[]): string | undefined {
+/** Kopftext "Leistungszeitraum dd.mm.yyyy – dd.mm.yyyy" (Belegsprache) nur, wenn alle Bloecke den Zeitraumtext wollen. */
+export function collectiveHeaderText(blocks: readonly CollectiveBlock[], lang: DocLanguage): string | undefined {
   if (blocks.length === 0 || !blocks.every((b) => b.showPeriodText)) return undefined;
   const start = blocks.reduce((m, b) => (b.periodStart < m ? b.periodStart : m), blocks[0].periodStart);
   const end = blocks.reduce((m, b) => (b.periodEnd > m ? b.periodEnd : m), blocks[0].periodEnd);
-  return `Abrechnungszeitraum ${formatDateDe(start)} – ${formatDateDe(end)}`;
+  return docStrings(lang).recurring.periodHeader(formatDocDate(start, lang), formatDocDate(end, lang));
 }
 
 /** Zusammenhaengende Positionsbereiche je Abo-Herkunft (fuer die Belegansicht). */

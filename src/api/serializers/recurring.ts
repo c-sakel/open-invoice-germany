@@ -8,6 +8,8 @@ import "../openapi-zod-init"; // Fix-Runde 1: MUSS vor jedem z.object()-Aufruf h
 import { iso } from "./common";
 import type { RecurringInvoice, RecurringInvoiceLine } from "@/generated/prisma/client";
 import { z } from "zod";
+import { berlinDateKey } from "@/lib/berlin-time";
+import { previewPeriods, type BillingTiming, type RecurInterval } from "@/lib/recurring";
 
 export function serializeRecurringLine(l: RecurringInvoiceLine) {
   return {
@@ -32,6 +34,26 @@ export function serializeRecurringLine(l: RecurringInvoiceLine) {
   };
 }
 
+const isoDay = (d: Date): string => berlinDateKey(d);
+
+/** Die naechsten drei Leistungszeitraeume (leer bei PAUSED/ENDED); Tage als YYYY-MM-DD (Berliner Kalendertag). */
+export function serializeNextPeriods(r: RecurringInvoice): { runDate: string; start: string; end: string; clippedByEndDate: boolean }[] {
+  return previewPeriods(
+    {
+      billingTiming: r.billingTiming as BillingTiming,
+      nextRunDate: r.nextRunDate,
+      interval: r.interval as RecurInterval,
+      intervalCount: r.intervalCount,
+      anchorDay: r.anchorDay,
+      endDate: r.endDate,
+      status: r.status,
+      maxRuns: r.maxRuns,
+      issuedCount: r.issuedCount,
+    },
+    3,
+  ).map((p) => ({ runDate: isoDay(p.runDate), start: isoDay(p.start), end: isoDay(p.end), clippedByEndDate: p.clippedByEndDate }));
+}
+
 export function serializeRecurring(r: RecurringInvoice & { lines?: RecurringInvoiceLine[] }) {
   return {
     objectName: "Recurring" as const,
@@ -42,6 +64,8 @@ export function serializeRecurring(r: RecurringInvoice & { lines?: RecurringInvo
     interval: r.interval,
     intervalCount: r.intervalCount,
     anchorDay: r.anchorDay,
+    billingTiming: r.billingTiming,
+    nextPeriods: serializeNextPeriods(r),
     startDate: iso(r.startDate),
     nextRunDate: r.status === "ENDED" ? null : iso(r.nextRunDate),
     endDate: iso(r.endDate),
@@ -98,6 +122,10 @@ export const recurringSchema = z.object({
   interval: z.string(),
   intervalCount: z.number().int(),
   anchorDay: z.number().int().nullable(),
+  billingTiming: z.enum(["ADVANCE", "ARREARS"]).describe("ADVANCE = im Voraus (Zeitraum ab Stichtag), ARREARS = nachtraeglich (Zeitraum bis Stichtag)."),
+  nextPeriods: z
+    .array(z.object({ runDate: z.string(), start: z.string(), end: z.string(), clippedByEndDate: z.boolean() }))
+    .describe("Die naechsten bis zu drei Leistungszeitraeume mit Stichtag des Laufs (runDate; YYYY-MM-DD, Berliner Kalendertag, Beginn/Ende inklusive); leer bei pausierten/beendeten Abos."),
   startDate: z.string().nullable(),
   nextRunDate: z.string().nullable(),
   endDate: z.string().nullable(),

@@ -63,7 +63,7 @@ export function isOssBuyer(buyer: OssDoc["buyer"]): boolean {
   return buyer.vatId === null || buyer.vatId.trim() === "";
 }
 
-/** Jahr des Leistungszeitpunkts (R6): deliveryDate ?? deliveryEnd ?? issueDate, Berliner Kalenderjahr. */
+/** Jahr des Leistungszeitpunkts (R6): Berliner Kalenderjahr des `fxStichtag` (deliveryDate, sonst Ende ≤ Rechnungsdatum, sonst Rechnungsdatum). */
 export function ossYearOf(doc: OssDoc): number {
   return berlinYear(fxStichtag(doc));
 }

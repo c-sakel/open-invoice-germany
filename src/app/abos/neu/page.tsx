@@ -10,8 +10,11 @@ export const dynamic = "force-dynamic";
 
 export default async function NeuesAboPage() {
   let orgId: string;
+  let defaultTaxScheme: string;
   try {
-    orgId = (await getActiveOrg()).id;
+    const org = await getActiveOrg();
+    orgId = org.id;
+    defaultTaxScheme = org.defaultTaxScheme;
   } catch {
     return <NeedOrgNotice />;
   }
@@ -58,6 +61,7 @@ export default async function NeuesAboPage() {
         defaultShowPeriodText={docSettings.recurringInsertPeriodText}
         taxRates={docSettings.taxRates}
         defaultCurrency={docSettings.defaultCurrency}
+        defaultTaxScheme={defaultTaxScheme}
       />
     </div>
   );
