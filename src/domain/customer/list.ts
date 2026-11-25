@@ -4,6 +4,8 @@
  * `search` sucht ueber Name/Kundennummer/E-Mail (analog dem bisherigen Kundenlisten-UI).
  */
 import { z } from "zod";
+import type { Prisma } from "@/generated/prisma/client";
+import { customerListPageSchema } from "@/schemas/customer-list";
 import { prisma, ciContains } from "@/lib/db";
 import { nextSyncCursor, resolveSyncWindow, syncFilterShape, syncWhere, SYNC_ORDER_BY } from "@/domain/sync/updated-since";
 import type { Customer } from "@/generated/prisma/client";
@@ -72,4 +74,51 @@ export async function applyCustomerComboFilter(orgId: string, rawFilter: Record<
   }
   delete rawFilter.customerId;
   if (!rawFilter.q) rawFilter.q = raw;
+}
+
+export const CUSTOMER_LIST_PAGE_SIZE = 50;
+
+/** Where-Bedingung der Kundenliste (rein): Org-Scope, Archiv, Suche ohne Groß-/Kleinschreibung. */
+export function customerListWhere(orgId: string, q: string | undefined, archived: boolean): Prisma.CustomerWhereInput {
+  const term = q?.trim();
+  return {
+    orgId,
+    ...(archived ? {} : { isArchived: false }),
+    ...(term
+      ? {
+          OR: [
+            { name: ciContains(term) },
+            { customerNumber: ciContains(term) },
+            { email: ciContains(term) },
+            { city: ciContains(term) },
+            { vatId: ciContains(term) },
+          ],
+        }
+      : {}),
+  };
+}
+
+/** Eine Seite der Kundenliste (50 Zeilen), sortiert nach Name. */
+export async function listCustomersPage(orgId: string, raw: unknown) {
+  const input = customerListPageSchema.parse(raw);
+  const where = customerListWhere(orgId, input.q, input.archiviert === "1");
+  const [total, rows] = await Promise.all([
+    prisma.customer.count({ where }),
+    prisma.customer.findMany({
+      where,
+      orderBy: [{ name: "asc" }, { id: "asc" }],
+      skip: input.offset,
+      take: CUSTOMER_LIST_PAGE_SIZE,
+      select: {
+        id: true,
+        name: true,
+        city: true,
+        type: true,
+        vatId: true,
+        customerNumber: true,
+        contacts: { where: { isDefault: true }, select: { firstName: true, lastName: true }, take: 1 },
+      },
+    }),
+  ]);
+  return { rows, total, limit: CUSTOMER_LIST_PAGE_SIZE, offset: input.offset, q: input.q ?? "" };
 }
