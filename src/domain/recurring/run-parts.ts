@@ -4,9 +4,8 @@
  */
 import type { Prisma } from "@/generated/prisma/client";
 import { berlinCalendarDay } from "@/lib/berlin-time";
-import { advanceDate, periodRange, type RecurInterval } from "@/lib/recurring";
-import { formatDateDe } from "@/lib/template/format";
-import { resolveDocLanguage } from "@/lib/i18n/doc";
+import { billingPeriod, nextStichtag, type BillingTiming, type RecurInterval } from "@/lib/recurring";
+import { docStrings, formatDocDate, resolveDocLanguage } from "@/lib/i18n/doc";
 import { createDraftInvoiceWithinTx } from "@/domain/invoice/create";
 import { finalizeWithinTx } from "@/domain/invoice/finalize";
 import { linkDocuments } from "@/domain/relations";
@@ -20,6 +19,7 @@ import { itemTaxRates, recurringLinesToInvoiceLines } from "./lines";
 import { collectBillableUsage, markUsageBilled } from "./usage";
 import type { EmitOutcome, EmittedInvoice } from "./run-types";
 import { effectiveAnchorDay } from "./usage-period";
+import { findLastBilled } from "./last-billed";
 
 export const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -33,18 +33,6 @@ export type RecWithLines = Prisma.RecurringInvoiceGetPayload<{ include: { lines:
 export function isRunDue(nextRunDate: Date, now: Date, hasUsageLines: boolean): boolean {
   if (!hasUsageLines) return nextRunDate.getTime() <= now.getTime();
   return berlinCalendarDay(now).getTime() > berlinCalendarDay(nextRunDate).getTime();
-}
-
-/** Festpositionen ohne eigenen Leistungszeitraum bekommen den Abrechnungszeitraum (BG-26). */
-export function applyFixedServicePeriod(
-  lines: CreateInvoiceInput["lines"],
-  period: { start: Date; end: Date },
-): CreateInvoiceInput["lines"] {
-  return lines.map((l) =>
-    l.lineType === "ITEM" && !l.servicePeriodStart && !l.servicePeriodEnd
-      ? { ...l, servicePeriodStart: period.start, servicePeriodEnd: period.end }
-      : l,
-  );
 }
 
 export interface RunLines {
@@ -67,7 +55,6 @@ export async function buildRunLines(
   tx: Prisma.TransactionClient,
   rec: RecWithLines,
   periodDate: Date,
-  opts: { fixedServicePeriod: boolean },
 ): Promise<RunLines> {
   const hasUsageLines = rec.lines.some((l) => l.billing === "USAGE");
   const usage = await collectBillableUsage(tx, rec.id, periodDate);
@@ -79,10 +66,22 @@ export async function buildRunLines(
     usageQuantityMilli += u.quantityMilli;
   }
   const anchorDay = effectiveAnchorDay(rec, hasUsageLines);
-  const period = periodRange(periodDate, rec.interval as RecurInterval, rec.intervalCount, anchorDay);
-  const base = recurringLinesToInvoiceLines(rec.lines, usage);
+  // Leistungszeitraum (inklusive Grenzen) dieses Laufs: an Kopf (BG-14) und jeder ITEM-Zeile (BG-26).
+  // Bestandsabos ohne Ankertag: Beginn hinter das Ende der letzten Abrechnung (keine Doppelung nach dem Klemmen).
+  const previous = rec.billingTiming === "ARREARS" && anchorDay === null ? await findLastBilled(tx, rec.orgId, rec.id) : null;
+  const { start, end } = billingPeriod(
+    rec.billingTiming as BillingTiming,
+    periodDate,
+    rec.interval as RecurInterval,
+    rec.intervalCount,
+    anchorDay,
+    rec.endDate,
+    previous?.period?.end ?? previous?.deliveryDate ?? null,
+  );
+  const period = { start, end };
+  const base = recurringLinesToInvoiceLines(rec.lines, usage, period);
   return {
-    lines: opts.fixedServicePeriod ? applyFixedServicePeriod(base, period) : base,
+    lines: base,
     usageIds: [...usage.values()].flatMap((u) => u.ids),
     usageCount,
     usageQuantityMilli,
@@ -100,7 +99,7 @@ export async function advanceEmptyPeriod(
   periodDate: Date,
   anchorDay: number | null,
 ): Promise<{ ended: boolean }> {
-  const next = advanceDate(periodDate, rec.interval as RecurInterval, rec.intervalCount, anchorDay);
+  const next = nextStichtag(periodDate, rec.interval as RecurInterval, rec.intervalCount, anchorDay);
   const ended = rec.endDate ? next > rec.endDate : false;
   await tx.recurringInvoice.update({
     where: { id: rec.id },
@@ -117,7 +116,7 @@ export async function advanceAfterEmit(
   now: Date,
   anchorDay: number | null,
 ): Promise<{ ended: boolean; notice?: string }> {
-  const next = advanceDate(periodDate, rec.interval as RecurInterval, rec.intervalCount, anchorDay);
+  const next = nextStichtag(periodDate, rec.interval as RecurInterval, rec.intervalCount, anchorDay);
   // issuedCount VOR dem Erhoehen ist die Anzahl der bereits vorherigen Laeufe.
   const issuedCountAfter = rec.issuedCount + 1;
   const endedByDate = rec.endDate ? next > rec.endDate : false;
@@ -153,28 +152,23 @@ export async function advanceAfterEmit(
 export function buildSingleInvoiceInput(
   rec: RecWithLines,
   built: RunLines,
-  periodDate: Date,
   now: Date,
 ): CreateInvoiceInput {
-  let headerText: string | undefined;
-  let deliveryStart: Date | undefined;
-  let deliveryEnd: Date | undefined;
-  // showPeriodText ist allein massgeblich; ist es aus, greift die Kopftextvorlage des Rechnungspfads.
-  if (rec.showPeriodText) {
-    headerText = `Abrechnungszeitraum ${formatDateDe(built.period.start)} – ${formatDateDe(periodDate)}`;
-    deliveryStart = built.period.start;
-    deliveryEnd = periodDate;
-  }
+  const language = resolveDocLanguage(rec.language);
+  // Kopftext nur, wenn gewuenscht; BG-14/BG-26 (und damit der Zeitraum auf dem Beleg) gelten immer.
+  const headerText = rec.showPeriodText
+    ? docStrings(language).recurring.periodHeader(formatDocDate(built.period.start, language), formatDocDate(built.period.end, language))
+    : undefined;
   return {
     customerId: rec.customerId,
-    language: resolveDocLanguage(rec.language),
+    language,
     type: "INVOICE",
     taxScheme: rec.taxScheme as CreateInvoiceInput["taxScheme"],
     currency: rec.currency,
     issueDate: now,
-    deliveryDate: periodDate,
-    deliveryStart,
-    deliveryEnd,
+    // Kein Einzel-Leistungsdatum (BT-72): der Leistungszeitraum steht in BG-14.
+    deliveryStart: built.period.start,
+    deliveryEnd: built.period.end,
     // dueDate explizit aus der Abo-Zusage, sonst wuerde die Kundenvorgabe sie ueberstimmen.
     dueDate: new Date(now.getTime() + rec.paymentTermsDays * DAY_MS),
     notes: rec.notes ?? undefined,
@@ -202,7 +196,7 @@ export async function emitSingleInvoice(
   now: Date,
   actor: string,
 ): Promise<EmitTxResult> {
-  const input = buildSingleInvoiceInput(rec, built, periodDate, now);
+  const input = buildSingleInvoiceInput(rec, built, now);
   const invoice = await createDraftInvoiceWithinTx(tx, rec.orgId, input, {
     actor,
     now,

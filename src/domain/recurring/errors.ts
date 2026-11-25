@@ -16,3 +16,54 @@ export class RecurringNotDueError extends RecurringError {
     this.name = "RecurringNotDueError";
   }
 }
+
+/** Zeitraum (inklusive Grenzen) als Kalendertage, fuer Hinweise zum Wechsel der Abrechnungsart. */
+export interface TimingChangePeriod {
+  start: Date;
+  end: Date;
+}
+
+export interface TimingChangeDetails {
+  /** Zuletzt abgerechneter Zeitraum (null, wenn keine Rechnung mit Zeitraum ermittelbar). */
+  lastBilled: TimingChangePeriod | null;
+  /** Zeitraum der naechsten Rechnung nach dem Wechsel. */
+  nextPeriod: TimingChangePeriod;
+  /** Tage ohne Abrechnung zwischen letztem und naechstem Zeitraum (>= 0). */
+  gapDays: number;
+  /** Tage, die doppelt abgerechnet wuerden (>= 0). */
+  overlapDays: number;
+}
+
+/**
+ * Wechsel der Abrechnungsart eines Abos mit bereits erzeugten Rechnungen ohne Bestaetigung:
+ * der Betreiber soll Luecke/Ueberlappung vor dem Speichern sehen (REST/UI 409 mit `details`).
+ */
+export class RecurringTimingChangeError extends RecurringError {
+  readonly details: TimingChangeDetails;
+  constructor(details: TimingChangeDetails) {
+    const parts: string[] = [];
+    if (details.gapDays > 0) parts.push(`${details.gapDays} Tag(e) blieben unberechnet`);
+    if (details.overlapDays > 0) parts.push(`${details.overlapDays} Tag(e) würden doppelt berechnet`);
+    super(
+      `Der Wechsel der Abrechnungsart ändert den Zeitraum der nächsten Rechnung${parts.length > 0 ? `: ${parts.join(", ")}` : ""}. Zum Bestätigen acknowledgeTimingChange setzen.`,
+    );
+    this.name = "RecurringTimingChangeError";
+    this.details = details;
+  }
+}
+
+/**
+ * Fortsetzen eines pausierten Abos mit Rueckstand (naechster Stichtag liegt vor heute) ohne Auswahl:
+ * der Aufrufer muss `missedPeriods` (SKIP = ueberspringen, BILL = nachtraeglich abrechnen) angeben (REST/UI 409).
+ */
+export class RecurringMissedPeriodsError extends RecurringError {
+  readonly code = "MISSED_PERIODS_REQUIRED" as const;
+  readonly missedCount: number;
+  constructor(missedCount: number) {
+    super(
+      `Das Abo ist pausiert und hat ${missedCount} versäumte Zeiträume. Zum Fortsetzen missedPeriods angeben: SKIP (überspringen) oder BILL (nachträglich abrechnen).`,
+    );
+    this.name = "RecurringMissedPeriodsError";
+    this.missedCount = missedCount;
+  }
+}

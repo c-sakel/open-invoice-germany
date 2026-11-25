@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { advanceDate, intervalLabel, periodRange } from "@/lib/recurring";
+import { advanceDate, intervalLabel, normalizeToNoon, periodRange } from "@/lib/recurring";
 import { computeLineNet } from "@/lib/pricing/line";
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
@@ -91,5 +91,11 @@ describe("W4 — Abo-Lauf und manuelle Rechnung runden identisch", () => {
   it("2,5 x 1,01 EUR mit 33,3 % Rabatt ergibt denselben Cent-Wert", () => {
     const result = computeLineNet({ quantityMilli: 2500, unitNetPriceCents: 101, discountPermille: 333 });
     expect(result.lineNetCents).toBe(169);
+  });
+});
+
+describe("normalizeToNoon (A9)", () => {
+  it("nutzt den Berliner Kalendertag, nicht die Serverzeit", () => {
+    expect(iso(normalizeToNoon(new Date("2026-11-25T00:00:00+01:00")))).toBe("2026-11-25");
   });
 });

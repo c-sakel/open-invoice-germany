@@ -45,6 +45,7 @@ export const en: DocStrings = {
     invoiceDate: "Invoice date",
     date: "Date",
     deliveryDate: "Date of supply",
+    servicePeriod: "Service period",
     deliveryNoteDate: "Delivery date",
     shippingDate: "Shipping date",
     dueDate: "Due date",
@@ -58,6 +59,7 @@ export const en: DocStrings = {
     deliveryAddress: "Delivery address:",
     deliveryNoteAddress: "Delivery address:",
   },
+  recurring: { periodHeader: (from, to) => `Service period ${from} – ${to}` },
   sourceLabels: { ANGEBOT: "quotation", AUFTRAGSBESTAETIGUNG: "order", PROFORMA: "proforma invoice", DELIVERY_NOTE: "delivery note" },
   system: { draftNumber: "DRAFT", previewWatermark: "PREVIEW" },
   layoutLabels: {

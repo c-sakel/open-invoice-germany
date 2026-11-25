@@ -392,8 +392,9 @@ describe("Parallele Zugriffe unter PostgreSQL", () => {
   it("Verbrauch: 5x Lauf + 5x Erfassung parallel -> je Periode hoechstens eine Rechnung, kein Satz doppelt abgerechnet, Summen stimmen", async () => {
     const s = await usageScenario();
     const day = s.now.toISOString().slice(0, 10);
-    // Verbrauchsabos werden erst am Berliner Tag nach dem Stichtag abgerechnet.
-    const later = new Date(s.now.getTime() + 24 * 3_600_000);
+    // Verbrauchsabos rechnen nachträglich ab: erster Stichtag = Ende der ersten Periode (nextRunDate), abgerechnet
+    // wird erst am Berliner Tag danach. Der Verbrauch (usageDate = Starttag) liegt in dieser ersten Periode.
+    const later = new Date(s.rec.nextRunDate.getTime() + 24 * 3_600_000);
     const tasks: Promise<unknown>[] = [];
     for (let i = 0; i < 5; i++) {
       tasks.push(emitRecurringNow(s.rec.id, { now: later, actor: "race" }));
@@ -407,15 +408,21 @@ describe("Parallele Zugriffe unter PostgreSQL", () => {
       expect(ok, String(f.reason)).toBe(true);
     }
 
-    const invoices = await dbInternal.invoice.findMany({ where: { orgId: s.orgId, recurringInvoiceId: s.rec.id }, select: { id: true, deliveryDate: true } });
-    expect(new Set(invoices.map((i) => i.deliveryDate?.getTime())).size).toBe(invoices.length);
+    // Abo-Rechnungen tragen den Leistungszeitraum (BG-14) statt eines Leistungsdatums: Periode = Zeitraumende.
+    const invoices = await dbInternal.invoice.findMany({ where: { orgId: s.orgId, recurringInvoiceId: s.rec.id }, select: { id: true, deliveryEnd: true, deliveryDate: true } });
+    const periodEndOf = (i: { deliveryEnd: Date | null; deliveryDate: Date | null }) => (i.deliveryEnd ?? i.deliveryDate)?.getTime();
+    expect(invoices.every((i) => periodEndOf(i) !== undefined)).toBe(true);
+    expect(new Set(invoices.map(periodEndOf)).size).toBe(invoices.length);
     const usages = await dbInternal.recurringUsage.findMany({ where: { recurringInvoiceId: s.rec.id }, select: { id: true, invoiceId: true, quantityMilli: true, periodEnd: true } });
     const billed = usages.filter((u) => u.invoiceId !== null);
     expect(new Set(billed.map((u) => u.id)).size).toBe(billed.length);
     const lines = await dbInternal.invoiceLine.findMany({ where: { invoiceId: { in: invoices.map((i) => i.id) }, description: "V18FR-API" }, select: { quantityMilli: true } });
     expect(lines.reduce((sum, l) => sum + l.quantityMilli, 0)).toBe(billed.reduce((sum, u) => sum + u.quantityMilli, 0));
-    const lastEnd = Math.max(...invoices.map((i) => i.deliveryDate?.getTime() ?? 0));
-    expect(usages.filter((u) => u.invoiceId === null && u.periodEnd.getTime() <= lastEnd)).toHaveLength(0);
+    // Zeitraumende ist ein Kalendertag (inklusive): Verbrauch bis zum Ende dieses Tages gehoert zur abgerechneten Periode.
+    expect(invoices.length).toBeGreaterThan(0);
+    const lastEnd = Math.max(...invoices.map((i) => periodEndOf(i) ?? 0));
+    expect(lastEnd).toBeGreaterThan(0);
+    expect(usages.filter((u) => u.invoiceId === null && u.periodEnd.getTime() < lastEnd + 86_400_000 - 1)).toHaveLength(0);
   });
 
   it("Abo-Lauf: parallele Laeufe vier verschiedener Abos derselben Org (festgeschrieben) -> alle ok, Kette gueltig", async () => {
@@ -470,8 +477,9 @@ describe("Parallele Zugriffe unter PostgreSQL", () => {
       const rels = await dbInternal.documentRelation.findMany({ where: { orgId: s.orgId, toId: rec.id, relationType: "GENERATED_BY" }, select: { fromId: true } });
       const after = await dbInternal.recurringInvoice.findUniqueOrThrow({ where: { id: rec.id }, select: { issuedCount: true } });
       expect(after.issuedCount).toBe(rels.length);
-      const periods = await dbInternal.invoice.findMany({ where: { id: { in: rels.map((r) => r.fromId) } }, select: { deliveryDate: true } });
-      expect(new Set(periods.map((p) => p.deliveryDate?.getTime())).size).toBe(periods.length);
+      // Abo-Rechnungen tragen den Leistungszeitraum (BG-14) statt eines Leistungsdatums: Periode = Zeitraumende.
+      const periods = await dbInternal.invoice.findMany({ where: { id: { in: rels.map((r) => r.fromId) } }, select: { deliveryEnd: true, deliveryDate: true } });
+      expect(new Set(periods.map((p) => (p.deliveryEnd ?? p.deliveryDate)?.getTime())).size).toBe(periods.length);
     }
     expect((await verifyOrgChain(s.orgId, "UI")).valid).toBe(true);
   });

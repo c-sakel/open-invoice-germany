@@ -95,7 +95,7 @@ export default async function AbosPage({ searchParams }: { searchParams: Promise
     <div className="space-y-6">
       <PageHeader
         title="Abos / Wiederkehrende Rechnungen"
-        subtitle={`${result.total} Belege`}
+        subtitle={`${result.total} ${result.total === 1 ? "Abo" : "Abos"}`}
         actions={
           <Link href="/abos/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong">
             Neues Abo
@@ -146,7 +146,7 @@ export default async function AbosPage({ searchParams }: { searchParams: Promise
               key: "next",
               header: "Nächste Rechnung",
               mobile: "meta",
-              cell: (r) => <span className="text-ink-soft">{r.status === "ENDED" ? "—" : deDate(r.nextRunDate)}</span>,
+              cell: (r) => <span className="text-ink-soft">{r.status === "ENDED" ? "—" : r.status === "PAUSED" ? "pausiert" : deDate(r.nextRunDate)}</span>,
             },
             { key: "status", header: "Status", mobile: "meta", cell: (r) => <StatusBadge status={r.status} /> },
             {

@@ -1,3 +1,5 @@
+import { berlinDateKey } from "@/lib/berlin-time";
+
 export type FxRow = { source: "ECB" | "MONTHLY"; currency: string; rateDate: Date; rateMicros: number };
 export type FxPick = { rateMicros: number; rateDate: Date; source: "ECB_DAILY" | "BMF_MONTHLY" };
 
@@ -7,9 +9,16 @@ const ECB_WINDOW_DAYS = 7;
 const utcDay = (d: Date): number => Math.floor(d.getTime() / DAY_MS);
 const monthIndex = (d: Date): number => d.getUTCFullYear() * 12 + d.getUTCMonth();
 
-/** Stichtag fuer die Kurswahl: Leistungs-/Lieferdatum, sonst Leistungsende, sonst Rechnungsdatum. */
+/**
+ * Stichtag fuer die Kurswahl (und das OSS-Jahr): Leistungs-/Lieferdatum, sonst Leistungsende, wenn es am oder
+ * vor dem Rechnungsdatum liegt (Berliner Kalendertag), sonst Rechnungsdatum. Eine Vorausrechnung (Ende in der
+ * Zukunft) nimmt keinen Kurs und kein Jahr aus der Zukunft: Die Steuer entsteht mit Vereinnahmung (§ 13 Abs. 1 Nr. 1
+ * Buchst. a Satz 4 UStG), der Kurs gilt nach § 16 Abs. 6 UStG zum Zeitpunkt der Leistung/Rechnung.
+ */
 export function fxStichtag(inv: { deliveryDate: Date | null; deliveryEnd: Date | null; issueDate: Date }): Date {
-  return inv.deliveryDate ?? inv.deliveryEnd ?? inv.issueDate;
+  if (inv.deliveryDate) return inv.deliveryDate;
+  if (inv.deliveryEnd && berlinDateKey(inv.deliveryEnd) <= berlinDateKey(inv.issueDate)) return inv.deliveryEnd;
+  return inv.issueDate;
 }
 
 /**

@@ -24,6 +24,7 @@ export const TEMPLATE_PLACEHOLDERS: { path: string; label: string }[] = [
   { path: "document.total", label: "Bruttobetrag" },
   { path: "document.netTotal", label: "Nettobetrag" },
   { path: "document.taxTotal", label: "Steuerbetrag" },
+  { path: "document.servicePeriod", label: "Leistungszeitraum (leer ohne Zeitraum)" },
   { path: "invoice.number", label: "Rechnungsnummer" },
   { path: "invoice.date", label: "Rechnungsdatum" },
   { path: "invoice.total", label: "Rechnungsbetrag" },

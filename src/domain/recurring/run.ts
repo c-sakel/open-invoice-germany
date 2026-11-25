@@ -26,6 +26,7 @@ import { RecurringError, RecurringNotDueError } from "./errors";
 import { lockOrganization, lockRow } from "@/lib/db-lock";
 import { withChangeLogRetry } from "@/lib/chain-retry";
 import { logActivity } from "@/domain/activity/log";
+import { MAX_INVOICES_PER_RUN } from "@/domain/payment-rule/resume-plan";
 import { describeError } from "@/lib/safe-error";
 import { berlinParts, berlinMidnight } from "@/lib/berlin-time";
 import {
@@ -85,7 +86,7 @@ export async function emitOne(
       );
     }
 
-    const built = await buildRunLines(tx, rec, periodDate, { fixedServicePeriod: false });
+    const built = await buildRunLines(tx, rec, periodDate);
 
     if (hasUsageLines && !built.hasItems) {
       // Verbrauchsabo ohne abrechenbare Position (kein Verbrauch): keine Rechnung, Periode rueckt weiter.
@@ -165,7 +166,7 @@ export async function runDueRecurring(
 ): Promise<RecurringRunSummary[]> {
   const now = opts.now ?? new Date();
   const actor = opts.actor ?? "recurring-runner";
-  const max = opts.maxPerAbo ?? 24;
+  const max = opts.maxPerAbo ?? MAX_INVOICES_PER_RUN;
 
   // Verbrauchsabos erst am Berliner Tag nach dem Stichtag (isRunDue): nextRunDate liegt vor Mitternacht des heutigen Tages.
   const today = berlinParts(now);

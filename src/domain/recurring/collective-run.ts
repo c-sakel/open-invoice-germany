@@ -32,7 +32,6 @@ import {
   DAY_MS,
   advanceAfterEmit,
   advanceEmptyPeriod,
-  applyFixedServicePeriod,
   buildRunLines,
   emitSingleInvoice,
   isRunDue,
@@ -59,6 +58,7 @@ const CANDIDATE_SELECT = {
   autoFinalize: true,
   autoSend: true,
   emailTemplateId: true,
+  billingTiming: true,
 } as const;
 
 const MAX_GROUP_SETTLE_ROUNDS = 4;
@@ -200,7 +200,7 @@ export async function emitCollective(
       const periodDate = r.nextRunDate;
       let built: Awaited<ReturnType<typeof buildRunLines>>;
       try {
-        built = await buildRunLines(tx, r, periodDate, { fixedServicePeriod: false });
+        built = await buildRunLines(tx, r, periodDate);
       } catch (e) {
         // Manuell gibt es keine Isolierung: der Fehler nennt das betroffene Abo (nur Name, keine Details).
         if (opts.mode === "manual" && e instanceof RecurringError && r.id !== triggerId) throw new RecurringError(`Abo „${r.title}“: ${e.message}`);
@@ -247,7 +247,7 @@ export async function emitCollective(
       showPeriodText: b.rec.showPeriodText,
       periodStart: b.built.period.start,
       periodEnd: b.built.period.end,
-      lines: b.rec.showPeriodText ? applyFixedServicePeriod(b.built.lines, b.built.period) : b.built.lines,
+      lines: b.built.lines,
     }));
     const { lines, origins } = assembleCollectiveLines(collectiveBlocks, lang);
     const period = collectivePeriod(lines);
@@ -267,12 +267,11 @@ export async function emitCollective(
       taxScheme: first.taxScheme as CreateInvoiceInput["taxScheme"],
       currency: first.currency,
       issueDate: now,
-      deliveryDate: trigRec.nextRunDate,
       deliveryStart: period?.start,
       deliveryEnd: period?.end,
       dueDate: new Date(now.getTime() + first.paymentTermsDays * DAY_MS),
       notes: notes === "" ? undefined : notes,
-      headerText: collectiveHeaderText(collectiveBlocks),
+      headerText: collectiveHeaderText(collectiveBlocks, lang),
       documentChargePermille: 0,
       documentChargeCents: 0,
       lines,

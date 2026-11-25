@@ -666,7 +666,8 @@ model RecurringInvoice {
   status            String         @default("ACTIVE") // ACTIVE | PAUSED | ENDED
   interval          String         @default("MONTHLY") // DAY | WEEKLY | MONTHLY | QUARTERLY | YEARLY
   intervalCount     Int            @default(1) // alle N Intervalle (z. B. 2 = alle 2 Monate)
-  anchorDay         Int? // fixer Tag im Monat (1..28) für MONTHLY/QUARTERLY/YEARLY
+  anchorDay         Int? // 1..31, 31 = Monatsletzter; Bestand null
+  billingTiming     String   @default("ARREARS") // ADVANCE | ARREARS
   startDate         DateTime
   nextRunDate       DateTime // Stichtag der nächsten Erzeugung
   endDate           DateTime?

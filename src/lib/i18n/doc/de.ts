@@ -42,6 +42,7 @@ export const de: DocStrings = {
     invoiceDate: "Rechnungsdatum",
     date: "Datum",
     deliveryDate: "Leistungsdatum",
+    servicePeriod: "Leistungszeitraum",
     deliveryNoteDate: "Lieferdatum",
     shippingDate: "Versanddatum",
     dueDate: "Fällig am",
@@ -55,6 +56,7 @@ export const de: DocStrings = {
     deliveryAddress: "Lieferanschrift:",
     deliveryNoteAddress: "Lieferadresse:",
   },
+  recurring: { periodHeader: (from, to) => `Leistungszeitraum ${from} – ${to}` },
   sourceLabels: { ANGEBOT: "Angebot", AUFTRAGSBESTAETIGUNG: "Auftrag", PROFORMA: "Proforma-Rechnung", DELIVERY_NOTE: "Lieferschein" },
   system: { draftNumber: "ENTWURF", previewWatermark: "VORSCHAU" },
   layoutLabels: {

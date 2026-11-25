@@ -6,11 +6,10 @@
  * die Route validiert deshalb selbst mit `createRecurringSchema`, exakt wie es das
  * MCP-Tool `create_recurring` bereits tut (kein Bypass, dieselbe Schema-Quelle).
  */
-import { z } from "zod";
 import { withApi } from "@/api/auth";
 import { apiData, apiList } from "@/api/response";
 import { apiDataResponseSchema, apiListResponseSchema, type RouteSpec } from "@/api/spec";
-import { serializeRecurring } from "@/api/serializers/recurring";
+import { serializeRecurring, recurringSchema } from "@/api/serializers/recurring";
 import { listRecurring, recurringListFilterSchema } from "@/domain/recurring/list";
 import { createRecurring } from "@/domain/recurring/create";
 import { createRecurringSchema } from "@/schemas";
@@ -37,16 +36,16 @@ export const spec = {
     summary: "Abos auflisten (Paginierung/Filter status,customerId,search)",
     scope: "read",
     request: { query: recurringListFilterSchema },
-    response: apiListResponseSchema(z.unknown()),
+    response: apiListResponseSchema(recurringSchema),
     errors: [400, 401, 403, 429],
   },
   create: {
     path: "/api/v1/Recurring",
     method: "POST",
-    summary: "Abo anlegen",
+    summary: "Abo anlegen (billingTiming ohne Angabe: ADVANCE, bei Verbrauchspositionen ARREARS; Antwort mit nextPeriods)",
     scope: "write",
     request: { body: createRecurringSchema },
-    response: apiDataResponseSchema(z.unknown()),
+    response: apiDataResponseSchema(recurringSchema),
     errors: [400, 401, 403, 429],
   },
 } satisfies Record<string, RouteSpec>;

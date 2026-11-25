@@ -124,6 +124,7 @@ export const ACTIVITY_TYPES = {
   PAYMENT_RULE_EXECUTED: "Aktion nach Zahlungseingang",
   PAYMENT_CONFIRMATION_SENT: "Zahlungsbestaetigung versendet",
   RECURRING_RESUMED_BY_RULE: "Abo nach Zahlungseingang fortgesetzt",
+  RECURRING_RESUMED: "Abo fortgesetzt",
   // Online-Zahlung: Bezahllink je Rechnung (entityType INVOICE; Daten nie mit Token) und Einstellungen (entityType PAYMENT_PROVIDER).
   PAY_LINK_CREATED: "Bezahllink angelegt",
   PAY_LINK_DISABLED: "Bezahllink deaktiviert",

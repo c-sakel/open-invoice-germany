@@ -55,7 +55,7 @@ beforeAll(async () => {
     createRecurringSchema.parse({
       customerId: customer.id,
       title: "V18F8-Abo",
-      startDate: new Date("2185-03-31T10:00:00.000Z"),
+      startDate: new Date("2185-03-01T10:00:00.000Z"),
       lines: [
         { lineType: "ITEM", description: "Grundgebühr", quantityMilli: 1000, unitNetPriceCents: 2900, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 },
         { lineType: "ITEM", description: "API-Aufrufe", quantityMilli: 0, unitNetPriceCents: 0, unitNetPriceMilliCents: 200, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0, billing: "USAGE", usageUnitLabel: "Aufrufe" },

@@ -954,12 +954,19 @@ const invoiceHeadingSchema = z
   .refine((s) => !FORBIDDEN_HEADING_CHARS.test(s), { message: "Keine Steuer- oder Formatzeichen erlaubt." });
 // Obergrenze 200 Zeichen: strenger als die Positionsbeschreibung (ohne Limit), passt in Zeile von PDF und XML.
 
+/** Abrechnungsart eines Abos: im Voraus (Leistungszeitraum ab Stichtag) oder nachträglich (bis Stichtag). */
+export const BillingTiming = z.enum(["ADVANCE", "ARREARS"]);
+export type BillingTimingValue = z.infer<typeof BillingTiming>;
+
 const recurringObjectSchema = z.object({
   customerId: z.string().min(1),
   title: z.string().min(1),
   interval: RecurInterval.default("MONTHLY"),
   intervalCount: z.number().int().min(1).max(48).default(1),
-  anchorDay: z.number().int().min(1).max(28).optional(),
+  // 1..31, 31 = Monatsletzter. Bei neuen Abos wird er aus dem Leistungsbeginn abgeleitet; ein abweichender Wert wird abgelehnt.
+  anchorDay: z.number().int().min(1).max(31).optional(),
+  // Ohne Angabe: ADVANCE, bei Verbrauchspositionen ARREARS (createRecurring).
+  billingTiming: BillingTiming.optional(),
   startDate: z.coerce.date(),
   endDate: z.coerce.date().optional(),
   // Phase 8b (§43): harte Obergrenze der Laeufe zusaetzlich/alternativ zu endDate — nach
@@ -998,8 +1005,11 @@ export const createRecurringSchema = recurringObjectSchema
   .transform((v) => ({ ...v, lines: resolveLineCategories(v.lines, v.taxScheme) }));
 export type CreateRecurringInput = z.infer<typeof createRecurringSchema>;
 
+// Fortsetzen mit Rueckstand: SKIP = versaeumte Zeitraeume ueberspringen, BILL = nachtraeglich abrechnen.
+export const MissedPeriodsChoice = z.enum(["SKIP", "BILL"]);
 export const updateRecurringStatusSchema = z.object({
   status: z.enum(["ACTIVE", "PAUSED", "ENDED"]),
+  missedPeriods: MissedPeriodsChoice.optional(),
 });
 export type UpdateRecurringStatusInput = z.infer<typeof updateRecurringStatusSchema>;
 
@@ -1013,7 +1023,12 @@ export const updateRecurringSchema = z.object({
   title: z.string().min(1).optional(),
   interval: RecurInterval.optional(),
   intervalCount: z.number().int().min(1).max(48).optional(),
-  anchorDay: z.number().int().min(1).max(28).nullable().optional(),
+  anchorDay: z.number().int().min(1).max(31).nullable().optional(),
+  billingTiming: BillingTiming.optional(),
+  // Pflicht beim Wechsel der Abrechnungsart, wenn bereits Rechnungen erzeugt wurden (sonst 409 mit Luecke/Ueberlappung).
+  acknowledgeTimingChange: z.boolean().optional(),
+  // Pflicht beim Fortsetzen (PAUSED -> ACTIVE) mit Rueckstand, sonst 409 MISSED_PERIODS_REQUIRED.
+  missedPeriods: MissedPeriodsChoice.optional(),
   // Fix-Runde 1 (Koordinator, Abo-Bearbeiten-UI): startDate ist nachtraeglich aenderbar —
   // siehe updateRecurringInvoice() fuer die Ruling-Behandlung von nextRunDate.
   startDate: z.coerce.date().optional(),
