@@ -6,6 +6,7 @@
  * Byte-Pruefung, Groessenlimit) leben in den PDF-/Upload-Aufgaben (Task 3), diese Datei
  * verwaltet nur die Pfade als Strings.
  */
+import { revalidateTag } from "next/cache";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { brandingSettingsInputSchema, type BrandingSettingsInput } from "@/schemas/settings";
@@ -66,5 +67,11 @@ export async function saveBrandingSettings(orgId: string, rawInput: unknown): Pr
     create: { orgId, ...data },
     update: { ...data },
   });
+  // Marke im Seitenkopf sofort neu laden; ausserhalb eines Next-Requests (Skripte, Tests) gibt es keinen Cache.
+  try {
+    revalidateTag(`brand:${orgId}`, { expire: 0 });
+  } catch {
+    /* kein Next-Kontext */
+  }
   return input;
 }
