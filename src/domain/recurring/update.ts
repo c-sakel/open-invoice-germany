@@ -94,13 +94,25 @@ export async function updateRecurringInvoice(orgId: string, id: string, raw: unk
     // nextRunDate/Ankertag NUR neu berechnen, wenn noch keine Rechnung erzeugt wurde (issuedCount===0) —
     // sonst wuerde eine nachtraegliche Aenderung den bereits fortgeschrittenen Erzeugungsplan eines
     // laufenden Abos zurueckspulen. Vor dem ersten Lauf gilt dieselbe Ableitung wie bei der Anlage.
-    const reschedule = existing.issuedCount === 0 && (startDate !== undefined || timingChanged);
+    // Bestandsabo (vor der Abrechnungsart angelegt: nachträglich, kein Anker, Stichtag = Start) bleibt bei reinen
+    // Intervall-/Ankeränderungen auf der alten Semantik (sonst würden Starttage 29.–31. plötzlich abgelehnt).
+    const legacySchedule =
+      existing.billingTiming === "ARREARS" && existing.anchorDay === null && existing.nextRunDate.getTime() === existing.startDate.getTime();
+    const intervalChanged =
+      (input.interval !== undefined && input.interval !== existing.interval) ||
+      (input.intervalCount !== undefined && input.intervalCount !== existing.intervalCount);
+    const reschedule =
+      existing.issuedCount === 0 &&
+      (startDate !== undefined || timingChanged || (!legacySchedule && (intervalChanged || input.anchorDay != null)));
     let nextRunDate: Date | undefined;
     let derivedAnchorDay: number | null | undefined;
     if (reschedule) {
       const first = resolveFirstSchedule(effectiveTiming, effectiveStartDate, effectiveInterval, effectiveCount, input.anchorDay);
       nextRunDate = first.stichtag;
       derivedAnchorDay = first.anchorDay;
+    } else if (input.anchorDay != null && input.anchorDay !== existing.anchorDay) {
+      // Ohne Neuberechnung gilt dieselbe Regel wie bei der Anlage: Ankertag nur wie berechnet.
+      throw new RecurringError("Ankertag muss dem Tag des ersten Stichtags entsprechen.");
     }
 
     if (timingChanged) {
@@ -119,7 +131,7 @@ export async function updateRecurringInvoice(orgId: string, id: string, raw: unk
           lastBilled = { start: last.deliveryStart, end: last.deliveryEnd };
         } else if (last?.deliveryDate) {
           // Bestand ohne Leistungszeitraum: Leistungsdatum = Stichtag (Ende), Beginn = voriger Stichtag + 1 Tag.
-          lastBilled = { start: addDays(periodRange(last.deliveryDate, effectiveInterval, effectiveCount, existing.anchorDay).start, 1), end: last.deliveryDate };
+          lastBilled = { start: addDays(periodRange(last.deliveryDate, existing.interval as RecurInterval, existing.intervalCount, existing.anchorDay).start, 1), end: last.deliveryDate };
         }
         throw new RecurringTimingChangeError(
           timingChangeDetails(lastBilled, {

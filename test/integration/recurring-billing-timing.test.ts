@@ -110,6 +110,37 @@ describe("Änderung", () => {
   });
 });
 
+describe("Intervallwechsel und Ankertag vor dem ersten Lauf", () => {
+  it("MONTHLY -> QUARTERLY (ARREARS): Stichtag und Anker neu; zurück MONTHLY ebenso", async () => {
+    const rec = await createRecurring(orgId, input({ billingTiming: "ARREARS", interval: "MONTHLY", startDate: D("2260-01-01") }));
+    expect(day(rec.nextRunDate)).toBe("2260-01-31");
+    const up = await updateRecurringInvoice(orgId, rec.id, { interval: "QUARTERLY" });
+    expect(day(up.nextRunDate)).toBe("2260-03-31");
+    expect(up.anchorDay).toBe(31);
+    const back = await updateRecurringInvoice(orgId, rec.id, { interval: "MONTHLY" });
+    expect(day(back.nextRunDate)).toBe("2260-01-31");
+  });
+
+  it("ADVANCE: Wechsel auf MONTHLY setzt den Anker, abweichender Ankertag wird abgelehnt", async () => {
+    const rec = await createRecurring(orgId, input({ billingTiming: "ADVANCE", interval: "WEEKLY", startDate: D("2260-02-05") }));
+    const up = await updateRecurringInvoice(orgId, rec.id, { interval: "MONTHLY" });
+    expect(up.anchorDay).toBe(5);
+    expect(await message(updateRecurringInvoice(orgId, rec.id, { anchorDay: 9 }))).toContain("Ankertag muss");
+    expect((await updateRecurringInvoice(orgId, rec.id, { anchorDay: 5 })).anchorDay).toBe(5);
+  });
+
+  it("Bestandsabo (Start 31., Anker null): Intervallwechsel bleibt unverändert und ohne Fehler", async () => {
+    const row = await dbInternal.recurringInvoice.create({
+      data: { orgId, customerId, title: "Bestand 31", startDate: D("2260-01-31"), nextRunDate: D("2260-01-31"), interval: "MONTHLY" },
+      select: { id: true },
+    });
+    const up = await updateRecurringInvoice(orgId, row.id, { interval: "QUARTERLY" });
+    expect(up.interval).toBe("QUARTERLY");
+    expect(day(up.nextRunDate)).toBe("2260-01-31");
+    expect(up.anchorDay).toBeNull();
+  });
+});
+
 describe("Bestand", () => {
   it("Zeile ohne billingTiming liest ARREARS, Anker bleibt null", async () => {
     const row = await dbInternal.recurringInvoice.create({
