@@ -7,6 +7,9 @@
  */
 import type { Prisma } from "@/generated/prisma/client";
 
+/** Anzahl zuletzt erstellter Rechnungen, unter denen das spaeteste Ende gesucht wird. */
+const LAST_BILLED_WINDOW = 50;
+
 export interface BilledPeriod {
   start: Date;
   end: Date;
@@ -36,8 +39,10 @@ export function billedPeriodOf(inv: LastBilledSource): BilledPeriod | null {
 }
 
 /**
- * Neueste festgeschriebene Rechnung des Abos (Einzel- oder Sammelrechnung). `deliveryDate` ist der
- * Bestandsfall ohne Leistungszeitraum (Leistungsdatum = Stichtag).
+ * Festgeschriebene Rechnung des Abos (Einzel- oder Sammelrechnung) mit dem spaetesten abgerechneten Ende.
+ * Massgeblich ist das Zeitraumende (bzw. `deliveryDate` im Bestandsfall ohne Leistungszeitraum), nicht die
+ * Erstellungszeit: wird eine aeltere Periode nachtraeglich erzeugt, darf sie den Anschluss nicht zuruecksetzen.
+ * Betrachtet werden die zuletzt erstellten Rechnungen (Obergrenze, siehe `LAST_BILLED_WINDOW`).
  */
 export async function findLastBilled(
   tx: Prisma.TransactionClient,
@@ -49,7 +54,7 @@ export async function findLastBilled(
     select: { fromId: true },
   });
   const viaRelation = rels.map((r) => r.fromId);
-  const last = await tx.invoice.findFirst({
+  const candidates = await tx.invoice.findMany({
     where: {
       orgId,
       type: "INVOICE",
@@ -57,6 +62,7 @@ export async function findLastBilled(
       OR: [{ recurringInvoiceId: recurringId }, ...(viaRelation.length > 0 ? [{ id: { in: viaRelation } }] : [])],
     },
     orderBy: [{ createdAt: "desc" }],
+    take: LAST_BILLED_WINDOW,
     select: {
       deliveryStart: true,
       deliveryEnd: true,
@@ -64,6 +70,13 @@ export async function findLastBilled(
       lines: { where: { recurringInvoiceId: recurringId }, select: { servicePeriodStart: true, servicePeriodEnd: true } },
     },
   });
-  if (!last) return null;
-  return { period: billedPeriodOf(last), deliveryDate: last.deliveryDate };
+  let best: { period: BilledPeriod | null; deliveryDate: Date | null; endMs: number } | null = null;
+  for (const inv of candidates) {
+    const period = billedPeriodOf(inv);
+    const end = period?.end ?? inv.deliveryDate;
+    const endMs = end ? end.getTime() : Number.NEGATIVE_INFINITY;
+    if (!best || endMs > best.endMs) best = { period, deliveryDate: inv.deliveryDate, endMs };
+  }
+  if (!best) return null;
+  return { period: best.period, deliveryDate: best.deliveryDate };
 }
