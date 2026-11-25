@@ -176,4 +176,17 @@ describe("SearchSelect", () => {
     await advance(200);
     expect(container.querySelector('[aria-live="polite"]')?.textContent).toBe("Keine Treffer");
   });
+  it("Enter wählt nichts, solange die Suche zum getippten Text noch läuft (keine veralteten Treffer)", async () => {
+    const onPick = vi.fn();
+    const search = vi.fn((q: string) =>
+      q === "" ? Promise.resolve<SearchSelectOption[]>([{ id: "old", label: "Alt" }]) : new Promise<SearchSelectOption[]>(() => undefined),
+    );
+    render(<Harness search={search} onPick={onPick} />);
+    fireEvent.focus(input());
+    await advance(0);
+    expect(screen.getByText("Alt")).toBeTruthy();
+    fireEvent.change(input(), { target: { value: "zeta" } });
+    fireEvent.keyDown(input(), { key: "Enter" });
+    expect(onPick).not.toHaveBeenCalled();
+  });
 });

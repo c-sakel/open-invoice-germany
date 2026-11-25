@@ -231,6 +231,8 @@ export function SearchSelect({
     } else if (e.key === "Enter") {
       if (!open) return;
       e.preventDefault();
+      // Läuft die Suche zum getippten Text noch, zeigt die Liste Treffer der vorigen Eingabe: nicht wählen.
+      if (loading && q !== "" && !options) return;
       const item = items[safeCursor];
       if (item) choose(item);
     } else if (e.key === "Escape") {
