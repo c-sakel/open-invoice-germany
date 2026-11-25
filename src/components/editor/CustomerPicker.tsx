@@ -7,7 +7,7 @@
  * bleibt als eigener Dialog neben dem Feld (der Dialog haengt immer im DOM, damit der Fokus
  * beim Schliessen nicht verloren geht); nach der Anlage geht der Fokus zurueck ins Feld.
  */
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { SearchSelect, type SearchSelectOption } from "@/components/ui/SearchSelect";
 import { NewCustomerDialog } from "./NewCustomerDialog";
 import {
@@ -48,6 +48,14 @@ export function CustomerPicker({
   const wrapRef = useRef<HTMLDivElement>(null);
   // Bekannte Beschriftungen (Seite, Anlage, Auswahl) — spart den Abruf beim Anzeigen.
   const known = useRef(new Map<string, SearchSelectOption>());
+  // Aktueller Wert fuer Callbacks (Archiv-Pruefung) und Abruf-Sequenz fuer den Kundenkontext.
+  const valueRef = useRef(value);
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
+  const pickSeq = useRef(0);
+  const pickAbort = useRef<AbortController | null>(null);
+  useEffect(() => () => pickAbort.current?.abort(), []);
 
   const search = useCallback(async (q: string, signal: AbortSignal) => {
     const rows = customerLookupRowsSchema.parse(await getJson(`/api/lookup/customers?q=${encodeURIComponent(q)}`, signal));
@@ -56,7 +64,8 @@ export function CustomerPicker({
 
   const loadByIds = useCallback(async (ids: string[]) => {
     const rows = customerLookupRowsSchema.parse(await getJson(`/api/lookup/customers?ids=${encodeURIComponent(ids.join(","))}`));
-    return rows.map(toOption);
+    // Archivierte Kunden nicht zur Auswahl anbieten (ausser dem bereits gesetzten Kunden).
+    return rows.filter((r) => !r.isArchived || r.id === valueRef.current).map(toOption);
   }, []);
 
   const loadSelected = useCallback(
@@ -73,11 +82,21 @@ export function CustomerPicker({
   async function pick(id: string | null, option: SearchSelectOption | null) {
     if (!id || id === value) return;
     setError(null);
+    pickAbort.current?.abort();
+    const controller = new AbortController();
+    pickAbort.current = controller;
+    const seq = ++pickSeq.current;
     try {
-      const ctx = editorCustomerContextSchema.parse(await getJson(`/api/lookup/customers/${encodeURIComponent(id)}`));
+      const ctx = editorCustomerContextSchema.parse(await getJson(`/api/lookup/customers/${encodeURIComponent(id)}`, controller.signal));
+      if (seq !== pickSeq.current) return; // veraltete Antwort (schneller Wechsel A -> B)
+      if (ctx.customer.isArchived && ctx.customer.id !== valueRef.current) {
+        setError("Archivierte Kunden können nicht ausgewählt werden.");
+        return;
+      }
       known.current.set(id, option ?? toOption(ctx.customer));
       onChange(ctx);
     } catch {
+      if (seq !== pickSeq.current || controller.signal.aborted) return;
       setError("Der Kunde konnte nicht geladen werden. Bitte erneut wählen.");
     }
   }

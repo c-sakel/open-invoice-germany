@@ -12,7 +12,7 @@
  * `TakeOverPrompt` existiert nur fuer INVOICE/DOCUMENT (Lieferscheine kennen die
  * Funktion nicht).
  */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { clampTaxRate, type DraftState, type DraftAction, type DraftLine, type LineType } from "@/lib/editor/draft";
 import { newLineKey } from "@/lib/editor/ids";
 import type { EditorMode } from "@/lib/editor/constants";
@@ -109,7 +109,14 @@ export function RecipientBlock({
   // Filterung nach `type`.
   const hasDefaultShippingAddress = customerAddresses.some((a) => a.isDefault);
 
+  // Der Kontext-Abruf ist asynchron: den zum Antwortzeitpunkt aktuellen Entwurf lesen, nicht den des Renders.
+  const draftRef = useRef(draft);
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
+
   function selectCustomer(ctx: EditorCustomerContext) {
+    const draft = draftRef.current;
     const customer = ctx.customer;
     const id = customer.id;
     onCustomerContext?.(ctx);

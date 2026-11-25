@@ -102,6 +102,68 @@ describe("CustomerPicker", () => {
     expect(onChange).not.toHaveBeenCalled();
     expect(screen.getByRole("alert").textContent).toContain("konnte nicht geladen");
   });
+
+  it("blockiert die Auswahl eines archivierten Kunden (Kontext meldet isArchived) bei neuem Beleg", async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.startsWith("/api/lookup/customers/b")) return json({ ...CTX_B, customer: { ...CTX_B.customer, isArchived: true } });
+      return json([{ id: "b", name: "Becker GmbH", customerNumber: null, city: "", email: null, isArchived: false }]);
+    });
+    const onChange = vi.fn();
+    render(<CustomerPicker value="" onChange={onChange} />);
+    fireEvent.focus(input());
+    fireEvent.change(input(), { target: { value: "bec" } });
+    await advance(200);
+    fireEvent.keyDown(input(), { key: "Enter" });
+    await advance(0);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toContain("Archivierte");
+  });
+
+  it("zuletzt verwendet bietet archivierte Kunden nicht an", async () => {
+    window.localStorage.setItem("oig.recent.customer", JSON.stringify(["z", "b"]));
+    fetchMock.mockImplementation(async (url: string) =>
+      url.includes("ids=")
+        ? json([
+            { id: "z", name: "Zeta Archiv", customerNumber: null, city: "", email: null, isArchived: true },
+            { id: "b", name: "Becker GmbH", customerNumber: null, city: "", email: null, isArchived: false },
+          ])
+        : json([]),
+    );
+    render(<CustomerPicker value="" onChange={vi.fn()} />);
+    fireEvent.focus(input());
+    await advance(200);
+    expect(screen.queryByText("Zeta Archiv")).toBeNull();
+    expect(screen.getByText("Becker GmbH")).toBeTruthy();
+  });
+
+  it("verwirft eine veraltete Kontextantwort (A -> B, A läuft nach B ein)", async () => {
+    const ctxA: EditorCustomerContext = { customer: customer({ id: "a", name: "Alpha" }), contacts: [], addresses: [] };
+    let releaseA: (r: Response) => void = () => undefined;
+    fetchMock.mockImplementation((url: string) => {
+      if (url.startsWith("/api/lookup/customers/a")) return new Promise<Response>((res) => (releaseA = res));
+      if (url.startsWith("/api/lookup/customers/b")) return Promise.resolve(json(CTX_B));
+      const row = url.includes("q=bec")
+        ? { id: "b", name: "Becker GmbH", customerNumber: null, city: "", email: null, isArchived: false }
+        : { id: "a", name: "Alpha", customerNumber: null, city: "", email: null, isArchived: false };
+      return Promise.resolve(json([row]));
+    });
+    const onChange = vi.fn();
+    render(<CustomerPicker value="" onChange={onChange} />);
+    fireEvent.focus(input());
+    fireEvent.change(input(), { target: { value: "a" } });
+    await advance(200);
+    fireEvent.keyDown(input(), { key: "Enter" }); // A (haengt)
+    await advance(0);
+    fireEvent.focus(input());
+    fireEvent.change(input(), { target: { value: "bec" } });
+    await advance(200);
+    fireEvent.keyDown(input(), { key: "Enter" }); // B
+    await advance(0);
+    releaseA(json(ctxA));
+    await advance(0);
+    const ids = onChange.mock.calls.map((c) => (c[0] as EditorCustomerContext).customer.id);
+    expect(ids).toEqual(["b"]);
+  });
 });
 
 // RecipientBlock mit eigenem Zustand wie im DocumentEditor.
