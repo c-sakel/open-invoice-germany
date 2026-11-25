@@ -77,10 +77,10 @@ export async function resumePausedRecurringWithinTx(
     data: { status: "ACTIVE", ...(nextRunDate ? { nextRunDate } : {}) },
   });
   if (res.count === 0) return { resumed: false, note: "laeuft bereits", skippedPeriods: 0 };
+  // Bedienerpfad (strict) und Regel nach Zahlungseingang tragen verschiedene Typen: der Audit-Text nennt den Auslöser.
   await logActivity(tx, {
     orgId, entityType: "RECURRING", entityId: rec.id, type: opts.strict ? "RECURRING_RESUMED" : "RECURRING_RESUMED_BY_RULE", actor: opts.actor, at: opts.now,
     data: { invoiceId: opts.invoiceId ?? null, missedPeriods: opts.missedPeriods, skipped },
-    // Bedienerpfad (strict) und Regel nach Zahlungseingang tragen verschiedene Typen: der Audit-Text nennt den Auslöser.
   });
   return { resumed: true, note, skippedPeriods: skipped, ...(nextRunDate ? { nextRunDate } : {}) };
 }
