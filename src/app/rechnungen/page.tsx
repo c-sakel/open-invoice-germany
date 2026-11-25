@@ -248,12 +248,12 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
         const rowTags = tagsByDocId.get(inv.id) ?? [];
         return (
           <>
-            <Link href={detailHref(inv.id)} className="font-medium text-pen hover:underline">
+            <Link prefetch={false} href={detailHref(inv.id)} className="font-medium text-pen hover:underline">
               {inv.number ?? "Entwurf"}
             </Link>
             {origin && (
               <span className="block">
-                <Link href={origin.href} className="text-xs text-ink-muted hover:text-ink-soft hover:underline">
+                <Link prefetch={false} href={origin.href} className="text-xs text-ink-muted hover:text-ink-soft hover:underline">
                   {origin.label}
                 </Link>
               </span>

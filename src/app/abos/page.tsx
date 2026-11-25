@@ -139,7 +139,7 @@ export default async function AbosPage({ searchParams }: { searchParams: Promise
               mobile: "title",
               cell: (r) => (
                 <span>
-                  <Link href={`/abos/${r.id}`} className="break-words font-medium text-pen hover:underline">
+                  <Link prefetch={false} href={`/abos/${r.id}`} className="break-words font-medium text-pen hover:underline">
                     {r.title}
                   </Link>
                   {r.collectiveBilling && (

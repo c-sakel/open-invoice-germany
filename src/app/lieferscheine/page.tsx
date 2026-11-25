@@ -133,12 +133,12 @@ export default async function LieferscheinePage({ searchParams }: { searchParams
         const rowTags = tagsByDocId.get(n.id) ?? [];
         return (
           <>
-            <Link href={detailHref(n.id)} className="font-medium text-pen hover:underline">
+            <Link prefetch={false} href={detailHref(n.id)} className="font-medium text-pen hover:underline">
               {n.number ?? "(Entwurf)"}
             </Link>
             {origin && (
               <span className="block">
-                <Link href={origin.href} className="text-xs text-ink-muted hover:text-ink-soft hover:underline">
+                <Link prefetch={false} href={origin.href} className="text-xs text-ink-muted hover:text-ink-soft hover:underline">
                   {origin.label}
                 </Link>
               </span>

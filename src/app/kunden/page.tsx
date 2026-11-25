@@ -77,7 +77,7 @@ export default async function KundenPage({ searchParams }: { searchParams: Promi
               header: "Name",
               mobile: "title",
               cell: (c) => (
-                <Link href={`/kunden/${c.id}`} className="break-words font-medium text-pen hover:underline">
+                <Link prefetch={false} href={`/kunden/${c.id}`} className="break-words font-medium text-pen hover:underline">
                   {c.name}
                 </Link>
               ),

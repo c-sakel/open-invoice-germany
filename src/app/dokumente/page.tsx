@@ -170,7 +170,7 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
         const rowTags = tagsByDocId.get(d.id) ?? [];
         return (
           <>
-            <Link href={detailHref(d.id)} className="font-medium text-pen hover:underline">
+            <Link prefetch={false} href={detailHref(d.id)} className="font-medium text-pen hover:underline">
               {d.number ?? "—"}
             </Link>
             {rowTags.length > 0 && (
