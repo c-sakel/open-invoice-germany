@@ -467,7 +467,7 @@ docker exec "$CONTAINER" psql -U oig -d openinvoice \
 npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260904140030_phase8b_fixwave|20261208090100_geldlogik|20261209090100_abo_abrechnungsart)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260904140030_phase8b_fixwave|20261208090100_geldlogik|20261209090100_abo_abrechnungsart|20261210090100_zustellung_alarme)$' | sort); do
   apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
@@ -605,7 +605,7 @@ docker exec "$CONTAINER" psql -U oig -d openinvoice \
 npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260907075900_phase11b_layouts|20260907090333_phase11b_footermode_backfill|20261208090100_geldlogik|20261209090100_abo_abrechnungsart)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260907075900_phase11b_layouts|20260907090333_phase11b_footermode_backfill|20261208090100_geldlogik|20261209090100_abo_abrechnungsart|20261210090100_zustellung_alarme)$' | sort); do
   apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
@@ -647,7 +647,7 @@ docker exec "$CONTAINER" psql -U oig -d openinvoice \
 npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260908090100_phase12a_giro_size|20261208090100_geldlogik|20261209090100_abo_abrechnungsart)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260908090100_phase12a_giro_size|20261208090100_geldlogik|20261209090100_abo_abrechnungsart|20261210090100_zustellung_alarme)$' | sort); do
   apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
@@ -679,7 +679,7 @@ docker exec "$CONTAINER" psql -U oig -d openinvoice \
 npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260909090100_phase12b_differenz_category|20261208090100_geldlogik|20261209090100_abo_abrechnungsart)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260909090100_phase12b_differenz_category|20261208090100_geldlogik|20261209090100_abo_abrechnungsart|20261210090100_zustellung_alarme)$' | sort); do
   apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
@@ -724,7 +724,7 @@ docker exec "$CONTAINER" psql -U oig -d openinvoice \
 npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260910090100_phase12c_branding_marke|20261208090100_geldlogik|20261209090100_abo_abrechnungsart)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260910090100_phase12c_branding_marke|20261208090100_geldlogik|20261209090100_abo_abrechnungsart|20261210090100_zustellung_alarme)$' | sort); do
   apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
@@ -759,7 +759,7 @@ docker exec "$CONTAINER" psql -U oig -d openinvoice \
 npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260910091100_phase12c_tax_rates|20261208090100_geldlogik|20261209090100_abo_abrechnungsart)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260910091100_phase12c_tax_rates|20261208090100_geldlogik|20261209090100_abo_abrechnungsart|20261210090100_zustellung_alarme)$' | sort); do
   apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
@@ -790,7 +790,7 @@ docker exec "$CONTAINER" psql -U oig -d openinvoice \
 npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260911090100_phase12d_api_log|20261208090100_geldlogik|20261209090100_abo_abrechnungsart)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260911090100_phase12d_api_log|20261208090100_geldlogik|20261209090100_abo_abrechnungsart|20261210090100_zustellung_alarme)$' | sort); do
   apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
@@ -832,7 +832,7 @@ docker exec "$CONTAINER" psql -U oig -d openinvoice \
 npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260912090100_account_holder|20261208090100_geldlogik|20261209090100_abo_abrechnungsart)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260912090100_account_holder|20261208090100_geldlogik|20261209090100_abo_abrechnungsart|20261210090100_zustellung_alarme)$' | sort); do
   apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
@@ -861,7 +861,7 @@ docker exec "$CONTAINER" psql -U oig -d openinvoice \
 npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260913090100_phase13d_templates|20261208090100_geldlogik|20261209090100_abo_abrechnungsart)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260913090100_phase13d_templates|20261208090100_geldlogik|20261209090100_abo_abrechnungsart|20261210090100_zustellung_alarme)$' | sort); do
   apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
@@ -889,7 +889,7 @@ docker exec "$CONTAINER" psql -U oig -d openinvoice \
 npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260913092100_phase13d_tags|20261208090100_geldlogik|20261209090100_abo_abrechnungsart)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260913092100_phase13d_tags|20261208090100_geldlogik|20261209090100_abo_abrechnungsart|20261210090100_zustellung_alarme)$' | sort); do
   apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
@@ -925,7 +925,7 @@ docker exec "$CONTAINER" psql -U oig -d openinvoice \
 npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260914090100_phase14a_base_interest_rate|20260914091100_phase14a_dunning_segments|20260914093100_hotfix_base_rate_source_text|20261208090100_geldlogik|20261209090100_abo_abrechnungsart)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260914090100_phase14a_base_interest_rate|20260914091100_phase14a_dunning_segments|20260914093100_hotfix_base_rate_source_text|20261208090100_geldlogik|20261209090100_abo_abrechnungsart|20261210090100_zustellung_alarme)$' | sort); do
   apply_and_mark "$MIG"
 done
 # Bestands-DunningSettings mit 188 bp und OHNE baseRateValidFrom (NULL) — die Migration
@@ -973,7 +973,7 @@ docker exec "$CONTAINER" psql -U oig -d openinvoice \
 npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260914092100_phase14a_login_hardening|20261208090100_geldlogik|20261209090100_abo_abrechnungsart)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260914092100_phase14a_login_hardening|20261208090100_geldlogik|20261209090100_abo_abrechnungsart|20261210090100_zustellung_alarme)$' | sort); do
   apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
