@@ -413,6 +413,8 @@ Eine E-Mail-Vorlage vom Typ Zahlungsbestätigung lässt sich nur in der Oberflä
 
 ### Abos (wiederkehrende Rechnungen)
 
+`create_recurring` und `update_recurring_invoice` nehmen `billingTiming` (`ADVANCE` im Voraus, Standard; `ARREARS` nachträglich, Standard bei Verbrauchspositionen) entgegen; `update_recurring_invoice` zusätzlich `acknowledgeTimingChange` (nach der ersten Rechnung Pflicht für einen Wechsel, sonst Fehler mit Lücke oder Überschneidung). `list_recurring` zeigt `billingTiming` und `nextPeriods` (die nächsten drei Zeiträume). `set_recurring_state` und `update_recurring_invoice` nehmen für das Fortsetzen mit versäumten Zeiträumen `missedPeriods` (`SKIP` oder `BILL`); ohne Angabe lehnt das Fortsetzen ab. Der Mail-Platzhalter `document.servicePeriod` liefert den Leistungszeitraum.
+
 `create_recurring` und `update_recurring_invoice` nehmen `collectiveBilling` und `invoiceHeading` (Pflicht bei `collectiveBilling`, höchstens 200 Zeichen) entgegen, `list_recurring` zeigt beide Felder. `run_recurring` meldet Sammelrechnungen mit der Zahl der Abos und, falls die Gruppe auf einen Verbrauchspartner wartet, „zurückgestellt".
 
 | Tool | Zweck | Beispiel |
