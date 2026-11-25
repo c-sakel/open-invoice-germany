@@ -1,7 +1,7 @@
 /** SMTP-Provider (nodemailer). Fehlertexte werden von Zugangsdaten bereinigt. */
 import nodemailer, { type SendMailOptions } from "nodemailer";
 import type { DecryptedMailSettings } from "@/domain/email/settings";
-import { MailSendError, type MailProvider, type OutgoingMail } from "./provider";
+import { MailSendError, type MailProvider, type MailSendOutcome, type OutgoingMail } from "./provider";
 
 /**
  * Nachricht fuer nodemailer. Reihenfolge der Alternativen: nodemailer legt text vor html
@@ -20,6 +20,25 @@ export function toNodemailerMessage(mail: OutgoingMail): SendMailOptions {
   };
   if (mail.html !== undefined) msg.html = mail.html;
   return msg;
+}
+
+const NOT_SENT_CODES = new Set(["EAUTH", "ENOAUTH", "EDNS", "ETLS", "EREQUIRETLS", "EENVELOPE", "ECONFIG", "EPROXY", "EOAUTH2"]);
+const NOT_SENT_COMMANDS = new Set(["CONN", "API", "EHLO", "HELO", "STARTTLS", "MAIL FROM", "RCPT TO"]);
+
+/**
+ * Ordnet einen nodemailer-Fehler ein: NOT_SENT nur, wenn der Server die Nachricht sicher nicht
+ * angenommen hat (Fehler vor DATA oder ausdrueckliche Ablehnung nach DATA). Alles andere ist unklar,
+ * damit nie doppelt versendet wird.
+ */
+export function classifySmtpError(err: unknown): MailSendOutcome {
+  if (typeof err !== "object" || err === null) return "UNKNOWN";
+  const f = err as { code?: unknown; command?: unknown; responseCode?: unknown };
+  const code = typeof f.code === "string" ? f.code : undefined;
+  const command = typeof f.command === "string" ? f.command : undefined;
+  if (code && NOT_SENT_CODES.has(code)) return "NOT_SENT";
+  if (command && (NOT_SENT_COMMANDS.has(command) || command.startsWith("AUTH"))) return "NOT_SENT";
+  if (command === "DATA" && typeof f.responseCode === "number") return "NOT_SENT";
+  return "UNKNOWN";
 }
 
 export function createSmtpProvider(s: DecryptedMailSettings): MailProvider {
@@ -44,7 +63,7 @@ export function createSmtpProvider(s: DecryptedMailSettings): MailProvider {
         // Bug im Brief-Code korrigiert (Nachtrag): replaceAll("", ...) wuerde zwischen jedem
         // Zeichen einfuegen. Passwort nur ersetzen, wenn eines gesetzt ist.
         const cleaned = s.password ? raw.split(s.password).join("***") : raw;
-        throw new MailSendError(cleaned);
+        throw new MailSendError(cleaned, classifySmtpError(e));
       }
     },
   };

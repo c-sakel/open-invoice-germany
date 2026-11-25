@@ -18,9 +18,14 @@ export interface MailProvider {
   send(mail: OutgoingMail): Promise<{ providerId: string | null }>;
 }
 
+export type MailSendOutcome = "NOT_SENT" | "UNKNOWN";
+
 export class MailSendError extends Error {
-  constructor(message: string) {
+  /** NOT_SENT = Server hat die Nachricht sicher nicht angenommen; UNKNOWN = Ausgang unklar. */
+  readonly outcome: MailSendOutcome;
+  constructor(message: string, outcome: MailSendOutcome = "UNKNOWN") {
     super(message);
     this.name = "MailSendError";
+    this.outcome = outcome;
   }
 }

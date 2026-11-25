@@ -20,7 +20,7 @@ import { createQueuedEmailLog, finishEmailLog } from "@/domain/email/email-log";
 import { setQuoteStatus, setDeliveryNoteStatus } from "@/domain/document/status";
 import { createSmtpProvider } from "@/lib/mail/smtp";
 import { withHtmlPart } from "@/domain/email/html-part";
-import type { MailProvider } from "@/lib/mail/provider";
+import { MailSendError, type MailProvider } from "@/lib/mail/provider";
 import { sendEmailInputSchema, type SendEmailRawInput } from "@/schemas/email";
 import { MAX_EMAIL_ATTACHMENTS_TOTAL_BYTES } from "@/lib/attachments/mime";
 
@@ -28,6 +28,8 @@ export interface SendDocumentEmailResult {
   logId: string;
   status: "SENT" | "FAILED";
   error?: string;
+  /** Nur bei FAILED: NOT_SENT = sicher nicht angenommen, UNKNOWN = unklar (auch Nicht-SMTP-Fehler). */
+  outcome?: "NOT_SENT" | "UNKNOWN";
 }
 
 export class EmailAttachmentsTooLargeError extends Error {
@@ -143,6 +145,7 @@ export async function sendDocumentEmail(
   let status: "SENT" | "FAILED" = "SENT";
   let providerId: string | null = null;
   let error: string | undefined;
+  let outcome: "NOT_SENT" | "UNKNOWN" | undefined;
   let htmlSha256: string | undefined;
   try {
     const mail = await withHtmlPart(orgId, settings, {
@@ -160,6 +163,7 @@ export async function sendDocumentEmail(
     providerId = res.providerId;
   } catch (e) {
     status = "FAILED";
+    outcome = e instanceof MailSendError ? e.outcome : "UNKNOWN";
     error = e instanceof Error ? e.message.slice(0, 500) : "Unbekannter Fehler";
   }
 
@@ -203,5 +207,5 @@ export async function sendDocumentEmail(
     }
   }
 
-  return { logId: log.id, status, error };
+  return { logId: log.id, status, error, ...(outcome ? { outcome } : {}) };
 }
