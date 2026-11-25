@@ -365,7 +365,7 @@ describe("Phase 6 — Mahn-Engine (create.ts, state.ts, send.ts, snapshot.ts)", 
     const customerId = await makeCustomer("BUSINESS");
     const fin = await makeFinalizedInvoice(customerId, {
       deliveryDate: new Date("2050-05-01"),
-      dueDate: new Date("2050-05-01"),
+      dueDate: new Date("2050-04-28"), // Donnerstag; der 01.05. (Sonntag) wuerde nach § 193 BGB auf den 02.05. rutschen
     });
     const mahnungAm = new Date("2050-09-15T10:00:00.000Z");
 

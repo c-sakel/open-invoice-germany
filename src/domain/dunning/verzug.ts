@@ -55,7 +55,8 @@ function entgeltFrist30(anchor: Date): Date {
  * sobald er heute oder früher liegt; auch dann, wenn noch keine Zinstage vorliegen.
  */
 export function verzugStart(i: VerzugInput): { from: Date | null; basis: VerzugBasis; verzugAt: Date | null } {
-  const dueDay = berlinCalendarDay(i.dueDate);
+  // § 193 BGB auch für die Fälligkeit: fällt sie auf Sa/So/Feiertag, ist erst am nächsten Werktag zu leisten.
+  const dueDay = nextBusinessDay(berlinCalendarDay(i.dueDate));
   const today = berlinCalendarDay(i.now);
 
   // (a) Mahnungsweg: Zugang der ersten Mahnung, die nach dem Fälligkeitstag erstellt wurde.

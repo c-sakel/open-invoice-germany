@@ -190,11 +190,11 @@ describe("verzugStart: Zeitzonen, Kalender und § 193 BGB", () => {
   it("Winterzeit: 23:30 UTC am 31.01. ist 00:30 MEZ am 01.02. -> Zugang 02.02.", () => {
     expect(zug(new Date(Date.UTC(2281, 0, 31, 23, 30)))).toBe("2281-02-02");
   });
-  it("Schaltjahr 2280: Mail am 28.02. -> Zugang 29.02.; 30 Tage nach Fälligkeit 01.02. und Zugang -> Zinsen ab 03.03.", () => {
+  it("Schaltjahr 2280: Mail am 28.02. -> Zugang 29.02.; 30 Tage nach Zugang 31.01. (Fälligkeit 28.01.) -> Fristende 01.03. (Montag), Zinsen ab 02.03.", () => {
     const y = (m: number, dd: number, h = 12) => new Date(Date.UTC(2280, m - 1, dd, h));
     expect(zugangDay({ channel: "EMAIL", at: y(2, 28) }).toISOString().slice(0, 10)).toBe("2280-02-29");
-    const r = verzugStart({ ...input(), dueDate: y(2, 1, 0), issueDate: y(1, 20, 0), invoiceDispatches: [{ channel: "EMAIL", at: y(1, 30) }], now: y(6, 1) });
-    expect(iso(r.from)).toBe("2280-03-03");
+    const r = verzugStart({ ...input(), dueDate: y(1, 28, 0), issueDate: y(1, 20, 0), invoiceDispatches: [{ channel: "EMAIL", at: y(1, 30) }], now: y(6, 1) });
+    expect(iso(r.from)).toBe("2280-03-02");
   });
   it("Jahreswechsel: fällig 20.12., Zugang 21.12. -> 30 Tage = 20.01., Zinsen ab 21.01. des Folgejahres", () => {
     const r = verzugStart(
@@ -219,14 +219,43 @@ describe("verzugStart: Zeitzonen, Kalender und § 193 BGB", () => {
         now: new Date(Date.UTC(2283, 5, 1, 12)),
       }),
     );
+  // Anker = Zugang (Fälligkeit liegt davor auf einem Werktag), so lässt sich ein Fristende auf Feiertag erzeugen.
+  const fristZugang = (dueM: number, dueD: number, mailM: number, mailD: number) =>
+    verzugStart(
+      input({
+        dueDate: new Date(Date.UTC(2281, dueM - 1, dueD)),
+        issueDate: new Date(Date.UTC(2281, dueM - 1, dueD)),
+        invoiceDispatches: [{ channel: "EMAIL", at: new Date(Date.UTC(2281, mailM - 1, mailD, 12)) }],
+        now: new Date(Date.UTC(2283, 5, 1, 12)),
+      }),
+    );
   it("§ 193 BGB: Fristende Ostermontag (11.04.2281) -> Zinsen ab 13.04.", () => {
-    expect(iso(frist(3, 12).from)).toBe("2281-04-13");
+    expect(iso(fristZugang(3, 1, 3, 11).from)).toBe("2281-04-13"); // Zugang Sa 12.03. + 30 = 11.04.
   });
   it("§ 193 BGB: Fristende Karfreitag (08.04.) -> Samstag, Sonntag, Ostermontag -> Zinsen ab 13.04.", () => {
     expect(iso(frist(3, 9).from)).toBe("2281-04-13");
   });
   it("§ 193 BGB: Fristende Tag der Deutschen Einheit (03.10.2281, Montag) -> Zinsen ab 05.10.", () => {
-    expect(iso(frist(9, 3).from)).toBe("2281-10-05");
+    expect(iso(fristZugang(9, 1, 9, 2).from)).toBe("2281-10-05"); // Zugang Sa 03.09. + 30 = 03.10.
+  });
+  it("§ 193 BGB auch für die Fälligkeit: Samstag 12.03.2281 -> Montag 14.03., 30-Tage-Frist ab Montag -> Fristende 13.04., Zinsen ab 14.04.", () => {
+    const r = verzugStart(input({ dueDate: day(3, 12), invoiceDispatches: [mail(3, 1)], now: d(6, 1) }));
+    expect(iso(r.from)).toBe("2281-04-14");
+    expect(iso(r.verzugAt)).toBe("2281-04-13");
+  });
+  it("§ 193 BGB: Mahnung am Sonntag nach Fälligkeit Samstag zählt nicht (Fälligkeit erst Montag)", () => {
+    // Fälligkeit Sa 12.03. -> Mo 14.03.; Mahnung erstellt So 13.03. liegt vor der wirksamen Fälligkeit.
+    const r = verzugStart(
+      input({ dueDate: day(3, 12), invoiceDispatches: [mail(3, 1)], priorDunnings: [{ createdAt: d(3, 13), dispatches: [mail(3, 13)] }], now: d(6, 1) }),
+    );
+    expect(r.basis).toBe("ENTGELT_30");
+    expect(iso(r.from)).toBe("2281-04-14");
+    // Gegenprobe: Mahnung am Montag 14.03. liegt ebenfalls nicht NACH der Fälligkeit; erst Dienstag 15.03. zählt.
+    const r2 = verzugStart(
+      input({ dueDate: day(3, 12), invoiceDispatches: [mail(3, 1)], priorDunnings: [{ createdAt: d(3, 15), dispatches: [mail(3, 15)] }], now: d(6, 1) }),
+    );
+    expect(r2.basis).toBe("MAHNUNG");
+    expect(iso(r2.from)).toBe("2281-03-17");
   });
   it("§ 193 BGB: Fristende 1. Mai (Sonntag) -> Montag 02.05. -> Zinsen ab 03.05.", () => {
     expect(iso(frist(4, 1).from)).toBe("2281-05-03");
