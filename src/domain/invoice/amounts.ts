@@ -18,6 +18,16 @@ export function payableBaseCents(invoice: Pick<OpenAmountInvoice, "grossTotalCen
   return invoice.payableCents ?? invoice.grossTotalCents;
 }
 
+/**
+ * Skonto-Basis (brutto): beim Festschreiben eingefrorener Wert, sonst die Zahlungsgrundlage.
+ * NULL bedeutet Zahlbetrag (`payableBaseCents`).
+ */
+export function skontoBaseCents(
+  invoice: Pick<OpenAmountInvoice, "grossTotalCents" | "payableCents"> & { skontoBaseCents?: number | null },
+): number {
+  return invoice.skontoBaseCents ?? payableBaseCents(invoice);
+}
+
 /** Offener Rest (brutto) = Bemessungsgrundlage minus bereits erfasste Zahlungen. */
 export function openAmountCents(invoice: OpenAmountInvoice): number {
   return payableBaseCents(invoice) - invoice.paidAmountCents;
