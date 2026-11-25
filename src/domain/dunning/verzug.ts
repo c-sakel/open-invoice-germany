@@ -3,6 +3,8 @@ import { berlinCalendarDay } from "@/lib/berlin-time";
 /**
  * Verzugsbeginn (§ 286 BGB) als reine Funktion. Alle Daten sind Berliner Kalendertage (UTC-Mitternacht).
  * Zugangsannahmen (konservativ): E-Mail = Versandtag + 1, Post = Versandtag + 3. Eine Mahnung ohne Versandnachweis begründet keinen Verzug.
+ * `from` ist der erste Zinstag und liegt immer einen Tag NACH dem Verzugseintritt (§ 187 Abs. 1 BGB analog):
+ * Mahnungsweg = Tag nach Zugang, 30-Tage-Weg = Tag nach Fristende (Zugang 15.03. -> Fristende 14.04. -> Zinsen ab 15.04.).
  */
 export type Dispatch = { channel: "EMAIL" | "POST" | "NONE"; at: Date };
 
@@ -56,23 +58,24 @@ export function verzugStart(i: VerzugInput): { from: Date | null; basis: VerzugB
     const z = earliest(dun.dispatches.map(zugangDay));
     if (z) dunningZugang.push(z);
   }
-  const a = earliest(dunningZugang);
+  const aZugang = earliest(dunningZugang);
+  const a = aZugang ? addDays(aZugang, 1) : null;
 
-  // (b) 30-Tage-Weg.
+  // (b) 30-Tage-Weg: Fristende = Ausgangstag + 30, erster Zinstag = + 31.
   let b: Date | null = null;
   let bBasis: VerzugBasis = "NONE";
   const z = earliest(i.invoiceDispatches.map(zugangDay));
   if (!i.isConsumer) {
     if (z) {
-      b = addDays(new Date(Math.max(dueDay.getTime(), z.getTime())), 30);
+      b = addDays(new Date(Math.max(dueDay.getTime(), z.getTime())), 31);
       bBasis = "ENTGELT_30";
     } else {
       const leistung = berlinCalendarDay(i.serviceDate ?? i.issueDate);
-      b = addDays(new Date(Math.max(dueDay.getTime(), leistung.getTime())), 30);
+      b = addDays(new Date(Math.max(dueDay.getTime(), leistung.getTime())), 31);
       bBasis = "ENTGELT_30_LEISTUNG";
     }
   } else if (i.consumerNotice === true && z) {
-    b = addDays(new Date(Math.max(dueDay.getTime(), z.getTime())), 30);
+    b = addDays(new Date(Math.max(dueDay.getTime(), z.getTime())), 31);
     bBasis = "ENTGELT_30";
   }
 

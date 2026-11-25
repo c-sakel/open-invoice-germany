@@ -163,7 +163,7 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
     // Zinsen laufen erst ab Verzugseintritt (§ 286 BGB), nicht ab Rechnungsfaelligkeit: durch
     // Mahnung nach Faelligkeit (Zugang) oder 30 Tage nach Faelligkeit und Zugang der Rechnung
     // (Verbraucher nur mit dem beim Festschreiben eingefrorenen Hinweis). Zugangstag laut
-    // `verzugStart`; Zinsen ab dem Folgetag (§ 187 Abs. 1 BGB). Faellt der Fristablauf auf einen
+    // `verzugStart`; erster Zinstag (`interestFrom`) ist der Tag NACH Zugang (Mahnung) bzw. nach Fristende (30 Tage), § 187 Abs. 1 BGB analog. Faellt der Fristablauf auf einen
     // Sonn-/Feiertag, wird § 193 BGB bewusst NICHT angewandt (fuer den Glaeubiger guenstigere
     // Annahme entfaellt; kein Zinsvorteil durch Verschiebung). Je Mahnung neu auf die gesamte
     // Zeit seit Verzugsbeginn berechnet und ersetzt den zuvor ausgewiesenen Betrag (nicht kumulativ).

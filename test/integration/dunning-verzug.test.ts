@@ -106,8 +106,8 @@ describe("Verzugsbeginn in der Mahnung", () => {
     await mail("DUNNING", r0.dunning.id, "SENT", D(3, 10));
     const r1 = await dunn(inv.id, D(4, 1));
     expect(r1.dunning.interestBasis).toBe("MAHNUNG");
-    expect(iso(r1.dunning.interestFrom)).toBe("2282-03-11"); // Versand 10.03. + 1 Tag
-    const fromMahnung = await expectedInterest(inv.grossTotalCents, D(3, 11), D(4, 1));
+    expect(iso(r1.dunning.interestFrom)).toBe("2282-03-12"); // Versand 10.03., Zugang 11.03., Zinsen ab 12.03.
+    const fromMahnung = await expectedInterest(inv.grossTotalCents, D(3, 12), D(4, 1));
     const fromDue = await expectedInterest(inv.grossTotalCents, D(3, 1), D(4, 1));
     expect(fromMahnung.interestCents).toBeGreaterThan(0);
     expect(fromDue.interestCents).toBeGreaterThan(fromMahnung.interestCents);
@@ -130,11 +130,11 @@ describe("Verzugsbeginn in der Mahnung", () => {
   it("3: B2C mit eingefrorenem Hinweis, Zugang bekannt, mehr als 30 Tage -> ENTGELT_30", async () => {
     await withInterestOnStage0(async () => {
       const inv = await makeInvoice("CONSUMER", {}, true);
-      await mail("INVOICE", inv.id, "SENT", D(3, 2)); // Zugang 03.03. -> 02.04.
+      await mail("INVOICE", inv.id, "SENT", D(3, 2)); // Zugang 03.03. -> Fristende 02.04. -> Zinsen ab 03.04.
       const r = await dunn(inv.id, D(6, 1));
       expect(r.dunning.interestBasis).toBe("ENTGELT_30");
-      expect(iso(r.dunning.interestFrom)).toBe("2282-04-02");
-      const e = await expectedInterest(inv.grossTotalCents, D(4, 2), D(6, 1), true);
+      expect(iso(r.dunning.interestFrom)).toBe("2282-04-03");
+      const e = await expectedInterest(inv.grossTotalCents, D(4, 3), D(6, 1), true);
       expect(r.dunning.interestAmountCents).toBe(e.interestCents);
     });
   });
@@ -143,9 +143,9 @@ describe("Verzugsbeginn in der Mahnung", () => {
     const inv = await makeInvoice("BUSINESS");
     const r0 = await dunn(inv.id, D(3, 10));
     await mail("DUNNING", r0.dunning.id, "BOUNCED", D(3, 10));
-    const r1 = await dunn(inv.id, D(4, 1));
+    const r1 = await dunn(inv.id, D(4, 5));
     expect(r1.dunning.interestBasis).toBe("ENTGELT_30_LEISTUNG");
-    expect(iso(r1.dunning.interestFrom)).toBe("2282-03-31");
+    expect(iso(r1.dunning.interestFrom)).toBe("2282-04-01");
   });
 
   it("4b: unzustellbare Rechnungs-Mail ist kein Zugangsnachweis -> ENTGELT_30_LEISTUNG statt ENTGELT_30", async () => {
@@ -154,11 +154,11 @@ describe("Verzugsbeginn in der Mahnung", () => {
     await withInterestOnStage0(async () => {
       const r = await dunn(inv.id, D(4, 15));
       expect(r.dunning.interestBasis).toBe("ENTGELT_30_LEISTUNG");
-      expect(iso(r.dunning.interestFrom)).toBe("2282-03-31");
+      expect(iso(r.dunning.interestFrom)).toBe("2282-04-01");
     });
   });
 
-  it("5: Post-Mahnung nur QUEUED/DONE LIVE zaehlt -> Einreichtag + 3; Entwurf, Testlauf, HOLD, PENDING, UNKNOWN, FAILED nicht", async () => {
+  it("5: Post-Mahnung nur QUEUED/DONE LIVE zaehlt -> Einreichtag + 3, Zinsen ab Folgetag; Entwurf, Testlauf, HOLD, PENDING, UNKNOWN, FAILED nicht", async () => {
     const inv = await makeInvoice("BUSINESS");
     const r0 = await dunn(inv.id, D(3, 10));
     const base = { orgId, docType: "DUNNING", docId: r0.dunning.id, invoiceId: inv.id, docNumber: "x", trigger: "USER", pages: 1, color: "1", duplex: false, shipping: "national", pdfSha256: "a", base64Md5: "a", createdBy: "t" };
@@ -173,7 +173,7 @@ describe("Verzugsbeginn in der Mahnung", () => {
     await job("LIVE", "UNKNOWN", D(3, 11));
     await job("LIVE", "QUEUED", D(3, 12));
     const r1 = await dunn(inv.id, D(4, 1));
-    expect(iso(r1.dunning.interestFrom)).toBe("2282-03-15");
+    expect(iso(r1.dunning.interestFrom)).toBe("2282-03-16");
   });
 
   it("5b: nur nicht zaehlende Post-Auftraege -> kein Mahnungsverzug", async () => {
@@ -181,7 +181,7 @@ describe("Verzugsbeginn in der Mahnung", () => {
     const r0 = await dunn(inv.id, D(3, 10));
     const base = { orgId, docType: "DUNNING", docId: r0.dunning.id, invoiceId: inv.id, docNumber: "x", trigger: "USER", pages: 1, color: "1", duplex: false, shipping: "national", pdfSha256: "a", base64Md5: "a", createdBy: "t" };
     await dbInternal.postalJob.create({ data: { ...base, mode: "LIVE", status: "HOLD", filename: `v5b-${n}.pdf`, submittedAt: D(3, 11) } });
-    const r1 = await dunn(inv.id, D(4, 1));
+    const r1 = await dunn(inv.id, D(4, 5));
     expect(r1.dunning.interestBasis).toBe("ENTGELT_30_LEISTUNG");
   });
 
@@ -195,8 +195,8 @@ describe("Verzugsbeginn in der Mahnung", () => {
       where: { id: r1.dunning.id },
       include: { invoice: { include: { org: true, customer: true } }, stage: true },
     });
-    expect(iso(row.interestFrom)).toBe("2282-03-11");
-    expect(buildDunningPdfData(row, row.invoice).daysOverdue).toBe(21); // 11.03. -> 01.04.
+    expect(iso(row.interestFrom)).toBe("2282-03-12");
+    expect(buildDunningPdfData(row, row.invoice).daysOverdue).toBe(20); // 12.03. -> 01.04.
   });
 
   it("6: Bestandsmahnung (Spalten NULL) bleibt unveraendert, ChangeLog-Kette gueltig", async () => {
@@ -222,13 +222,13 @@ describe("Verzugsbeginn in der Mahnung", () => {
     const res = await tools["create_dunning"]!.handler({ invoice: inv.number, force: true });
     vi.useRealTimers();
     const txt = res.content.map((c) => c.text).join("\n");
-    expect(txt).toContain("Zinsen ab 2282-03-31 (30 Tage nach Fälligkeit und Leistung)");
+    expect(txt).toContain("Zinsen ab 2282-04-01 (30 Tage nach Fälligkeit und Leistung)");
 
     const d = await dbInternal.dunning.findFirstOrThrow({ where: { invoiceId: inv.id, level: 1 } });
     const r = await DunningGet(new Request("http://x/api/v1/Dunning/x", { headers: { authorization: `Bearer ${token}` } }), { params: Promise.resolve({ id: d.id }) });
     expect(r.status).toBe(200);
     const body = ((await r.json()) as { data: { interestFrom: string | null; interestBasis: string | null } }).data;
-    expect(body.interestFrom).toBe("2282-03-31");
+    expect(body.interestFrom).toBe("2282-04-01");
     expect(body.interestBasis).toBe("ENTGELT_30_LEISTUNG");
   });
 

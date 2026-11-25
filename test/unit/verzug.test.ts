@@ -24,38 +24,38 @@ function input(over: Partial<VerzugInput> = {}): VerzugInput {
 const iso = (x: Date | null) => (x ? x.toISOString().slice(0, 10) : null);
 
 describe("verzugStart", () => {
-  it("1: B2B, Rechnung per Mail am 01.03., fällig 15.03. -> 14.04. ENTGELT_30", () => {
+  it("1: B2B, Rechnung per Mail am 01.03., fällig 15.03. -> Zinsen ab 15.04. ENTGELT_30", () => {
     const r = verzugStart(input({ invoiceDispatches: [mail(3, 1)] }));
-    expect(iso(r.from)).toBe("2281-04-14");
+    expect(iso(r.from)).toBe("2281-04-15");
     expect(r.basis).toBe("ENTGELT_30");
   });
 
-  it("2: B2B, Zugang unbekannt, Leistung 10.03. -> 14.04. ENTGELT_30_LEISTUNG", () => {
+  it("2: B2B, Zugang unbekannt, Leistung 10.03. -> Zinsen ab 15.04. ENTGELT_30_LEISTUNG", () => {
     const r = verzugStart(input({ serviceDate: day(3, 10) }));
-    expect(iso(r.from)).toBe("2281-04-14");
+    expect(iso(r.from)).toBe("2281-04-15");
     expect(r.basis).toBe("ENTGELT_30_LEISTUNG");
   });
 
-  it("2b: Leistung nach Fälligkeit -> Leistungstag + 30", () => {
+  it("2b: Leistung nach Fälligkeit -> Leistungstag + 31 (Tag nach Fristende)", () => {
     const r = verzugStart(input({ serviceDate: day(3, 20), now: d(5, 30) }));
-    expect(iso(r.from)).toBe("2281-04-19");
+    expect(iso(r.from)).toBe("2281-04-20");
     expect(r.basis).toBe("ENTGELT_30_LEISTUNG");
   });
 
   it("2c: ohne Leistungsdatum zählt das Rechnungsdatum", () => {
     const r = verzugStart(input({ issueDate: day(3, 18), now: d(5, 30) }));
-    expect(iso(r.from)).toBe("2281-04-17");
+    expect(iso(r.from)).toBe("2281-04-18");
     expect(r.basis).toBe("ENTGELT_30_LEISTUNG");
   });
 
-  it("3: Mahnung per Mail am 20.03. -> 21.03. MAHNUNG", () => {
+  it("3: Mahnung per Mail am 20.03. -> Zinsen ab 22.03. MAHNUNG", () => {
     const r = verzugStart(
       input({
         invoiceDispatches: [mail(3, 1)],
         priorDunnings: [{ createdAt: d(3, 20), dispatches: [mail(3, 20)] }],
       }),
     );
-    expect(iso(r.from)).toBe("2281-03-21");
+    expect(iso(r.from)).toBe("2281-03-22");
     expect(r.basis).toBe("MAHNUNG");
   });
 
@@ -71,7 +71,7 @@ describe("verzugStart", () => {
 
   it("5: B2C mit Hinweis und Zugang -> ENTGELT_30", () => {
     const r = verzugStart(input({ isConsumer: true, consumerNotice: true, invoiceDispatches: [mail(3, 1)] }));
-    expect(iso(r.from)).toBe("2281-04-14");
+    expect(iso(r.from)).toBe("2281-04-15");
     expect(r.basis).toBe("ENTGELT_30");
   });
 
@@ -80,7 +80,7 @@ describe("verzugStart", () => {
     expect(r).toEqual({ from: null, basis: "NONE" });
   });
 
-  it("6: B2C ohne Hinweis, Mahnung per Post am 20.03. -> 23.03. MAHNUNG", () => {
+  it("6: B2C ohne Hinweis, Mahnung per Post am 20.03. -> Zinsen ab 24.03. MAHNUNG", () => {
     const r = verzugStart(
       input({
         isConsumer: true,
@@ -88,7 +88,7 @@ describe("verzugStart", () => {
         priorDunnings: [{ createdAt: d(3, 20), dispatches: [post(3, 20)] }],
       }),
     );
-    expect(iso(r.from)).toBe("2281-03-23");
+    expect(iso(r.from)).toBe("2281-03-24");
     expect(r.basis).toBe("MAHNUNG");
   });
 
@@ -101,7 +101,7 @@ describe("verzugStart", () => {
         }),
       );
       expect(r.basis).toBe("ENTGELT_30");
-      expect(iso(r.from)).toBe("2281-04-14");
+      expect(iso(r.from)).toBe("2281-04-15");
     }
   });
 
@@ -113,10 +113,10 @@ describe("verzugStart", () => {
   });
 
   it("9: from = heute oder später -> NONE", () => {
-    const r = verzugStart(input({ invoiceDispatches: [mail(3, 1)], now: d(4, 14, 8) }));
+    const r = verzugStart(input({ invoiceDispatches: [mail(3, 1)], now: d(4, 15, 8) }));
     expect(r).toEqual({ from: null, basis: "NONE" });
-    const r2 = verzugStart(input({ invoiceDispatches: [mail(3, 1)], now: d(4, 15, 8) }));
-    expect(iso(r2.from)).toBe("2281-04-14");
+    const r2 = verzugStart(input({ invoiceDispatches: [mail(3, 1)], now: d(4, 16, 8) }));
+    expect(iso(r2.from)).toBe("2281-04-15");
   });
 
   it("11: mehrere Dispatches -> frühester zählt", () => {
@@ -126,27 +126,40 @@ describe("verzugStart", () => {
         priorDunnings: [{ createdAt: d(3, 20), dispatches: [post(3, 25), mail(3, 22)] }],
       }),
     );
-    expect(iso(r.from)).toBe("2281-03-23");
+    expect(iso(r.from)).toBe("2281-03-24");
     expect(r.basis).toBe("MAHNUNG");
     const r2 = verzugStart(input({ invoiceDispatches: [mail(3, 10), mail(3, 1)] }));
-    expect(iso(r2.from)).toBe("2281-04-14");
+    expect(iso(r2.from)).toBe("2281-04-15");
   });
 
-  it("12: Rechnung erst nach Fälligkeit zugegangen (Versand 19.03. -> Zugang 20.03.) -> 19.04.", () => {
+  it("12: Rechnung erst nach Fälligkeit zugegangen (Versand 19.03. -> Zugang 20.03.) -> Zinsen ab 20.04.", () => {
     const r = verzugStart(input({ invoiceDispatches: [mail(3, 19)], now: d(5, 30) }));
-    expect(iso(r.from)).toBe("2281-04-19");
+    expect(iso(r.from)).toBe("2281-04-20");
     expect(r.basis).toBe("ENTGELT_30");
   });
 
+  it("14: Grenzfall Monatsende: Zugang 31.01. -> Fristende 02.03. -> Zinsen ab 03.03.", () => {
+    // Fälligkeit 31.01., Rechnung per Mail am 30.01. (Zugang 31.01.) -> 30 Tage bis 02.03. (Februar hat 28 Tage in 2281)
+    const r = verzugStart(input({ dueDate: day(1, 31), issueDate: day(1, 20), invoiceDispatches: [mail(1, 30)], now: d(5, 30) }));
+    expect(iso(r.from)).toBe("2281-03-03");
+    expect(r.basis).toBe("ENTGELT_30");
+  });
+
+  it("15: Grenzfall Monatsende Mahnung: Versand 30.04. per Mail -> Zugang 01.05. -> Zinsen ab 02.05.", () => {
+    const r = verzugStart(input({ isConsumer: true, consumerNotice: false, priorDunnings: [{ createdAt: d(4, 30), dispatches: [mail(4, 30)] }], now: d(5, 30) }));
+    expect(iso(r.from)).toBe("2281-05-02");
+    expect(r.basis).toBe("MAHNUNG");
+  });
+
   it("13: Gleichstand Mahnung und 30-Tage-Regel -> MAHNUNG", () => {
-    // Zugang der Mahnung 14.04. = 30-Tage-Weg 14.04.
+    // Zugang der Mahnung 14.04. -> Zinsen ab 15.04. = 30-Tage-Weg (Fristende 14.04.) -> 15.04.
     const r = verzugStart(
       input({
         invoiceDispatches: [mail(3, 1)],
         priorDunnings: [{ createdAt: d(4, 13), dispatches: [mail(4, 13)] }],
       }),
     );
-    expect(iso(r.from)).toBe("2281-04-14");
+    expect(iso(r.from)).toBe("2281-04-15");
     expect(r.basis).toBe("MAHNUNG");
   });
 });
@@ -176,28 +189,28 @@ describe("verzugStart: Zeitzonen, Kalender und § 193 BGB", () => {
   it("Winterzeit: 23:30 UTC am 31.01. ist 00:30 MEZ am 01.02. -> Zugang 02.02.", () => {
     expect(zug(new Date(Date.UTC(2281, 0, 31, 23, 30)))).toBe("2281-02-02");
   });
-  it("Schaltjahr 2280: Mail am 28.02. -> Zugang 29.02.; 30 Tage nach Fälligkeit 01.02. und Zugang -> 02.03.", () => {
+  it("Schaltjahr 2280: Mail am 28.02. -> Zugang 29.02.; 30 Tage nach Fälligkeit 01.02. und Zugang -> Zinsen ab 03.03.", () => {
     const y = (m: number, dd: number, h = 12) => new Date(Date.UTC(2280, m - 1, dd, h));
     expect(zugangDay({ channel: "EMAIL", at: y(2, 28) }).toISOString().slice(0, 10)).toBe("2280-02-29");
     const r = verzugStart({ ...input(), dueDate: y(2, 1, 0), issueDate: y(1, 20, 0), invoiceDispatches: [{ channel: "EMAIL", at: y(1, 30) }], now: y(6, 1) });
-    expect(iso(r.from)).toBe("2280-03-02");
+    expect(iso(r.from)).toBe("2280-03-03");
   });
-  it("Jahreswechsel: fällig 20.12., Zugang 21.12. -> 30 Tage = 20.01. des Folgejahres", () => {
+  it("Jahreswechsel: fällig 20.12., Zugang 21.12. -> 30 Tage = 20.01., Zinsen ab 21.01. des Folgejahres", () => {
     const r = verzugStart(
       input({ dueDate: new Date(Date.UTC(2281, 11, 20)), issueDate: new Date(Date.UTC(2281, 11, 1)), invoiceDispatches: [{ channel: "EMAIL", at: new Date(Date.UTC(2281, 11, 20, 12)) }], now: new Date(Date.UTC(2282, 1, 15, 12)) }),
     );
-    expect(iso(r.from)).toBe("2282-01-20");
+    expect(iso(r.from)).toBe("2282-01-21");
   });
   it("§ 193 BGB wird bewusst nicht angewandt: Fristende auf Sonntag bleibt der Sonntag", () => {
-    // fällig 15.03.2281 + 30 Tage = 14.04.2281 (Sonntag); Verzugsbeginn bleibt dieser Tag.
+    // fällig 15.03.2281 + 30 Tage = 14.04.2281 (Sonntag); Fristende bleibt der Sonntag, erster Zinstag ist Montag 15.04.
     const r = verzugStart(input({ invoiceDispatches: [mail(3, 1)] }));
-    expect(iso(r.from)).toBe("2281-04-14");
+    expect(iso(r.from)).toBe("2281-04-15");
   });
   it("B2C mit Hinweis, Zugang bekannt, Mahnung früher als 30-Tage-Frist -> MAHNUNG", () => {
     const r = verzugStart(
       input({ isConsumer: true, consumerNotice: true, invoiceDispatches: [mail(3, 1)], priorDunnings: [{ createdAt: d(3, 20), dispatches: [mail(3, 20)] }] }),
     );
-    expect(iso(r.from)).toBe("2281-03-21");
+    expect(iso(r.from)).toBe("2281-03-22");
     expect(r.basis).toBe("MAHNUNG");
   });
 });

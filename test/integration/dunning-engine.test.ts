@@ -374,10 +374,10 @@ describe("Phase 6 — Mahn-Engine (create.ts, state.ts, send.ts, snapshot.ts)", 
     const r1 = await createDunning(fin.id, { now: mahnungAm, force: true }); // order 1: verzinst
 
     const cut = new Date("2050-07-01T00:00:00.000Z");
-    // Verzugsbeginn: B2B ohne Zugangsnachweis = Leistung 01.05. + 30 Tage = 31.05. (nicht die Faelligkeit).
+    // Verzugsbeginn: B2B ohne Zugangsnachweis = Leistung 01.05. + 30 Tage = Fristende 31.05., Zinsen ab 01.06. (nicht die Faelligkeit).
     expect(r1.dunning.interestBasis).toBe("ENTGELT_30_LEISTUNG");
-    expect(r1.dunning.interestFrom?.toISOString().slice(0, 10)).toBe("2050-05-31");
-    const days1 = daysBetween(new Date("2050-05-31"), cut);
+    expect(r1.dunning.interestFrom?.toISOString().slice(0, 10)).toBe("2050-06-01");
+    const days1 = daysBetween(new Date("2050-06-01"), cut);
     const days2 = daysBetween(cut, mahnungAm);
     const openAmount = fin.grossTotalCents;
     // Handrechnung: exakte Bruch-Summe der beiden Abschnitte, EINMAL gerundet (R7).
