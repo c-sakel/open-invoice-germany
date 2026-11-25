@@ -1,8 +1,7 @@
-import { z } from "zod";
 import { withApi } from "@/api/auth";
 import { apiData } from "@/api/response";
 import { apiDataResponseSchema, type RouteSpec } from "@/api/spec";
-import { serializeRecurring } from "@/api/serializers/recurring";
+import { serializeRecurring, recurringSchema } from "@/api/serializers/recurring";
 import { updateRecurringInvoice } from "@/domain/recurring/update";
 import { updateRecurringSchema } from "@/schemas";
 import { prisma } from "@/lib/db";
@@ -30,16 +29,16 @@ export const spec = {
     method: "GET",
     summary: "Abo abrufen",
     scope: "read",
-    response: apiDataResponseSchema(z.unknown()),
+    response: apiDataResponseSchema(recurringSchema),
     errors: [401, 403, 404, 429],
   },
   update: {
     path: "/api/v1/Recurring/{id}",
     method: "PATCH",
-    summary: "Abo aktualisieren",
+    summary: "Abo aktualisieren (Wechsel der Abrechnungsart mit bereits erzeugten Rechnungen: 409 TIMING_CHANGE_UNACKNOWLEDGED mit details.gapDays/overlapDays, bestaetigen per acknowledgeTimingChange)",
     scope: "write",
     request: { body: updateRecurringSchema },
-    response: apiDataResponseSchema(z.unknown()),
+    response: apiDataResponseSchema(recurringSchema),
     errors: [400, 401, 403, 404, 409, 429],
   },
 } satisfies Record<string, RouteSpec>;

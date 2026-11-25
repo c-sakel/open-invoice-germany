@@ -18,7 +18,8 @@ import { listUsageQuerySchema } from "@/schemas/recurring-usage";
 import { intervalLabel } from "@/lib/recurring";
 import { NotFoundError, InvalidOperationError } from "@/domain/errors";
 import { TaxRateNotAllowedError } from "@/domain/settings/tax-rates";
-import { MissedPeriodsChoice, currencyCodeSchema, DocLanguageSchema, createRecurringSchema, updateRecurringSchema } from "@/schemas";
+import { MissedPeriodsChoice, BillingTiming, RecurInterval, TaxScheme, currencyCodeSchema, DocLanguageSchema, createRecurringSchema, updateRecurringSchema } from "@/schemas";
+import { serializeNextPeriods } from "@/api/serializers/recurring";
 import { editorLineSchema, ToolError, type McpToolsContext, type Result } from "./context";
 
 /** Abo-Positionsschema: Positionsschema des Editors plus Abrechnungsart (Phase 18f). */
@@ -55,11 +56,16 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
         customer: z.string().describe("Kundenname oder -ID"),
         title: z.string().describe("Interne Bezeichnung, z. B. 'Wartungsvertrag Mustermann'"),
         lines: z.array(recurringEditorLineSchema).min(1),
-        interval: z.enum(["WEEKLY", "MONTHLY", "QUARTERLY", "YEARLY"]).default("MONTHLY"),
+        interval: RecurInterval.default("MONTHLY").describe("DAY | WEEKLY | MONTHLY | QUARTERLY | YEARLY"),
         intervalCount: z.number().int().min(1).max(48).default(1).describe("alle N Intervalle (z. B. 2 = alle 2 Monate)"),
-        startDate: z.string().describe("Erster Stichtag YYYY-MM-DD oder 'heute'"),
-        endDate: z.string().optional().describe("Letzter Stichtag YYYY-MM-DD (optional)"),
-        anchorDay: z.number().int().min(1).max(28).optional().describe("Fester Tag im Monat (1..28)"),
+        billingTiming: BillingTiming.optional().describe("ADVANCE = im Voraus (Leistungszeitraum ab Stichtag), ARREARS = nachträglich (Zeitraum bis Stichtag). Ohne Angabe: ADVANCE, bei Verbrauchspositionen ARREARS"),
+        startDate: z.string().describe("Leistungsbeginn bzw. erster Stichtag YYYY-MM-DD oder 'heute'"),
+        endDate: z.string().optional().describe("Vertragsende YYYY-MM-DD (optional); der letzte Zeitraum wird dort gekürzt"),
+        maxRuns: z.number().int().positive().optional().describe("Höchstzahl der Rechnungen (danach endet das Abo)"),
+        anchorDay: z.number().int().min(1).max(31).optional().describe("Fester Tag im Monat (1..31, 31 = Monatsletzter); bei neuen Abos aus dem Leistungsbeginn abgeleitet, ein abweichender Wert wird abgelehnt"),
+        taxScheme: TaxScheme.optional().describe("Steuerschema der erzeugten Rechnungen; ohne Angabe das Schema des Unternehmens (sonst REGULAR)"),
+        showPeriodText: z.boolean().optional().describe("Leistungszeitraum-Text in den Positionen einfügen (ohne Angabe: Org-Standard)"),
+        emailTemplateId: z.string().optional().describe("E-Mail-Vorlage für den automatischen Versand (autoSend); ohne Angabe die Standardvorlage"),
         paymentTermsDays: z.number().int().min(0).max(365).default(14),
         autoFinalize: z.boolean().optional().describe("true = erzeugte Rechnungen sofort festschreiben (ohne Angabe: Org-Standard aus den Einstellungen)"),
         autoSend: z.boolean().optional().describe("true = erzeugte Rechnungen automatisch per E-Mail versenden (ohne Angabe: Org-Standard aus den Einstellungen)"),
@@ -91,12 +97,16 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
           interval: args.interval,
           intervalCount: args.intervalCount,
           anchorDay: args.anchorDay,
+          billingTiming: args.billingTiming,
           startDate: start,
           endDate: ctx.parseDateInput(args.endDate),
+          maxRuns: args.maxRuns,
           paymentTermsDays: args.paymentTermsDays,
           autoFinalize: args.autoFinalize,
           autoSend: args.autoSend,
-          taxScheme: "REGULAR",
+          emailTemplateId: args.emailTemplateId,
+          showPeriodText: args.showPeriodText,
+          taxScheme: args.taxScheme ?? org.defaultTaxScheme ?? "REGULAR",
           currency: args.currency,
           language: args.language,
           notes: args.notes,
@@ -128,7 +138,7 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
     "list_recurring",
     {
       title: "Abos auflisten",
-      description: "Listet die Abos / wiederkehrenden Rechnungen mit Status, Rhythmus und nächstem Stichtag.",
+      description: "Listet die Abos / wiederkehrenden Rechnungen mit Status, Rhythmus, Abrechnungsart (billingTiming) und den nächsten Leistungszeiträumen (nextPeriods).",
       inputSchema: { status: z.enum(["ACTIVE", "PAUSED", "ENDED"]).optional() },
     },
     async ({ status }): Promise<Result> => {
@@ -154,7 +164,9 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
             customer: r.customer.name,
             rhythm: intervalLabel(r.interval, r.intervalCount),
             status: r.status,
+            billingTiming: r.billingTiming,
             nextRunDate: r.status === "ENDED" ? null : r.nextRunDate.toISOString().slice(0, 10),
+            nextPeriods: serializeNextPeriods(r),
             issued: r.issuedCount,
             autoFinalize: r.autoFinalize,
             collectiveBilling: r.collectiveBilling,
@@ -235,7 +247,7 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
     {
       title: "Abo / wiederkehrende Rechnung aendern",
       description:
-        "Aendert ein bestehendes Abo (Titel, Sammelrechnung collectiveBilling/invoiceHeading, Rhythmus, Enddatum, maxRuns, Zahlungsziel, autoFinalize/autoSend, E-Mail-Vorlage, Leistungszeitraum-Text, Notizen, Status, Positionen). Positionen in Cent/Milli-Cent; mit der Zeilen-id aus get/Recurring bleibt der Verbrauch der Zeile erhalten, billing/usageUnitLabel setzen die Abrechnungsart. Bei offenem Verbrauch sind Zeitplanänderungen (Rhythmus, Stichtag, nächster Termin) abgelehnt.",
+        "Aendert ein bestehendes Abo (Titel, Sammelrechnung collectiveBilling/invoiceHeading, Rhythmus, Abrechnungsart billingTiming (Wechsel bei bereits erzeugten Rechnungen nur mit acknowledgeTimingChange), Vertragsende, maxRuns, Zahlungsziel, autoFinalize/autoSend, E-Mail-Vorlage, Leistungszeitraum-Text, Notizen, Status, Positionen). Positionen in Cent/Milli-Cent; mit der Zeilen-id aus get/Recurring bleibt der Verbrauch der Zeile erhalten, billing/usageUnitLabel setzen die Abrechnungsart. Bei offenem Verbrauch sind Zeitplanänderungen (Rhythmus, Stichtag, nächster Termin) abgelehnt.",
       inputSchema: { ...updateRecurringSchema.shape, recurring: z.string().describe("Abo-ID") },
     },
     async (args): Promise<Result> => {

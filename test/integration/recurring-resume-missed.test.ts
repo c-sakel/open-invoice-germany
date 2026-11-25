@@ -13,6 +13,8 @@ import { resumePausedRecurringWithinTx } from "@/domain/recurring/resume";
 import { runDueRecurring } from "@/domain/recurring/run";
 import { recordUsage } from "@/domain/recurring/usage";
 import { mapApiError } from "@/api/errors";
+import { saveMailSettings } from "@/domain/email/settings";
+import { createMemoryProvider } from "@/lib/mail/memory";
 import { createRecurringSchema, updateRecurringSchema, type CreateRecurringInput } from "@/schemas";
 
 const D = (iso: string): Date => new Date(`${iso}T10:00:00.000Z`);
@@ -157,6 +159,18 @@ describe("Fortsetzen mit Rückstand", () => {
     const invoices = await dbInternal.invoice.findMany({ where: { orgId, recurringInvoiceId: id }, select: { status: true, number: true } });
     expect(invoices).toHaveLength(3);
     expect(invoices.every((i) => i.status !== "DRAFT" && i.number !== null)).toBe(true);
+  });
+
+  it("BILL mit autoSend: je versäumtem Zeitraum eine festgeschriebene Rechnung und genau eine Mail je Rechnung", async () => {
+    const id = await pausedAbo({ autoFinalize: true, autoSend: true, title: "Abo mit Versand" });
+    await saveMailSettings(orgId, { host: "localhost", port: 2525, security: "NONE", fromName: "Fortsetzen GmbH", fromEmail: "rechnung@example.org", defaultCc: "", defaultBcc: "", copyToSelf: false });
+    await updateRecurringInvoice(orgId, id, { status: "ACTIVE", missedPeriods: "BILL" }, "t", { now: D("2262-04-10") });
+    const provider = createMemoryProvider();
+    const summaries = await runDueRecurring({ now: D("2262-04-10"), orgId, provider });
+    const emitted = summaries.filter((s) => s.title === "Abo mit Versand").flatMap((s) => s.emitted);
+    expect(emitted).toHaveLength(3);
+    expect(emitted.every((e) => e.finalized && e.emailStatus === "SENT")).toBe(true);
+    expect(provider.sent).toHaveLength(3);
   });
 
   it("Schema: missedPeriods nur SKIP oder BILL", () => {
