@@ -661,7 +661,7 @@ model RecurringInvoice {
   interval          String         @default("MONTHLY") // DAY | WEEKLY | MONTHLY | QUARTERLY | YEARLY
   intervalCount     Int            @default(1) // alle N Intervalle (z. B. 2 = alle 2 Monate)
   anchorDay         Int? // 1..31, 31 = Monatsletzter; Bestand null
-  billingTiming     String   @default("ARREARS") // ADVANCE | ARREARS
+  billingTiming     String         @default("ARREARS") // ADVANCE | ARREARS
   startDate         DateTime
   nextRunDate       DateTime // Stichtag der nächsten Erzeugung
   endDate           DateTime?
@@ -1362,17 +1362,19 @@ model ActivityLog {
 /// (src/domain/notifications/hooks.ts). `dedupeKey` verhindert Doppel-Benachrichtigungen
 /// ueber mehrere Job-Laeufe hinweg (upsert-ignore in `createNotification`).
 model Notification {
-  id         String    @id @default(cuid())
-  orgId      String
-  type       String // siehe NOTIFICATION_TYPES (src/domain/notifications/settings.ts)
-  title      String
-  body       String?
-  link       String?
-  entityType String?
-  entityId   String?
-  createdAt  DateTime  @default(now())
-  readAt     DateTime?
-  dedupeKey  String
+  id            String    @id @default(cuid())
+  orgId         String
+  type          String // siehe NOTIFICATION_TYPES (src/domain/notifications/settings.ts)
+  title         String
+  body          String?
+  link          String?
+  entityType    String?
+  entityId      String?
+  createdAt     DateTime  @default(now())
+  readAt        DateTime?
+  dedupeKey     String
+  /// Zeitpunkt der Alarm-Mail (NULL = noch nicht verschickt); Bestand per Migration auf createdAt gesetzt.
+  alarmMailedAt DateTime?
 
   @@unique([orgId, dedupeKey])
   @@index([orgId, readAt, createdAt])
@@ -1387,8 +1389,29 @@ model NotificationSettings {
   enabledTypesJson String
   emailDigest      Boolean   @default(false)
   lastDigestAt     DateTime?
+  alarmEmail       Boolean   @default(true)
+  lastAlarmMailAt  DateTime?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
+}
+
+/// Automatischer Versand einer Abo-Rechnung (Outbox). Nur Betriebszustand, kein Beleg.
+model InvoiceAutoSend {
+  id            String    @id @default(cuid())
+  orgId         String
+  invoiceId     String    @unique
+  recurringId   String?
+  status        String // PENDING | SENDING | RETRY | NO_ADDRESS | SENT | UNCLEAR | GAVE_UP | DONE_MANUAL | CANCELLED | BOUNCED
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime  @default(now())
+  claimedAt     DateTime?
+  emailLogId    String?
+  lastError     String? // fester Code, nie Servertext
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([status, nextAttemptAt])
+  @@index([orgId, status])
 }
 
 /// API-Schluessel je Organisation (Phase 10, Task 1) — Bearer-Auth fuer /api/v1/*.
@@ -2335,22 +2358,22 @@ model BankConnection {
 
 /// Konto eines Bankzugangs (IBAN unveraenderlich, nur die Auswahl und der Abrufstand sind fortschreibbar).
 model BankConnectionAccount {
-  id             String         @id @default(cuid())
-  orgId          String
-  org            Organization   @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  connectionId   String
-  connection     BankConnection @relation(fields: [connectionId], references: [id], onDelete: Restrict)
-  iban           String
-  accountNumber  String?
-  subAccount     String?
-  currency       String?
-  productName    String?
-  camtSupported  Boolean        @default(false)
-  selected       Boolean        @default(false)
-  lastFetchedTo  DateTime?
-  runs           BankFetchRun[]
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  id            String         @id @default(cuid())
+  orgId         String
+  org           Organization   @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  connectionId  String
+  connection    BankConnection @relation(fields: [connectionId], references: [id], onDelete: Restrict)
+  iban          String
+  accountNumber String?
+  subAccount    String?
+  currency      String?
+  productName   String?
+  camtSupported Boolean        @default(false)
+  selected      Boolean        @default(false)
+  lastFetchedTo DateTime?
+  runs          BankFetchRun[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
 
   @@unique([connectionId, iban])
   @@index([orgId, selected])
