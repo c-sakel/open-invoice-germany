@@ -85,4 +85,48 @@ describe("Scheduler-Zeitlimit", () => {
     const run = await dbInternal.schedulerRun.findUniqueOrThrow({ where: { id: "stale-23c-t5" } });
     expect(run.error).toBe("stale");
   });
+
+  it("Heartbeat: lockedAt wird waehrend des laufenden Jobs erneuert; Stale-Pruefung eines zweiten Prozesses uebernimmt nicht", async () => {
+    const h = hanging();
+    jobsMock.fx.mockImplementation(h.fn);
+    await runScheduledJobs({ jobs: ["fx"], trigger: "MANUAL", now: NOW, jobTimeoutMs: 40, heartbeatMs: 20 });
+    const lock = await dbInternal.schedulerLock.findUniqueOrThrow({ where: { job: "fx" } });
+    await vi.waitFor(async () => {
+      const cur = await dbInternal.schedulerLock.findUniqueOrThrow({ where: { job: "fx" } });
+      expect(cur.lockedAt.getTime()).toBeGreaterThan(lock.lockedAt.getTime());
+    });
+    // Zweiter Prozess: kein Eintrag in der Liste, Sperre ist frisch -> "locked", Lauf des ersten bleibt unangetastet.
+    inflightJobs().delete("fx");
+    jobsMock.fx.mockResolvedValue({});
+    const second = await runScheduledJobs({ jobs: ["fx"], trigger: "MANUAL", now: NOW });
+    expect(second[0].summary.skipped).toBe("locked");
+    expect((await dbInternal.schedulerRun.findUniqueOrThrow({ where: { id: lock.runId } })).error).toBe("timeout");
+    h.release();
+    await vi.waitFor(async () => expect(await dbInternal.schedulerLock.findUnique({ where: { job: "fx" } })).toBeNull());
+  });
+
+  it("Fehler beim Freigeben: keine unhandled rejection, gebuchtes Ergebnis bleibt", async () => {
+    jobsMock.fx.mockResolvedValue({ ok: 1 });
+    const spy = vi.spyOn(dbInternal.schedulerLock, "deleteMany").mockRejectedValueOnce(new Error("db weg"));
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const r = await runScheduledJobs({ jobs: ["fx"], trigger: "MANUAL", now: NOW });
+    expect(r[0].ok).toBe(true);
+    expect((await dbInternal.schedulerRun.findFirstOrThrow({ where: { job: "fx" } })).status).toBe("OK");
+    expect(inflightJobs().has("fx")).toBe(false);
+    expect(err).toHaveBeenCalled();
+    spy.mockRestore();
+    err.mockRestore();
+  });
+
+  it("spaeter Fehler nach Zeitlimit: Status bleibt timeout, Fehler wird protokolliert", async () => {
+    let fail: () => void = () => undefined;
+    jobsMock.fx.mockImplementation(() => new Promise((_, rej) => { fail = () => rej(new Error("spaet")); }));
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await runScheduledJobs({ jobs: ["fx"], trigger: "MANUAL", now: NOW, jobTimeoutMs: 30 });
+    fail();
+    await vi.waitFor(() => expect(inflightJobs().has("fx")).toBe(false));
+    expect((await dbInternal.schedulerRun.findFirstOrThrow({ where: { job: "fx" } })).error).toBe("timeout");
+    expect(err.mock.calls.some((c) => String(c[0]).includes("nach Zeitlimit"))).toBe(true);
+    err.mockRestore();
+  });
 });

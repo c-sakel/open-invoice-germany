@@ -25,6 +25,7 @@ import { onSchedulerFailed } from "@/domain/notifications/hooks";
 import { jobs } from "./jobs";
 import { isSchedulerStopping } from "./loop";
 import { inflightJobs } from "./inflight";
+import { HEARTBEAT_MS, STALE_MS, startLockHeartbeat } from "./lock";
 
 export type SchedulerJob = "fx" | "dunning" | "postal" | "recurring" | "auto-send" | "archive" | "mailbox" | "bank-fetch" | "online-payments" | "payment-rules" | "notifications" | "webhooks" | "audit" | "cleanup";
 
@@ -48,7 +49,6 @@ export interface JobResult {
 // Welle, Should-fix 7) laeuft als LETZTER Job — raeumt WebhookDelivery/ApiIdempotency auf,
 // nie eine Zeile, die derselbe Lauf gerade erst als faellig behandelt hat.
 export const JOB_ORDER: SchedulerJob[] = ["fx", "recurring", "auto-send", "dunning", "postal", "archive", "mailbox", "bank-fetch", "online-payments", "payment-rules", "notifications", "webhooks", "audit", "cleanup"];
-const STALE_MS = 30 * 60 * 1000;
 /** Zeitlimit je Job. Danach: FAILED "timeout" + Alarm; die Sperre bleibt bis zum tatsaechlichen Ende. */
 export const JOB_TIMEOUT_MS = 20 * 60 * 1000;
 
@@ -58,6 +58,8 @@ export interface RunScheduledJobsOptions {
   now?: Date;
   /** Nur fuer Tests: Zeitlimit je Job (Standard `JOB_TIMEOUT_MS`). */
   jobTimeoutMs?: number;
+  /** Nur fuer Tests: Intervall des Sperr-Lebenszeichens (Standard `HEARTBEAT_MS`). */
+  heartbeatMs?: number;
 }
 
 function isUniqueConstraintError(e: unknown): boolean {
@@ -71,11 +73,13 @@ async function clearStaleLock(job: SchedulerJob, now: Date): Promise<void> {
   const threshold = new Date(now.getTime() - STALE_MS);
   const stale = await dbInternal.schedulerLock.findFirst({ where: { job, lockedAt: { lt: threshold } } });
   if (!stale) return;
+  // Nur loeschen, wenn die Sperre inzwischen nicht erneuert wurde (Lebenszeichen eines noch laufenden Jobs in einem anderen Pod).
+  const del = await dbInternal.schedulerLock.deleteMany({ where: { job, runId: stale.runId, lockedAt: { lt: threshold } } });
+  if (del.count === 0) return;
   await dbInternal.schedulerRun.updateMany({
     where: { id: stale.runId, status: "RUNNING" },
-    data: { status: "FAILED", error: "stale", finishedAt: now },
+    data: { status: "FAILED", error: "stale", finishedAt: new Date() },
   });
-  await dbInternal.schedulerLock.deleteMany({ where: { job, runId: stale.runId } });
   await alertOnRepeatedFailure(job, stale.runId, now);
 }
 
@@ -113,6 +117,8 @@ export async function runScheduledJobs(opts: RunScheduledJobsOptions): Promise<J
     }
     // Der Job laeuft in diesem Prozess noch (z. B. nach Zeitueberschreitung): weder neu starten noch Sperre abraeumen.
     if (inflight.has(job)) {
+      // Je Tick eine Logzeile (Dauer-Haenger); der Waechter meldet stehende Aufgaben zusaetzlich als Alarm.
+      console.error("scheduler: Aufgabe laeuft weiter und wird nicht neu gestartet:", job);
       results.push({ job, ok: true, summary: { skipped: "still-running" } });
       continue;
     }
@@ -130,9 +136,16 @@ export async function runScheduledJobs(opts: RunScheduledJobsOptions): Promise<J
       throw e;
     }
 
+    // Lebenszeichen, solange der Job in diesem Prozess laeuft (auch nach dem Zeitlimit), bis `release`.
+    const stopHeartbeat = startLockHeartbeat(job, runId, opts.heartbeatMs ?? HEARTBEAT_MS);
+    // Wirft nie: ein DB-Fehler beim Freigeben darf weder das gebuchte Ergebnis ueberschreiben noch unbehandelt enden;
+    // bleibt die Sperre stehen, laeuft sie nach STALE_MS aus.
     const release = async (): Promise<void> => {
+      stopHeartbeat();
       try {
         await dbInternal.schedulerLock.deleteMany({ where: { job, runId } });
+      } catch (e) {
+        console.error("scheduler: Sperre freigeben fehlgeschlagen", job, e instanceof Error ? e.name : "Fehler");
       } finally {
         inflight.delete(job);
       }
@@ -156,7 +169,12 @@ export async function runScheduledJobs(opts: RunScheduledJobsOptions): Promise<J
       (e: unknown): Outcome => ({ ok: false, error: e instanceof Error ? e.message : String(e) }),
     );
     // Sperre und Eintrag in der Liste enden erst, wenn der Job WIRKLICH fertig ist (auch nach Zeitueberschreitung).
-    const tail = settled.then(release, release);
+    let timedOut = false;
+    const tail = settled.then((o) => {
+      // Spaetes Ende nach Zeitlimit: Status bleibt "timeout", der Fehler wird nur protokolliert.
+      if (timedOut && !o.ok) console.error("scheduler: Aufgabe nach Zeitlimit mit Fehler beendet", job, runId);
+      return release();
+    });
     inflight.set(job, tail);
 
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -168,6 +186,7 @@ export async function runScheduledJobs(opts: RunScheduledJobsOptions): Promise<J
     clearTimeout(timer);
 
     if (outcome === "timeout") {
+      timedOut = true;
       // Sperre NICHT loeschen: der Job laeuft evtl. noch (Doppelversand-Gefahr). Spaeteres Ergebnis aendert FAILED nicht.
       await dbInternal.schedulerRun.updateMany({
         where: { id: entryId, status: "RUNNING" },
