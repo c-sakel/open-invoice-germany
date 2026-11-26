@@ -4,7 +4,7 @@ import { headers } from "next/headers";
 import { createShareLink, listShareLinks, ShareLinkError } from "@/domain/quote-share/link";
 import { NotFoundError } from "@/domain/errors";
 import { getActiveOrg } from "@/lib/org";
-import { getCurrentUserId } from "@/lib/auth/server";
+import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/lib/auth/require-session";
 import { resolveBaseUrl } from "@/lib/http/base-url";
 import { SecretsUnavailableError } from "@/lib/crypto/secrets";
 
@@ -35,6 +35,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       })),
     });
   } catch (e) {
+    if (e instanceof AuthRequiredError) return authRequiredResponse();
     if (e instanceof NotFoundError) return NextResponse.json({ error: e.message }, { status: 404 });
     console.error("GET /api/documents/[id]/share-links:", e);
     return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
@@ -45,7 +46,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
   try {
     const org = await getActiveOrg();
-    const actor = (await getCurrentUserId()) ?? "system";
+    const actor = await requireSessionActor();
     const body = await req.json().catch(() => ({}));
     const { link, token } = await createShareLink(org.id, id, body, { actor });
 
@@ -54,6 +55,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
     return NextResponse.json({ id: link.id, url, expiresAt: link.expiresAt }, { status: 201 });
   } catch (e) {
+    if (e instanceof AuthRequiredError) return authRequiredResponse();
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });
     }

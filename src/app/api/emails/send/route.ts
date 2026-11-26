@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getActiveOrg } from "@/lib/org";
-import { getCurrentUserId } from "@/lib/auth/server";
+import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/lib/auth/require-session";
 import { sendDocumentEmail, EmailAttachmentsTooLargeError } from "@/domain/email/send";
 import { DocumentNotFoundError } from "@/domain/email/context";
 import { AutoSendRunningError } from "@/domain/recurring/auto-send-guard";
@@ -92,10 +92,11 @@ export async function POST(req: Request) {
 
   try {
     const org = await getActiveOrg();
-    const actor = (await getCurrentUserId()) ?? "system";
+    const actor = await requireSessionActor();
     const result = await sendDocumentEmail(org.id, actor, rawPayload, extra);
     return NextResponse.json(result);
   } catch (e) {
+    if (e instanceof AuthRequiredError) return authRequiredResponse();
     if (e instanceof DocumentNotFoundError) {
       return NextResponse.json({ error: e.message }, { status: 404 });
     }

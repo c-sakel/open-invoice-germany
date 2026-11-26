@@ -1,6 +1,6 @@
 import { recordUsage } from "@/domain/recurring/usage";
 import { getActiveOrg } from "@/lib/org";
-import { getCurrentUserId } from "@/lib/auth/server";
+import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/lib/auth/require-session";
 import { guardSessionWrite, limitUsageWrites, ok, readUsageBody, usageErrorResponse } from "./respond";
 
 export const runtime = "nodejs";
@@ -13,10 +13,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const { id } = await ctx.params;
     const org = await getActiveOrg();
     limitUsageWrites(org.id);
-    const actor = (await getCurrentUserId()) ?? "system";
+    const actor = await requireSessionActor();
     const { usage, replayed } = await recordUsage(org.id, id, await readUsageBody(req), { source: "UI", actor });
     return ok({ usage, replayed }, replayed ? 200 : 201);
   } catch (e) {
+    if (e instanceof AuthRequiredError) return authRequiredResponse();
     return usageErrorResponse(e, "POST /api/recurring/[id]/usage:");
   }
 }

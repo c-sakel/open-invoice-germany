@@ -5,7 +5,7 @@ import { setDeliveryNoteStatus, setArchived, StatusTransitionError } from "@/dom
 import { OverDeliveryError } from "@/domain/delivery-note/quantities";
 import { NotFoundError } from "@/domain/errors";
 import { getActiveOrg } from "@/lib/org";
-import { getCurrentUserId } from "@/lib/auth/server";
+import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/lib/auth/require-session";
 
 export const runtime = "nodejs";
 
@@ -20,7 +20,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
   try {
     const org = await getActiveOrg();
-    const actor = (await getCurrentUserId()) ?? "system";
+    const actor = await requireSessionActor();
     const input = documentStatusActionSchema.parse(await req.json());
 
     if (input.action === "ARCHIVE" || input.action === "UNARCHIVE") {
@@ -36,6 +36,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const updated = await setDeliveryNoteStatus(org.id, id, target, { actor, note: input.note });
     return NextResponse.json({ id: updated.id, status: updated.status, number: updated.number });
   } catch (e) {
+    if (e instanceof AuthRequiredError) return authRequiredResponse();
     if (e instanceof SyntaxError) return NextResponse.json({ error: "Ungültiges JSON im Request-Body." }, { status: 400 });
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });

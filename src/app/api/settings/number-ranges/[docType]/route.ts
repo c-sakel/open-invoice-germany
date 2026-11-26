@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getActiveOrg } from "@/lib/org";
-import { getCurrentUserId } from "@/lib/auth/server";
+import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/lib/auth/require-session";
 import { updateNumberRange, NUMBER_RANGE_DOC_TYPES } from "@/domain/numbering/ranges";
 import { InvalidOperationError } from "@/domain/errors";
 
@@ -15,11 +15,12 @@ export async function PUT(req: Request, ctx: { params: Promise<{ docType: string
   }
   try {
     const org = await getActiveOrg();
-    const actor = (await getCurrentUserId()) ?? "system";
+    const actor = await requireSessionActor();
     const body = await req.json();
     const range = await updateNumberRange(org.id, docType, body, actor);
     return NextResponse.json({ range });
   } catch (e) {
+    if (e instanceof AuthRequiredError) return authRequiredResponse();
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });
     }

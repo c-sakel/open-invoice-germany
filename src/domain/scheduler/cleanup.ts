@@ -20,13 +20,19 @@
 import { dbInternal } from "@/lib/db";
 import { purgeApiRequestLogs } from "@/domain/api-log/purge";
 import { reconcileStaleQueuedEmails } from "@/domain/email/email-log";
+import { JOB_ORDER } from "@/domain/scheduler/runner";
 
 export const WEBHOOK_DELIVERY_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 export const API_IDEMPOTENCY_RETENTION_MS = 24 * 60 * 60 * 1000;
 /** Abrufprotokoll des Kundenportals: 24 Monate (730 Tage). */
 export const PORTAL_EVENT_RETENTION_MS = 730 * 24 * 60 * 60 * 1000;
 
+/** SchedulerRun: erfolgreiche Laeufe 90 Tage, fehlgeschlagene 365 Tage; der juengste OK-Lauf je Job bleibt immer. */
+export const SCHEDULER_RUN_OK_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
+export const SCHEDULER_RUN_FAILED_RETENTION_MS = 365 * 24 * 60 * 60 * 1000;
+
 export interface CleanupResult {
+  schedulerRunsDeleted: number;
   emailsReconciled: number;
   webhookDeliveriesDeleted: number;
   apiIdempotencyDeleted: number;
@@ -50,6 +56,22 @@ export async function runCleanupJob(now: Date = new Date()): Promise<CleanupResu
   });
   const apiRequestLogsDeleted = await purgeApiRequestLogs(now);
 
+  // Alte Laeufe: Status RUNNING wird nie geloescht; der juengste OK-Lauf je Job bleibt als Lebenszeichen.
+  const keepIds: string[] = [];
+  for (const job of JOB_ORDER) {
+    const latestOk = await dbInternal.schedulerRun.findFirst({ where: { job, status: "OK" }, orderBy: { startedAt: "desc" }, select: { id: true } });
+    if (latestOk) keepIds.push(latestOk.id);
+  }
+  const schedulerRuns = await dbInternal.schedulerRun.deleteMany({
+    where: {
+      id: { notIn: keepIds },
+      OR: [
+        { status: "OK", startedAt: { lt: new Date(now.getTime() - SCHEDULER_RUN_OK_RETENTION_MS) } },
+        { status: "FAILED", startedAt: { lt: new Date(now.getTime() - SCHEDULER_RUN_FAILED_RETENTION_MS) } },
+      ],
+    },
+  });
+
   // Das Abrufprotokoll ist append-only (Guard); nur diese Aufbewahrungsloeschung nutzt dbInternal.
   const portalEvents = await dbInternal.customerPortalEvent.deleteMany({
     where: { at: { lt: new Date(now.getTime() - PORTAL_EVENT_RETENTION_MS) } },
@@ -62,6 +84,7 @@ export async function runCleanupJob(now: Date = new Date()): Promise<CleanupResu
   });
 
   return {
+    schedulerRunsDeleted: schedulerRuns.count,
     emailsReconciled,
     webhookDeliveriesDeleted: webhookDeliveries.count,
     apiIdempotencyDeleted: apiIdempotency.count,

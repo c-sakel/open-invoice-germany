@@ -99,7 +99,7 @@ describe("GET /api/v1/System/health", () => {
     const res = await call(["admin"]);
     expect(res.status).toBe(200);
     const { data } = (await res.json()) as { data: Record<string, unknown> };
-    expect(Object.keys(data).sort()).toEqual(["archive", "backup", "chain", "db", "scheduler"]);
+    expect(Object.keys(data).sort()).toEqual(["archive", "attachments", "backup", "chain", "db", "scheduler"]);
     expect(data.db).toBe(true);
     expect(data.backup).toEqual({ lastOkAt: "2064-01-02T03:04:05Z" });
     expect(data.chain).toBeNull();

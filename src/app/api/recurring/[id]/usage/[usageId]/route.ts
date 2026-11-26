@@ -1,6 +1,6 @@
 import { voidUsage } from "@/domain/recurring/usage";
 import { getActiveOrg } from "@/lib/org";
-import { getCurrentUserId } from "@/lib/auth/server";
+import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/lib/auth/require-session";
 import { guardSessionWrite, limitUsageWrites, ok, readUsageBody, usageErrorResponse } from "../respond";
 
 export const runtime = "nodejs";
@@ -13,10 +13,11 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string; 
     const { id, usageId } = await ctx.params;
     const org = await getActiveOrg();
     limitUsageWrites(org.id);
-    const actor = (await getCurrentUserId()) ?? "system";
+    const actor = await requireSessionActor();
     const usage = await voidUsage(org.id, id, usageId, await readUsageBody(req), { actor });
     return ok({ usage });
   } catch (e) {
+    if (e instanceof AuthRequiredError) return authRequiredResponse();
     return usageErrorResponse(e, "DELETE /api/recurring/[id]/usage/[usageId]:");
   }
 }

@@ -5,7 +5,7 @@ import { createDeliveryNote, DeliveryNoteError, DeliveryNoteValidationError } fr
 import { OverDeliveryError } from "@/domain/delivery-note/quantities";
 import { listDeliveryNotes } from "@/domain/document/list";
 import { getActiveOrg } from "@/lib/org";
-import { getCurrentUserId } from "@/lib/auth/server";
+import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/lib/auth/require-session";
 import { parseListQuery } from "@/lib/list-query";
 
 export const runtime = "nodejs";
@@ -19,6 +19,7 @@ export async function GET(req: Request) {
     const result = await listDeliveryNotes(org.id, raw);
     return NextResponse.json(result);
   } catch (e) {
+    if (e instanceof AuthRequiredError) return authRequiredResponse();
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "Ungültiger Filter.", issues: e.issues }, { status: 400 });
     }
@@ -30,11 +31,12 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const org = await getActiveOrg();
-    const actor = (await getCurrentUserId()) ?? "system";
+    const actor = await requireSessionActor();
     const input = createDeliveryNoteSchema.parse(await req.json());
     const note = await createDeliveryNote(org.id, input, { actor });
     return NextResponse.json({ id: note.id, number: note.number, status: note.status }, { status: 201 });
   } catch (e) {
+    if (e instanceof AuthRequiredError) return authRequiredResponse();
     if (e instanceof SyntaxError) return NextResponse.json({ error: "Ungültiges JSON im Request-Body." }, { status: 400 });
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { convertDocumentBodySchema } from "@/schemas";
 import { convertDocument, ConvertError } from "@/domain/document/convert";
 import { getActiveOrg } from "@/lib/org";
-import { getCurrentUserId } from "@/lib/auth/server";
+import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/lib/auth/require-session";
 
 export const runtime = "nodejs";
 
@@ -11,7 +11,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
   try {
     const org = await getActiveOrg();
-    const actor = (await getCurrentUserId()) ?? "system";
+    const actor = await requireSessionActor();
 
     let raw: unknown = {};
     const text = await req.text();
@@ -27,6 +27,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     );
     return NextResponse.json(result, { status: 201 });
   } catch (e) {
+    if (e instanceof AuthRequiredError) return authRequiredResponse();
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });
     }

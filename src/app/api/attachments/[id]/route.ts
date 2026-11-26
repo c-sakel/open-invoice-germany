@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getActiveOrg } from "@/lib/org";
-import { getCurrentUserId } from "@/lib/auth/server";
+import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/lib/auth/require-session";
 import { dbInternal } from "@/lib/db";
 import { removeAttachment, type AttachmentDocType } from "@/domain/attachment/manage";
 import { readFile } from "@/lib/attachments/storage";
@@ -31,6 +31,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       },
     });
   } catch (e) {
+    if (e instanceof AuthRequiredError) return authRequiredResponse();
     console.error("GET /api/attachments/[id]:", e);
     return NextResponse.json({ error: "Anhang konnte nicht gelesen werden." }, { status: 500 });
   }
@@ -41,13 +42,14 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
   const { id } = await ctx.params;
   try {
     const org = await getActiveOrg();
-    const actor = (await getCurrentUserId()) ?? "system";
+    const actor = await requireSessionActor();
     const row = await dbInternal.documentAttachment.findFirst({ where: { id, orgId: org.id } });
     if (!row) return NextResponse.json({ error: "Anhang nicht gefunden." }, { status: 404 });
 
     await removeAttachment(org.id, row.docType as AttachmentDocType, row.docId, id, actor);
     return NextResponse.json({ ok: true });
   } catch (e) {
+    if (e instanceof AuthRequiredError) return authRequiredResponse();
     if (e instanceof NotFoundError) {
       return NextResponse.json({ error: e.message }, { status: 404 });
     }

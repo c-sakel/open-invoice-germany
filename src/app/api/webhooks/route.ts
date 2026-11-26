@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getActiveOrg } from "@/lib/org";
-import { getCurrentUserId } from "@/lib/auth/server";
+import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/lib/auth/require-session";
 import { listWebhookEndpoints, createWebhookEndpoint } from "@/domain/webhook/endpoints";
 import { SsrfBlockedError } from "@/domain/webhook/ssrf";
 
@@ -17,12 +17,13 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const org = await getActiveOrg();
-    const userId = await getCurrentUserId();
+    const userId = await requireSessionActor();
     const body = await req.json();
-    const created = await createWebhookEndpoint(org.id, body, { actor: userId ?? "system" });
+    const created = await createWebhookEndpoint(org.id, body, { actor: userId });
     // Das Klartext-Secret ist NUR hier sichtbar (analog ApiKey-Token, Task 1).
     return NextResponse.json({ endpoint: created }, { status: 201 });
   } catch (e) {
+    if (e instanceof AuthRequiredError) return authRequiredResponse();
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });
     }
