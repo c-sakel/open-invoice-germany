@@ -16,6 +16,7 @@ const systemHealthSchema = z.object({
   db: z.boolean(),
   scheduler: z.record(z.string(), z.string().nullable()).describe("Je Job: Zeitpunkt des letzten erfolgreichen Laufs (ISO 8601) oder null."),
   archive: z.object({ freeBytes: z.number().int().nullable(), pending: z.number().int() }),
+  attachments: z.object({ freeBytes: z.number().int().nullable() }),
   chain: z.object({ lastCheckedAt: z.string(), valid: z.boolean() }).nullable(),
   backup: z.object({ lastOkAt: z.string() }).nullable(),
 });

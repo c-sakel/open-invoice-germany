@@ -8,8 +8,8 @@
  */
 // Nit (Fix-Welle): SCHEDULER_ENABLED ist Default AN (Opt-out) — vorher deaktivierte nur
 // der exakte String "false"; "0"/"no"/"off" starteten den Loop trotzdem, entgegen der
-// Erwartung an einen Opt-out-Schalter.
-const SCHEDULER_DISABLED_VALUES = new Set(["false", "0", "no", "off"]);
+// Erwartung an einen Opt-out-Schalter (Auswertung in domain/scheduler/enabled.ts).
+import { isSchedulerEnabled } from "./domain/scheduler/enabled";
 
 /** Hoechstens so lange wird auf laufende Hintergrundaufgaben gewartet (unter der Kubernetes-Frist von 60 s). */
 const SCHEDULER_STOP_TIMEOUT_MS = 45_000;
@@ -23,8 +23,7 @@ function shutdownDrainMs(): number {
 
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
-  const raw = process.env.SCHEDULER_ENABLED?.trim().toLowerCase();
-  const schedulerEnabled = !(raw && SCHEDULER_DISABLED_VALUES.has(raw));
+  const schedulerEnabled = isSchedulerEnabled();
   let stopScheduler: ((timeoutMs: number) => Promise<string>) | null = null;
   if (schedulerEnabled) {
     const loop = await import("./domain/scheduler/loop");

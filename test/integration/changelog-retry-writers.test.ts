@@ -16,7 +16,11 @@ import { createPartialCreditNote } from "@/domain/invoice/credit";
 import { createDunning } from "@/domain/dunning/create";
 import { createBusinessDocument } from "@/domain/document/create";
 import { convertDocumentToInvoice } from "@/domain/document/convert";
-import { createQueuedEmailLog, finishEmailLog } from "@/domain/email/email-log";
+import { createQueuedEmailLog, finishEmailLog, markEmailBounced, reconcileStaleQueuedEmails } from "@/domain/email/email-log";
+import { convertDocument } from "@/domain/document/convert";
+import { createPartialInvoice } from "@/domain/invoice/partial";
+import { createDownpaymentInvoice } from "@/domain/invoice/downpayment";
+import { createFinalInvoice } from "@/domain/invoice/final";
 import { verifyOrgChain } from "@/domain/audit/verify-chain";
 import { createInvoiceSchema, type CreateDocumentInput } from "@/schemas";
 
@@ -148,6 +152,97 @@ describe("Kettenkonflikt in weiteren Schreibern", () => {
     });
     expect(c.calls()).toBe(2);
     expect(await logCount(log.id, "SENT")).toBe(1);
+    await chainOk();
+  });
+
+  const quoteDoc = () =>
+    createBusinessDocument(
+      orgId,
+      { kind: "ANGEBOT", customerId, taxScheme: "REGULAR", currency: "EUR", lines: [{ lineType: "ITEM", description: "Beratung", quantityMilli: 1000, unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S" }] } as CreateDocumentInput,
+      { now: NOW },
+    );
+  const queuedMail = async (docId: string) =>
+    createQueuedEmailLog({
+      orgId, docType: "INVOICE", docId, fromEmail: "a@example.com", to: ["k@example.com"], cc: [], bcc: [],
+      subject: "Rechnung", bodySnapshot: "Text", sentByUserId: "test",
+    });
+  const mailStatus = async (id: string) => (await dbInternal.emailLog.findUniqueOrThrow({ where: { id }, select: { status: true } })).status;
+
+  it("E-Mail als unzustellbar markieren: wiederholt, genau ein BOUNCED-Eintrag", async () => {
+    const inv = await finalized();
+    const log = await queuedMail(inv.id);
+    await finishEmailLog({
+      orgId, logId: log.id, status: "SENT", providerId: "p1", actor: "test", docType: "INVOICE", docId: inv.id,
+      to: ["k@example.com"], cc: [], bcc: [], subject: "Rechnung", at: NOW,
+    });
+    const c = conflict();
+    expect(await markEmailBounced(orgId, log.id, "test", NOW)).toBe(true);
+    expect(c.calls()).toBe(2);
+    expect(await logCount(log.id, "BOUNCED")).toBe(1);
+    expect(await mailStatus(log.id)).toBe("BOUNCED");
+    await chainOk();
+  });
+
+  it("Abgleich haengender QUEUED-Mails: wiederholt, genau ein FAILED-Eintrag", async () => {
+    const inv = await finalized();
+    const log = await queuedMail(inv.id);
+    await dbInternal.emailLog.update({ where: { id: log.id }, data: { createdAt: new Date(Date.now() - 3 * 60 * 60_000) } });
+    const c = conflict();
+    expect(await reconcileStaleQueuedEmails(new Date())).toBeGreaterThanOrEqual(1);
+    expect(c.calls()).toBeGreaterThanOrEqual(2);
+    expect(await logCount(log.id, "FAILED")).toBe(1);
+    expect(await mailStatus(log.id)).toBe("FAILED");
+    await chainOk();
+  });
+
+  it("Angebot -> Auftragsbestaetigung: wiederholt, genau eine Bestaetigung", async () => {
+    const quote = await quoteDoc();
+    const before = await dbInternal.quote.count({ where: { orgId, kind: "AUFTRAGSBESTAETIGUNG" } });
+    const c = conflict();
+    const res = await convertDocument(orgId, { fromType: "QUOTE", fromId: quote.id, toKind: "AUFTRAGSBESTAETIGUNG" }, { now: NOW });
+    expect(c.calls()).toBe(2);
+    expect(res.type).toBe("QUOTE");
+    expect(await dbInternal.quote.count({ where: { orgId, kind: "AUFTRAGSBESTAETIGUNG" } })).toBe(before + 1);
+    await chainOk();
+  });
+
+  it("Angebot -> Lieferschein: wiederholt, genau ein Lieferschein", async () => {
+    const quote = await quoteDoc();
+    const before = await dbInternal.deliveryNote.count({ where: { orgId } });
+    const c = conflict();
+    const res = await convertDocument(orgId, { fromType: "QUOTE", fromId: quote.id, toKind: "DELIVERY_NOTE" }, { now: NOW });
+    expect(c.calls()).toBe(2);
+    expect(res.type).toBe("DELIVERY_NOTE");
+    expect(await dbInternal.deliveryNote.count({ where: { orgId } })).toBe(before + 1);
+    await chainOk();
+  });
+
+  it("Teilrechnung: wiederholt, genau eine Rechnung", async () => {
+    const quote = await quoteDoc();
+    const before = await dbInternal.invoice.count({ where: { orgId, type: "PARTIAL" } });
+    const c = conflict();
+    const inv = await createPartialInvoice(orgId, { sourceType: "QUOTE", sourceId: quote.id, mode: "PERCENT", permille: 500 }, { now: NOW });
+    expect(c.calls()).toBe(2);
+    expect(inv.id).toBeTruthy();
+    expect(await dbInternal.invoice.count({ where: { orgId, type: "PARTIAL" } })).toBe(before + 1);
+    await chainOk();
+  });
+
+  it("Abschlags- und Schlussrechnung: je wiederholt, je genau eine Rechnung", async () => {
+    const quote = await quoteDoc();
+    const downBefore = await dbInternal.invoice.count({ where: { orgId, type: "DOWNPAYMENT" } });
+    const c1 = conflict();
+    const down = await createDownpaymentInvoice(orgId, { sourceType: "QUOTE", sourceId: quote.id, mode: "PERCENT", permille: 300 }, { now: NOW });
+    expect(c1.calls()).toBe(2);
+    expect(await dbInternal.invoice.count({ where: { orgId, type: "DOWNPAYMENT" } })).toBe(downBefore + 1);
+    vi.restoreAllMocks();
+
+    await finalizeInvoice(down.id, { now: NOW });
+    const finalBefore = await dbInternal.invoice.count({ where: { orgId, type: "FINAL" } });
+    const c2 = conflict();
+    await createFinalInvoice(orgId, { sourceType: "QUOTE", sourceId: quote.id }, { now: NOW });
+    expect(c2.calls()).toBe(2);
+    expect(await dbInternal.invoice.count({ where: { orgId, type: "FINAL" } })).toBe(finalBefore + 1);
     await chainOk();
   });
 

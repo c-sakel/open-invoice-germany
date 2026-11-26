@@ -77,6 +77,8 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
   // Basiszinssatz aus den org-weiten Mahnwesen-Einstellungen (Selbstheilung legt sie
   // bei Bedarf an) — AUSSERHALB der Transaktion, da hier nur gelesen wird und der Upsert
   // (Anlegen der Default-Zeile) keine GoBD-relevante Schreibaktion ist.
+  // Hinweis Kettenretry: Einstellungen/Branding werden vor der Transaktion gelesen und bei einem
+  // Wiederholungsversuch nicht neu geladen (ms-Fenster; die Layoutversion wird in der Tx aufgeloest).
   const settings = await loadDunningSettings(inv0.orgId);
   // Phase 16g: Design der Mahnung (Typ-Map DUNNING > Organisationsstandard); die Version wird in der Tx eingefroren.
   const brand = await loadBrandingSettings(inv0.orgId);
