@@ -101,6 +101,20 @@ describe("dunningScheduleFor (Phase 6, Task 2)", () => {
     expect(s.daysOverdue).toBe(31);
   });
 
+  it("isDue nutzt den Berliner Kalendertag von now (23:30 UTC am Vortag = schon der Faelligkeitstag in Berlin)", () => {
+    const base = {
+      invoiceDueDate: new Date("2050-01-01T00:00:00.000Z"),
+      lastDunning: null,
+      stages: STAGES,
+      gracePeriodDays: 0,
+      reachedStageIds: [] as string[],
+    };
+    // dueAt = 04.01.2050 (UTC-Mitternacht, 1+3). now = 03.01. 23:30 UTC = 04.01. 00:30 Berlin -> faellig.
+    expect(dunningScheduleFor({ ...base, now: new Date("2050-01-03T23:30:00.000Z") }).isDue).toBe(true);
+    // 03.01. 22:30 UTC = 03.01. 23:30 Berlin -> noch nicht.
+    expect(dunningScheduleFor({ ...base, now: new Date("2050-01-03T22:30:00.000Z") }).isDue).toBe(false);
+  });
+
   it("isDue vergleicht tagesgenau (UTC-Datum) — Uhrzeit von now spielt keine Rolle", () => {
     const s = dunningScheduleFor({
       invoiceDueDate: new Date("2050-01-01T00:00:00.000Z"),

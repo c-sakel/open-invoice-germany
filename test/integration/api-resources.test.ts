@@ -964,6 +964,13 @@ describe("/api/v1/BaseInterestRate", () => {
     expect(rows.some((r) => r.validFrom === "2059-01-01")).toBe(true);
   });
 
+  it("Liste enthaelt currentHalfYearMissing (Label oder null)", async () => {
+    const res = await BaseInterestRateList(req("http://x/api/v1/BaseInterestRate", { token }));
+    const body = (await json(res)) as { currentHalfYearMissing?: string | null };
+    expect(body).toHaveProperty("currentHalfYearMissing");
+    expect(body.currentHalfYearMissing === null || /^[12]\. Halbjahr \d{4}$/.test(body.currentHalfYearMissing ?? "")).toBe(true);
+  });
+
   it("Create -> 201, ueberschreibt denselben Stichtag statt zu duplizieren (Upsert)", async () => {
     const createRes = await BaseInterestRateCreate(
       req("http://x/api/v1/BaseInterestRate", { method: "POST", token, body: { validFrom: "2059-07-01", rateBp: 400, source: "Bundesbank" } }),

@@ -4,7 +4,7 @@
  */
 import { describe, it, expect, afterEach } from "vitest";
 import { dbInternal } from "@/lib/db";
-import { listBaseRates, upsertBaseRate, deleteBaseRate, loadBaseRates, rateForDate, type BaseRateEntry } from "@/domain/dunning/base-rate";
+import { listBaseRates, upsertBaseRate, deleteBaseRate, loadBaseRates, rateForDate, missingBaseRateHalfYear, type BaseRateEntry } from "@/domain/dunning/base-rate";
 import { ValidationError } from "@/domain/errors";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 
@@ -181,5 +181,29 @@ describe("Phase 14a — Basiszinssatz-Historie (base-rate.ts)", () => {
       expect(berlinAtBoundary).toBe(utcAtBoundary);
       expect(berlinJustBefore).toBe(utcJustBefore);
     });
+  });
+});
+
+describe("missingBaseRateHalfYear (Warnung bei fehlendem Halbjahressatz)", () => {
+  const e = (iso: string): BaseRateEntry => ({ validFrom: new Date(`${iso}T00:00:00.000Z`), rateBp: 127 });
+
+  it("null, wenn der Eintrag zum Halbjahresbeginn existiert", () => {
+    expect(missingBaseRateHalfYear([e("2311-01-01"), e("2311-07-01")], new Date("2311-08-03T10:00:00Z"))).toBeNull();
+  });
+
+  it("nach Mitternacht Berliner Zeit (Sommerzeit) zaehlt schon das neue Halbjahr", () => {
+    const res = missingBaseRateHalfYear([e("2311-01-01")], new Date("2311-06-30T22:30:00Z"));
+    expect(res?.label).toBe("2. Halbjahr 2311");
+    expect(res?.validFrom.toISOString()).toBe("2311-07-01T00:00:00.000Z");
+  });
+
+  it("eine Minute vor Mitternacht Berliner Zeit noch das alte Halbjahr", () => {
+    expect(missingBaseRateHalfYear([e("2311-01-01")], new Date("2311-06-30T21:59:00Z"))).toBeNull();
+  });
+
+  it("nur der Epoch-Eintrag -> aktuelles Halbjahr fehlt", () => {
+    const res = missingBaseRateHalfYear([e("1970-01-01")], new Date("2311-03-10T12:00:00Z"));
+    expect(res?.label).toBe("1. Halbjahr 2311");
+    expect(res?.validFrom.toISOString()).toBe("2311-01-01T00:00:00.000Z");
   });
 });

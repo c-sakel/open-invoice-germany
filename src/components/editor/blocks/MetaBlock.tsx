@@ -18,7 +18,7 @@
  * jetzt vollständig im Tagesfeld.
  */
 import { useEffect, useRef } from "react";
-import { dueDaysFrom, dueDateFromDays, resolveDueDays, localDateOnly, type DraftState, type DraftAction } from "@/lib/editor/draft";
+import { dueDaysFrom, dueDateFromDays, resolveDueDays, localDateOnly, draftLacksDeliveryInfo, type DraftState, type DraftAction } from "@/lib/editor/draft";
 import type { EditorMode } from "@/lib/editor/constants";
 import { EditorField } from "../EditorField";
 import { inputCls } from "@/components/forms/fields";
@@ -222,6 +222,12 @@ export function MetaBlock({
         {mode === "INVOICE" && deadline && (
           <p className={`text-sm sm:col-span-2 lg:col-span-3 ${deadline.missed ? "font-medium text-stamp" : "text-ink-muted"}`} role={deadline.missed ? "alert" : undefined}>
             Ausstellfrist: bis {deDateKey(deadline.key)} (§ 14a Abs. 1, 3 UStG){deadline.missed ? " — überschritten" : ""}
+          </p>
+        )}
+
+        {mode === "INVOICE" && draftLacksDeliveryInfo(draft) && (
+          <p className="text-sm text-ink-muted sm:col-span-2 lg:col-span-3" role="status">
+            Leistungszeitpunkt fehlt (§ 14 Abs. 4 Nr. 6 UStG): Leistungsdatum oder Zeitraum setzen oder ein Datum in den Hinweistext schreiben. Bei Kleinbetragsrechnungen entfällt die Angabe.
           </p>
         )}
 

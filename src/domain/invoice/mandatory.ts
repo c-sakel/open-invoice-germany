@@ -166,8 +166,38 @@ export function categoryNoticesToPrint(categories: Iterable<string>, notes: stri
   return out;
 }
 
-function hasDeliveryInfo(inv: MandatoryInvoice): boolean {
-  return Boolean(inv.deliveryDate || (inv.deliveryStart && inv.deliveryEnd) || inv.notes);
+/**
+ * Freitext gilt nur als Leistungszeitpunkt, wenn er ein plausibles Datum, Monat/Jahr, Quartal/Halbjahr
+ * oder den Bezug aufs Rechnungsdatum nennt (DE und EN). Bekannte Grenze: geprueft wird nur die FORM, nicht
+ * die Bedeutung — jedes Datum zaehlt, auch "Zahlbar bis 30.11.2026" oder "Bestellung vom 05.03.2026".
+ * Ob es der Leistungszeitpunkt ist, kann keine Regel entscheiden (siehe docs/LIMITATIONEN.md).
+ */
+const MONTH_NAMES =
+  "Januar|Februar|März|Maerz|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember|Jan|Feb|Mär|Apr|Jun|Jul|Aug|Sep|Sept|Okt|Nov|Dez" +
+  "|January|February|March|May|June|July|October|December|Mar|Oct|Dec";
+export const DELIVERY_NOTE_PATTERNS: readonly RegExp[] = [
+  /\b(0?[1-9]|[12]\d|3[01])\.\s?(0?[1-9]|1[0-2])\.\s?(\d{2}|\d{4})\b/,
+  /\b\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])\b/,
+  new RegExp(`\\b(${MONTH_NAMES})\\.?\\s+\\d{4}\\b`, "i"),
+  /\b(0?[1-9]|1[0-2])\/\d{4}\b/,
+  /\bQ[1-4]\s?\/?\s?\d{4}\b/i,
+  /\b(Quartal|Halbjahr|quarter|half[- ]?year)\s+\d{4}\b/i,
+  /((leistungs|liefer)(datum|zeitpunkt)|datum der (leistung|lieferung))(\s+(entspricht|ist|gleich|identisch)|\s*[:=])(\s+(mit|dem|ist|identisch|gleich))*\s+(rechnungs|ausstellungs)datum/i,
+  /(delivery|service|supply) date\s+(equals|is|=|is identical to|is the same as|corresponds to)\s+(the\s+)?invoice date/i,
+];
+
+/** Gemeinsame Pruefung fuer Festschreiben und Editor-Vorabwarnung: nennt der Freitext einen Leistungszeitpunkt? */
+export function notesStateDeliveryTime(notes: string | null | undefined): boolean {
+  const text = notes ?? "";
+  return DELIVERY_NOTE_PATTERNS.some((re) => re.test(text));
+}
+
+function hasDeliveryInfo(inv: MandatoryInvoice, lenientNotes = false): boolean {
+  if (inv.deliveryDate || (inv.deliveryStart && inv.deliveryEnd)) return true;
+  const notes = inv.notes ?? "";
+  if (!notes.trim()) return false;
+  // Korrekturbelege (Storno/Gutschrift) spiegeln einen bereits festgeschriebenen Beleg: Freitext genuegt weiter.
+  return lenientNotes || notesStateDeliveryTime(notes);
 }
 
 /** BR-IC-11: bei ig. Lieferung genuegt der Freitext NICHT — es braucht BT-72 oder BG-14. */
@@ -193,8 +223,10 @@ export interface ValidateMandatoryOptions {
    * den Lastenheft §51/GoBD als EINZIGEN zulaessigen Weg fuer eine festgeschriebene
    * Rechnung vorschreiben — u. a. fuer Bestandsbelege, die vor dieser Pruefung mit
    * Alt-Hinweistext/ohne Leistungsdatum/ohne Empfaenger-USt-IdNr. wirksam festgeschrieben
-   * wurden. Die uebrigen § 14-Pflichtangaben (Nr. 1-3/5/6, USt-Satz-0-Pruefung fuer
-   * steuerbefreite Schemata) bleiben UNVERAENDERT auch fuer Korrekturbelege scharf.
+   * wurden. Der Leistungszeitpunkt (Nr. 6) genuegt bei Korrekturbelegen als beliebiger Freitext
+   * (Datum/Zeitraum wird weiter akzeptiert). Die uebrigen § 14-Pflichtangaben (Nr. 1-3/5,
+   * USt-Satz-0-Pruefung fuer steuerbefreite Schemata) bleiben UNVERAENDERT auch fuer
+   * Korrekturbelege scharf.
    */
   isCorrection?: boolean;
 }
@@ -242,8 +274,8 @@ export function validateMandatoryFields(inv: MandatoryInvoice, opts: ValidateMan
   });
 
   // § 14 Abs. 4 Nr. 6 — Leistungszeitpunkt (nicht bei Kleinbetrag)
-  if (!smallAmount && !hasDeliveryInfo(inv))
-    problems.push("Leistungs-/Lieferzeitpunkt fehlt (§ 14 Abs. 4 Nr. 6) — Datum oder Zeitraum oder Hinweis erforderlich.");
+  if (!smallAmount && !hasDeliveryInfo(inv, isCorrection))
+    problems.push("Leistungs-/Lieferzeitpunkt fehlt (§ 14 Abs. 4 Nr. 6) — Datum oder Zeitraum oder Hinweis erforderlich (Freitext nur mit Datum, Monat/Jahr oder „Leistungsdatum entspricht Rechnungsdatum“).");
 
   // § 14 Abs. 4 Nr. 8 / § 14a — Steuerausweis oder Befreiungshinweis. C1 (Fix-Welle):
   // NICHT bei Korrekturbelegen — siehe ValidateMandatoryOptions.isCorrection. Ein

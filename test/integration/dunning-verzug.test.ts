@@ -106,8 +106,8 @@ describe("Verzugsbeginn in der Mahnung", () => {
     await mail("DUNNING", r0.dunning.id, "SENT", D(3, 10));
     const r1 = await dunn(inv.id, D(4, 1));
     expect(r1.dunning.interestBasis).toBe("MAHNUNG");
-    expect(iso(r1.dunning.interestFrom)).toBe("2282-03-12"); // Versand 10.03., Zugang 11.03., Zinsen ab 12.03.
-    const fromMahnung = await expectedInterest(inv.grossTotalCents, D(3, 12), D(4, 1));
+    expect(iso(r1.dunning.interestFrom)).toBe("2282-03-14"); // Versand Fr 10.03., Zugang Sa 11.03. -> Mo 13.03., Zinsen ab 14.03.
+    const fromMahnung = await expectedInterest(inv.grossTotalCents, D(3, 14), D(4, 1));
     const fromDue = await expectedInterest(inv.grossTotalCents, D(3, 1), D(4, 1));
     expect(fromMahnung.interestCents).toBeGreaterThan(0);
     expect(fromDue.interestCents).toBeGreaterThan(fromMahnung.interestCents);
@@ -195,8 +195,8 @@ describe("Verzugsbeginn in der Mahnung", () => {
       where: { id: r1.dunning.id },
       include: { invoice: { include: { org: true, customer: true } }, stage: true },
     });
-    expect(iso(row.interestFrom)).toBe("2282-03-12");
-    expect(buildDunningPdfData(row, row.invoice).daysOverdue).toBe(20); // 12.03. -> 01.04.
+    expect(iso(row.interestFrom)).toBe("2282-03-14");
+    expect(buildDunningPdfData(row, row.invoice).daysOverdue).toBe(18); // 14.03. -> 01.04.
   });
 
   it("6: Bestandsmahnung (Spalten NULL) bleibt unveraendert, ChangeLog-Kette gueltig", async () => {
@@ -213,6 +213,16 @@ describe("Verzugsbeginn in der Mahnung", () => {
     expect((await verifyOrgChain(orgId, "EXPORT")).valid).toBe(true);
   });
 
+  it("6b: gespeicherter Zinsbeginn einer Bestandsmahnung bleibt nach weiterer Mahnung unverändert (Snapshot)", async () => {
+    const inv = await makeInvoice("BUSINESS");
+    const r0 = await dunn(inv.id, D(3, 10));
+    await dbInternal.dunning.update({ where: { id: r0.dunning.id }, data: { interestFrom: D(3, 12), interestBasis: "MAHNUNG" } });
+    await dunn(inv.id, D(4, 1));
+    const after = await dbInternal.dunning.findUniqueOrThrow({ where: { id: r0.dunning.id } });
+    expect(iso(after.interestFrom)).toBe("2282-03-12");
+    expect(after.interestBasis).toBe("MAHNUNG");
+  });
+
   it("7: REST und MCP nennen Zinsbeginn und Grund", async () => {
     const inv = await makeInvoice("BUSINESS"); // Leistung/Faelligkeit 01.03.
     vi.useFakeTimers({ toFake: ["Date"] });
@@ -222,7 +232,7 @@ describe("Verzugsbeginn in der Mahnung", () => {
     const res = await tools["create_dunning"]!.handler({ invoice: inv.number, force: true });
     vi.useRealTimers();
     const txt = res.content.map((c) => c.text).join("\n");
-    expect(txt).toContain("Zinsen ab 2282-04-01 (30 Tage nach Fälligkeit und Leistung)");
+    expect(txt).toContain("(ab 2282-04-01, 30 Tage nach Fälligkeit und Leistung)");
 
     const d = await dbInternal.dunning.findFirstOrThrow({ where: { invoiceId: inv.id, level: 1 } });
     const r = await DunningGet(new Request("http://x/api/v1/Dunning/x", { headers: { authorization: `Bearer ${token}` } }), { params: Promise.resolve({ id: d.id }) });

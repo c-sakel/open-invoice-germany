@@ -191,3 +191,33 @@ describe("englische Pflichthinweise (Phase 16b)", () => {
     expect(swapSchemeNotice(SCHEME_NOTICE_BY_LANG.en.AUSFUHR!, "AUSFUHR", "en", "en")).toBe(SCHEME_NOTICE_BY_LANG.en.AUSFUHR);
   });
 });
+
+describe("Freitext als Leistungszeitpunkt (nur mit Datum)", () => {
+  const ohne = (notes: string) => validateMandatoryFields(inv({ deliveryDate: null, notes }));
+  it("Freitext ohne Datum wird gemeldet", () => {
+    for (const n of ["Vielen Dank für Ihren Auftrag", "Leistungsdatum: siehe Lieferschein"])
+      expect(ohne(n).join(" ")).toMatch(/Leistungs-\/Lieferzeitpunkt/);
+  });
+  it("Datum, Monat/Jahr, Quartal und Rechnungsdatum-Bezug genuegen", () => {
+    for (const n of ["Leistungszeitraum: März 2311", "Lieferung am 03.04.2311", "Leistungsdatum entspricht dem Rechnungsdatum", "Q2/2311", "2311-04-03", "Service date equals invoice date"])
+      expect(ohne(n)).toEqual([]);
+  });
+  it("englische Monatsnamen, Quartal/Halbjahr ausgeschrieben, Lieferdatum-Bezug", () => {
+    for (const n of ["Service period: March 2311", "June 2311", "December 2311", "January 2311", "2. Quartal 2311", "1. Halbjahr 2311", "2nd quarter 2311", "Lieferdatum entspricht dem Rechnungsdatum", "Leistungszeitpunkt ist identisch mit dem Rechnungsdatum", "Supply date is the same as invoice date", "Lieferung 3.4.11", "Leistungsdatum: Rechnungsdatum", "Leistungszeitpunkt: Rechnungsdatum", "Datum der Leistung entspricht dem Rechnungsdatum", "Datum der Lieferung = Rechnungsdatum"])
+      expect(ohne(n), n).toEqual([]);
+  });
+  it("unplausible Daten und Monate zaehlen nicht", () => {
+    for (const n of ["99.99.2311", "13/2311", "0/2311", "2311-13-45", "Danke 2311", "Pflichthinweis ohne Datum", "Quartal ohne Jahr", "Leistungsdatum: siehe Rechnungsdatum der Vorrechnung", "Datum der Leistung: offen"])
+      expect(ohne(n).join(" "), n).toMatch(/Leistungs-\/Lieferzeitpunkt/);
+  });
+  it("nur Leistungsbeginn ohne Ende genuegt nicht", () => {
+    expect(validateMandatoryFields(inv({ deliveryDate: null, deliveryStart: new Date("2026-06-01"), deliveryEnd: null, notes: "Danke" })).join(" ")).toMatch(/Leistungs-\/Lieferzeitpunkt/);
+  });
+  it("deliveryDate/Zeitraum gesetzt: notes egal", () => {
+    expect(validateMandatoryFields(inv({ notes: "Danke" }))).toEqual([]);
+    expect(validateMandatoryFields(inv({ deliveryDate: null, deliveryStart: new Date("2026-06-01"), deliveryEnd: new Date("2026-06-30"), notes: "Danke" }))).toEqual([]);
+  });
+  it("Korrekturbeleg behaelt den alten Freitext-Pfad", () => {
+    expect(validateMandatoryFields(inv({ deliveryDate: null, notes: "Danke" }), { isCorrection: true })).toEqual([]);
+  });
+});

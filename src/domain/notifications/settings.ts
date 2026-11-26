@@ -37,6 +37,7 @@ export const NOTIFICATION_TYPES = {
   BANK_FETCH_ERROR: "Kontoabruf gestört",
   SCHEDULER_FAILED: "Hintergrundaufgabe fehlgeschlagen",
   WEBHOOK_DEAD: "Webhook endgültig nicht zugestellt",
+  BASE_RATE_MISSING: "Basiszinssatz fehlt",
 } as const;
 
 export type NotificationType = keyof typeof NOTIFICATION_TYPES;
@@ -48,7 +49,7 @@ export const ALL_NOTIFICATION_TYPES = Object.keys(NOTIFICATION_TYPES) as Notific
  * von gespeicherten `enabledTypes` (auch fuer Bestandszeilen, die diese Typen nie kannten),
  * und sind in der Einstellungs-UI nicht abwaehlbar.
  */
-export const MANDATORY_NOTIFICATION_TYPES: readonly NotificationType[] = ["ARCHIVE_TAMPERED", "ARCHIVE_FAILED", "CHAIN_BROKEN", "FX_FETCH_FAILED", "RECURRING_NOT_SENT", "SCHEDULER_FAILED"];
+export const MANDATORY_NOTIFICATION_TYPES: readonly NotificationType[] = ["ARCHIVE_TAMPERED", "ARCHIVE_FAILED", "CHAIN_BROKEN", "FX_FETCH_FAILED", "RECURRING_NOT_SENT", "SCHEDULER_FAILED", "BASE_RATE_MISSING"];
 
 /**
  * Typen, die (bei aktivem `alarmEmail`) zusaetzlich sofort per E-Mail gemeldet werden: Pflicht-Alarme
