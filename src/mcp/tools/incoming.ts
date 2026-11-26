@@ -5,6 +5,7 @@
  * IBANs sind maskiert, Positionen auf 200 begrenzt.
  */
 import { copyFile } from "node:fs/promises";
+import { MCP_ACTOR } from "../actor";
 import { constants as fsConstants } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
@@ -82,7 +83,7 @@ export function registerIncomingTools(server: McpServer, ctx: McpToolsContext): 
         rateLimit(`incoming-receive-mcp:${org.id}`, { limit: MCP_RECEIVE_PER_MINUTE, windowMs: 60_000 });
         const input = mcpReceiveInputSchema.parse(args);
         const bytes = decodeIncomingBase64(input.contentBase64, MAX_INCOMING_MCP_BYTES);
-        const result = await receiveIncomingInvoice(org.id, bytes, { fileName: input.fileName, channel: "MCP", actor: "mcp" });
+        const result = await receiveIncomingInvoice(org.id, bytes, { fileName: input.fileName, channel: "MCP", actor: MCP_ACTOR });
         return json(serializeReceiveResult(result));
       } catch (e) {
         return incomingFailure(ctx, e);
@@ -173,7 +174,7 @@ export function registerIncomingTools(server: McpServer, ctx: McpToolsContext): 
       try {
         const org = await ctx.requireOrg();
         const { incomingInvoiceId, ...input } = args;
-        await changeIncomingStatus(org.id, incomingInvoiceId, incomingStatusInputSchema.parse(input), "mcp");
+        await changeIncomingStatus(org.id, incomingInvoiceId, incomingStatusInputSchema.parse(input), MCP_ACTOR);
         return json(serializeIncomingDetail(await getIncomingInvoiceDetail(org.id, incomingInvoiceId, { ibanMode: "masked", maxLines: MAX_MCP_LINES })));
       } catch (e) {
         return incomingFailure(ctx, e);
@@ -194,7 +195,7 @@ export function registerIncomingTools(server: McpServer, ctx: McpToolsContext): 
       try {
         const org = await ctx.requireOrg();
         const { incomingInvoiceId, ...input } = args;
-        await updateIncomingInvoice(org.id, incomingInvoiceId, incomingPatchSchema.parse(input), "mcp");
+        await updateIncomingInvoice(org.id, incomingInvoiceId, incomingPatchSchema.parse(input), MCP_ACTOR);
         return json(serializeIncomingDetail(await getIncomingInvoiceDetail(org.id, incomingInvoiceId, { ibanMode: "masked", maxLines: MAX_MCP_LINES })));
       } catch (e) {
         return incomingFailure(ctx, e);
@@ -215,7 +216,7 @@ export function registerIncomingTools(server: McpServer, ctx: McpToolsContext): 
       try {
         const org = await ctx.requireOrg();
         const { incomingInvoiceId, ...input } = args;
-        const r = await createContactFromIncoming(org.id, incomingInvoiceId, incomingContactInputSchema.parse(input), "mcp");
+        const r = await createContactFromIncoming(org.id, incomingInvoiceId, incomingContactInputSchema.parse(input), MCP_ACTOR);
         const detail = await getIncomingInvoiceDetail(org.id, incomingInvoiceId, { ibanMode: "masked", maxLines: MAX_MCP_LINES });
         return json(serializeCreatedContact({ contactId: r.contactId, detail }));
       } catch (e) {

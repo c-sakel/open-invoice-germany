@@ -11,7 +11,7 @@
  */
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireActionOrg } from "@/lib/auth/require-session";
+import { requireActionOrg, requireSessionActor } from "@/lib/auth/require-session";
 import { saveTag, deleteTag, TagNotFoundError, TagNameConflictError } from "@/domain/tag/manage";
 import { tagDocument, untagDocument } from "@/domain/tag/assign";
 import { NotFoundError } from "@/domain/errors";
@@ -68,8 +68,9 @@ export async function deleteTagAction(input: { id: string }): Promise<DeleteTagA
  *  Tag-Chips ohne manuellen Reload aktuell sind. */
 export async function tagDocumentAction(input: { docType: TagDocType; docId: string; tagId: string }): Promise<TagActionResult> {
   try {
+    const actor = await requireSessionActor();
     const org = await requireActionOrg();
-    await tagDocument(org.id, input.tagId, { docType: input.docType, docId: input.docId });
+    await tagDocument(org.id, input.tagId, { docType: input.docType, docId: input.docId }, actor);
   } catch (e) {
     if (e instanceof NotFoundError) return { ok: false, error: "Tag nicht gefunden." };
     if (e instanceof RelationError) return { ok: false, error: "Beleg nicht gefunden." };
@@ -83,8 +84,9 @@ export async function tagDocumentAction(input: { docType: TagDocType; docId: str
 /** Entfernt die Zuordnung eines Tags von einem Beleg. */
 export async function untagDocumentAction(input: { docType: TagDocType; docId: string; tagId: string }): Promise<TagActionResult> {
   try {
+    const actor = await requireSessionActor();
     const org = await requireActionOrg();
-    await untagDocument(org.id, input.tagId, { docType: input.docType, docId: input.docId });
+    await untagDocument(org.id, input.tagId, { docType: input.docType, docId: input.docId }, actor);
   } catch (e) {
     if (e instanceof NotFoundError) return { ok: false, error: "Tag nicht gefunden." };
     console.error("untagDocumentAction:", e);

@@ -3,6 +3,7 @@
 // Zugangsdaten und Schalter (enabled, mode, autoDunningPost, Budget) sind ueber MCP NICHT aenderbar und
 // nie lesbar (nur hasApiKey/apiKeyLast4). Ausloeser MCP, Actor "mcp". Kein Netz in Tests (Transport-Fake).
 import { z } from "zod";
+import { MCP_ACTOR } from "../actor";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { serializePostalJob, serializePostalSettings } from "@/api/serializers/postal";
@@ -70,7 +71,7 @@ export function registerPostalTools(server: McpServer, ctx: McpToolsContext): vo
     async (args): Promise<Result> => {
       try {
         const org = await ctx.requireOrg();
-        const view = await savePostalSettings(org.id, args, { actor: "mcp", source: "MCP" });
+        const view = await savePostalSettings(org.id, args, { actor: MCP_ACTOR, source: "MCP" });
         return ctx.ok(JSON.stringify(serializePostalSettings(view), null, 2));
       } catch (e) {
         return postalFail(ctx, e);
@@ -149,7 +150,7 @@ export function registerPostalTools(server: McpServer, ctx: McpToolsContext): vo
       try {
         const org = await ctx.requireOrg();
         checkPostalRateLimit(org.id);
-        const results = await sendByPost(org.id, args, { actor: "mcp", trigger: "MCP" });
+        const results = await sendByPost(org.id, args, { actor: MCP_ACTOR, trigger: "MCP" });
         return ctx.ok(JSON.stringify({ results }, null, 2));
       } catch (e) {
         return postalFail(ctx, e);
@@ -208,7 +209,7 @@ export function registerPostalTools(server: McpServer, ctx: McpToolsContext): vo
         postalCancelConfirmSchema.parse({ confirm: args.confirm });
         const org = await ctx.requireOrg();
         checkPostalRateLimit(org.id);
-        return ctx.ok(JSON.stringify(await cancelPostalJob(org.id, args.id, { actor: "mcp" }), null, 2));
+        return ctx.ok(JSON.stringify(await cancelPostalJob(org.id, args.id, { actor: MCP_ACTOR }), null, 2));
       } catch (e) {
         return postalFail(ctx, e);
       }
@@ -229,7 +230,7 @@ export function registerPostalTools(server: McpServer, ctx: McpToolsContext): vo
         resolveConfirmSchema.parse(args.confirm);
         const org = await ctx.requireOrg();
         checkPostalRateLimit(org.id);
-        return ctx.ok(JSON.stringify(await resolveUnknownPostalJob(org.id, args.id, args.outcome, args.note, { actor: "mcp" }), null, 2));
+        return ctx.ok(JSON.stringify(await resolveUnknownPostalJob(org.id, args.id, args.outcome, args.note, { actor: MCP_ACTOR }), null, 2));
       } catch (e) {
         return postalFail(ctx, e);
       }

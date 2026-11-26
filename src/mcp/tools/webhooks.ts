@@ -1,5 +1,6 @@
 // ── Webhooks (Phase 10, Task 5) ────────────────────────────────────────────────
 import { z } from "zod";
+import { MCP_ACTOR } from "../actor";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { dbInternal } from "@/lib/db";
@@ -52,12 +53,12 @@ export function registerWebhookTools(server: McpServer, ctx: McpToolsContext): v
         }
 
         if (targetId) {
-          const updated = await updateWebhookEndpoint(org.id, targetId, { url, events, active, rotateSecret }, { actor: "mcp" });
+          const updated = await updateWebhookEndpoint(org.id, targetId, { url, events, active, rotateSecret }, { actor: MCP_ACTOR });
           const secretNote = updated.secret ? ` Neues Secret (nur jetzt sichtbar): ${updated.secret}` : "";
           return ctx.ok(`Webhook-Endpunkt "${updated.url}" aktualisiert (Events: ${updated.events.join(", ")}).${secretNote}`);
         }
 
-        const created = await createWebhookEndpoint(org.id, { url, events, active }, { actor: "mcp" });
+        const created = await createWebhookEndpoint(org.id, { url, events, active }, { actor: MCP_ACTOR });
         return ctx.ok(`Webhook-Endpunkt "${created.url}" angelegt (Events: ${created.events.join(", ")}). Secret (nur jetzt sichtbar): ${created.secret}`);
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);

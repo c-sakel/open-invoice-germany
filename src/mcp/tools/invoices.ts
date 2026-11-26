@@ -2,6 +2,7 @@
 //    Gutschrift, Export, Liste) ────────────────────────────────────────────────
 // Task 1 (Phase 9): reiner Move aus server.ts — Verhalten unveraendert.
 import { mkdirSync, writeFileSync } from "node:fs";
+import { MCP_ACTOR } from "../actor";
 import path from "node:path";
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -250,8 +251,8 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
           let text = "";
           await createInvoiceComplete(org.id, input, {
             payment,
-            actor: "mcp",
-            createdBy: "mcp",
+            actor: MCP_ACTOR,
+            createdBy: MCP_ACTOR,
             beforeCommit: async (tx, r) => {
               const inv = r.invoice;
               const state = inv.status === "PAID" ? " Status: bezahlt." : inv.status === "PARTIALLY_PAID" ? " Status: teilbezahlt." : "";
@@ -264,7 +265,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
           });
           return ctx.ok(text);
         }
-        const invoice = await createDraftInvoice(org.id, input, { actor: "mcp" });
+        const invoice = await createDraftInvoice(org.id, input, { actor: MCP_ACTOR });
         return ctx.ok(
           `Entwurf angelegt für ${customer.name}.\n` +
             `ID: ${invoice.id}\nNetto: ${formatCents(invoice.netTotalCents)} · USt: ${formatCents(invoice.taxTotalCents)} · Brutto: ${formatCents(invoice.grossTotalCents)}\n` +
@@ -300,7 +301,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         const org = await ctx.requireOrg();
         const inv = await ctx.resolveInvoice(org.id, invoice);
         const warnings = (await collectFinalizeWarnings(org.id, inv.id)).map((w) => w.message);
-        const finalized = await finalizeInvoice(inv.id, { actor: "mcp" });
+        const finalized = await finalizeInvoice(inv.id, { actor: MCP_ACTOR });
         const hint = warnings.length > 0 ? `\n\nHinweise (nicht blockierend):\n${warnings.map((w) => `- ${w}`).join("\n")}` : "";
         return ctx.ok(`Festgeschrieben: ${finalized.number} · Brutto ${formatCents(finalized.grossTotalCents)}. Unveränderbar. Export mit export_invoice.${hint}`);
       } catch (e) {
@@ -331,7 +332,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         const org = await ctx.requireOrg();
         const inv = await ctx.resolveInvoice(org.id, invoice);
         const input = cancelInvoiceSchema.parse({ reason, fxOverrideRate });
-        const res = await cancelInvoice(inv.id, { actor: "mcp", orgId: org.id, reason: input.reason, fxOverrideRate: input.fxOverrideRate });
+        const res = await cancelInvoice(inv.id, { actor: MCP_ACTOR, orgId: org.id, reason: input.reason, fxOverrideRate: input.fxOverrideRate });
         const refund = res.refundDueCents > 0 ? ` Erstattung fällig: ${(res.refundDueCents / 100).toFixed(2).replace(".", ",")} ${res.creditNote.currency}.` : "";
         return ctx.ok(`Storniert. Storno-Gutschrift ${res.creditNote.number} zu ${res.originalNumber} angelegt.${refund}`);
       } catch (e) {
@@ -372,7 +373,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
             else throw e;
           }
         }
-        const result = await cancelInvoicesBulk(org.id, { ids, reason }, { actor: "mcp" });
+        const result = await cancelInvoicesBulk(org.id, { ids, reason }, { actor: MCP_ACTOR });
         return ctx.ok(JSON.stringify(result, null, 2));
       } catch (e) {
         if (e instanceof RateLimitError) return ctx.fail("Zu viele Sammel-Stornos — bitte kurz warten.");
@@ -465,7 +466,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
       try {
         const org = await ctx.requireOrg();
         const ref = await ctx.resolveInvoice(org.id, invoice);
-        const view = await retryInvoiceAutoSend(org.id, ref.id, "mcp", { confirmUnclear });
+        const view = await retryInvoiceAutoSend(org.id, ref.id, MCP_ACTOR, { confirmUnclear });
         return ctx.ok(view ? `Automatischer Versand neu gestartet: ${autoSendLabel(view)} (Status ${view.status}).` : "Automatischer Versand neu gestartet.");
       } catch (e) {
         if (e instanceof AutoSendRetryError) return ctx.fail(`${e.message} (${e.code})`);
@@ -664,7 +665,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
           lineIds,
           quantities,
         });
-        const invoice = await createPartialInvoice(org.id, input, { actor: "mcp" });
+        const invoice = await createPartialInvoice(org.id, input, { actor: MCP_ACTOR });
         return ctx.ok(`Teilrechnung angelegt: Entwurf ${invoice.id} (${formatCents(invoice.grossTotalCents)} brutto). Mit finalize_invoice festschreiben.`);
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
@@ -701,7 +702,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
           amountCents: amountEuro != null ? ctx.euroToCents(amountEuro) : undefined,
           amountIsGross,
         });
-        const invoice = await createDownpaymentInvoice(org.id, input, { actor: "mcp" });
+        const invoice = await createDownpaymentInvoice(org.id, input, { actor: MCP_ACTOR });
         return ctx.ok(`Abschlagsrechnung angelegt: Entwurf ${invoice.id} (${formatCents(invoice.grossTotalCents)} brutto). Mit finalize_invoice festschreiben.`);
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
@@ -725,7 +726,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         const org = await ctx.requireOrg();
         const quote = await ctx.resolveDocument(org.id, source);
         const input = createFinalInvoiceSchema.parse({ sourceType: "QUOTE", sourceId: quote.id });
-        const invoice = await createFinalInvoice(org.id, input, { actor: "mcp" });
+        const invoice = await createFinalInvoice(org.id, input, { actor: MCP_ACTOR });
         return ctx.ok(`Schlussrechnung angelegt: Entwurf ${invoice.id}. Mit finalize_invoice festschreiben (Abzugs-Snapshot/Restbetrag werden dabei berechnet).`);
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
@@ -805,7 +806,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
           taxCategory: l.taxCategory,
         }));
         const fx = partialCreditSchema.shape.fxOverrideRate.parse(args.fxOverrideRate);
-        const res = await createPartialCreditNote(inv.id, { lines, notes: args.notes, fxOverrideRate: fx }, { actor: "mcp", orgId: org.id });
+        const res = await createPartialCreditNote(inv.id, { lines, notes: args.notes, fxOverrideRate: fx }, { actor: MCP_ACTOR, orgId: org.id });
         return ctx.ok(`Teilgutschrift ${res.creditNote.number} zu ${res.originalNumber} erstellt · Brutto ${formatCents(res.creditNote.grossTotalCents)}${res.offsetCents > 0 ? ` · ${formatCents(res.offsetCents)} mit offenem Rest verrechnet` : ""}${res.refundDueCents > 0 ? ` · Erstattung fällig: ${formatCents(res.refundDueCents)}` : ""}.`);
       } catch (e) {
         // Fix 2 (Re-Review Phase 12c): sonst unter failUnknown ("Unerwarteter Fehler")
@@ -883,7 +884,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         const priced = resolvePriceInput(patch);
         assertGrossPatchDiscount(priced, inv);
 
-        const updated = await updateDraftInvoice(org.id, inv.id, priced.body as typeof patch, "mcp");
+        const updated = await updateDraftInvoice(org.id, inv.id, priced.body as typeof patch, MCP_ACTOR);
         return ctx.ok(`Entwurf aktualisiert: ${updated.number ?? "Entwurf " + updated.id.slice(0, 8)} · Netto ${formatCents(updated.netTotalCents)} · Brutto ${formatCents(updated.grossTotalCents)}.${describePriceInput(priced, updated.grossTotalCents)}`);
       } catch (e) {
         if (e instanceof InvoiceUpdateError) return ctx.fail(e.message);

@@ -4,6 +4,7 @@
 // Facts Task 1: kind INVOICE|QUOTE|DELIVERY_NOTE|DUNNING, format pdf|xrechnung|zugferd
 // (xrechnung/zugferd nur INVOICE), Antwort <= 10 MB sonst fail).
 import { z } from "zod";
+import { MCP_ACTOR } from "../actor";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { dbInternal } from "@/lib/db";
@@ -288,7 +289,7 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
       try {
         const org = await ctx.requireOrg();
         const doc = await ctx.resolveDocument(org.id, document);
-        const result = await convertDocument(org.id, { fromType: "QUOTE", fromId: doc.id, toKind: "INVOICE" }, { actor: "mcp" });
+        const result = await convertDocument(org.id, { fromType: "QUOTE", fromId: doc.id, toKind: "INVOICE" }, { actor: MCP_ACTOR });
         return ctx.ok(`Umgewandelt: ${doc.number} → Rechnungs-Entwurf ${result.id}. Mit finalize_invoice festschreiben.`);
       } catch (e) {
         if (e instanceof ConvertError) return ctx.fail(e.message);
@@ -328,7 +329,7 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
           toKind,
           quantities,
           deliveryDate: ctx.parseDateInput(deliveryDate),
-        }, { actor: "mcp" });
+        }, { actor: MCP_ACTOR });
         return ctx.ok(`Umgewandelt zu ${toKind}: ${result.type} ${result.id}.`);
       } catch (e) {
         if (e instanceof ConvertError) return ctx.fail(e.message);
@@ -374,7 +375,7 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
             taxRate: l.taxRate,
           })),
         });
-        const note = await createDeliveryNote(org.id, input, { actor: "mcp" });
+        const note = await createDeliveryNote(org.id, input, { actor: MCP_ACTOR });
         if (note.status === "DRAFT") return ctx.ok(`Lieferschein-Entwurf angelegt (ID ${note.id}) für ${customer.name}.`);
         return ctx.ok(`Lieferschein angelegt: ${note.number} für ${customer.name}.`);
       } catch (e) {
@@ -446,7 +447,7 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
             ...sourceFor(idx, l.description),
           })),
         });
-        const note = await updateDraftDeliveryNote(org.id, ref.id, input, { actor: "mcp" });
+        const note = await updateDraftDeliveryNote(org.id, ref.id, input, { actor: MCP_ACTOR });
         return ctx.ok(`Lieferschein-Entwurf aktualisiert (ID ${note.id}).`);
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
@@ -477,7 +478,7 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
         const doc = type === "QUOTE" ? await ctx.resolveDocument(org.id, document) : await ctx.resolveDeliveryNote(org.id, document);
 
         if (action === "ARCHIVE" || action === "UNARCHIVE") {
-          await setArchived(org.id, type, doc.id, action === "ARCHIVE", "mcp");
+          await setArchived(org.id, type, doc.id, action === "ARCHIVE", MCP_ACTOR);
           return ctx.ok(`Status gesetzt: ${action}.`);
         }
 
@@ -486,7 +487,7 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
             return ctx.fail(`${action} ist fuer QUOTE nicht gueltig.`);
           }
           const target = { MARK_SENT: "SENT", MARK_ACCEPTED: "ACCEPTED", MARK_REJECTED: "REJECTED", CANCEL: "CANCELLED" } as const;
-          const updated = await setQuoteStatus(org.id, doc.id, target[action], { actor: "mcp", note });
+          const updated = await setQuoteStatus(org.id, doc.id, target[action], { actor: MCP_ACTOR, note });
           return ctx.ok(`Status gesetzt: ${updated.status}.`);
         }
 
@@ -494,7 +495,7 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
           return ctx.fail(`${action} ist fuer DELIVERY_NOTE nicht gueltig.`);
         }
         const target = { MARK_CREATED: "CREATED", MARK_SENT: "SENT", MARK_DELIVERED: "DELIVERED", CANCEL: "CANCELLED" } as const;
-        const updated = await setDeliveryNoteStatus(org.id, doc.id, target[action], { actor: "mcp", note });
+        const updated = await setDeliveryNoteStatus(org.id, doc.id, target[action], { actor: MCP_ACTOR, note });
         return ctx.ok(`Status gesetzt: ${updated.status}${updated.number ? ` (Nummer ${updated.number})` : ""}.`);
       } catch (e) {
         if (e instanceof StatusTransitionError || e instanceof OverDeliveryError) return ctx.fail(e.message);
@@ -525,7 +526,7 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
             : type === "INVOICE"
               ? await ctx.resolveInvoice(org.id, document)
               : await ctx.resolveDeliveryNote(org.id, document);
-        const copy = await duplicateDocument(org.id, src, doc.id, "mcp");
+        const copy = await duplicateDocument(org.id, src, doc.id, MCP_ACTOR);
         return ctx.ok(`Dupliziert als neuer Entwurf: ${copy.type} ${copy.id}.`);
       } catch (e) {
         if (e instanceof ToolError) return ctx.fail(e.message);
@@ -550,7 +551,7 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
       try {
         const org = await ctx.requireOrg();
         const doc = await ctx.resolveDocument(org.id, documentId);
-        const { link, token } = await createShareLink(org.id, doc.id, { expiresInDays });
+        const { link, token } = await createShareLink(org.id, doc.id, { expiresInDays }, { actor: MCP_ACTOR });
         const baseUrl = appBaseUrlFromEnv();
         const url = baseUrl ? `${baseUrl}/angebot/${token}` : `(APP_BASE_URL nicht gesetzt) /angebot/${token}`;
         return ctx.ok(`Annahme-Link erzeugt fuer ${doc.number ?? doc.id} · gueltig bis ${link.expiresAt.toISOString().slice(0, 10)} · ${url}`);
@@ -576,7 +577,7 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
     async ({ linkId }): Promise<Result> => {
       try {
         const org = await ctx.requireOrg();
-        await revokeShareLink(org.id, linkId);
+        await revokeShareLink(org.id, linkId, { actor: MCP_ACTOR });
         return ctx.ok(`Link ${linkId} widerrufen.`);
       } catch (e) {
         if (e instanceof NotFoundError) return ctx.fail(e.message);

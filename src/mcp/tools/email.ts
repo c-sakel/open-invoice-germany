@@ -7,6 +7,7 @@
 // sind bewusst NICHT Teil dieses Tools — MCP-Aufrufer nutzen bestehende Beleganhaenge
 // (attachmentIds) oder Standardanhaenge (standardAttachments); "extra" bleibt leer.
 import { z } from "zod";
+import { MCP_ACTOR } from "../actor";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { sendDocumentEmail, EmailAttachmentsTooLargeError } from "@/domain/email/send";
@@ -68,7 +69,7 @@ export function registerEmailTools(server: McpServer, ctx: McpToolsContext): voi
           attachmentIds: args.attachmentIds ?? [],
           warnings: [],
         };
-        const result = await sendDocumentEmail(org.id, "mcp", rawInput, [], ctx.mailProvider);
+        const result = await sendDocumentEmail(org.id, MCP_ACTOR, rawInput, [], ctx.mailProvider);
         if (result.status === "FAILED") return ctx.fail(result.error ?? "Versand fehlgeschlagen.");
         return ctx.ok(`E-Mail versendet (Log-ID ${result.logId}).`);
       } catch (e) {

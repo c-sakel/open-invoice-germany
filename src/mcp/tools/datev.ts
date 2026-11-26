@@ -2,6 +2,7 @@
 // Dieselben Zod-Schemas und Domainfunktionen wie REST (/api/v1/DatevExport, /Settings/datev). Die Bestaetigung der
 // Kontenzuordnung gibt es nur in der Oberflaeche; jede Aenderung hier macht sie hinfaellig.
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { MCP_ACTOR } from "../actor";
 
 import { writeFileSync } from "node:fs";
 import path from "node:path";
@@ -79,7 +80,7 @@ export function registerDatevTools(server: McpServer, ctx: McpToolsContext): voi
         rateLimit(`datev-export:${org.id}`, { limit: 10, windowMs: 60_000 });
         if (request.dryRun === true) return ctx.ok(JSON.stringify(serializeDatevPlan(await planDatevExport(org.id, request)), null, 2));
         const dir = resolveOutputDir(outputDir);
-        const view = await runDatevExport(org.id, request, "mcp");
+        const view = await runDatevExport(org.id, request, MCP_ACTOR);
         const fileName = `datev-${request.from}-${request.to}${request.mode === "SUPPLEMENT" ? "-nachtrag" : ""}-${view.id.slice(0, 8)}.zip`;
         const target = path.join(dir, fileName);
         try {
@@ -163,7 +164,7 @@ export function registerDatevTools(server: McpServer, ctx: McpToolsContext): voi
         const input = datevSettingsInputSchema.parse(args ?? {});
         if (Object.keys(input).length === 0) return ctx.fail("Mindestens ein Feld angeben.");
         const org = await ctx.requireOrg();
-        return ctx.ok(JSON.stringify(serializeDatevSettings(await saveDatevSettings(org.id, input, "mcp")), null, 2));
+        return ctx.ok(JSON.stringify(serializeDatevSettings(await saveDatevSettings(org.id, input, MCP_ACTOR)), null, 2));
       } catch (e) {
         return datevFail(ctx, e);
       }
@@ -183,7 +184,7 @@ export function registerDatevTools(server: McpServer, ctx: McpToolsContext): voi
         rejectUiOnlyKeys(args);
         const input = datevMappingPutSchema.parse(args ?? {});
         const org = await ctx.requireOrg();
-        return ctx.ok(JSON.stringify((await saveDatevMapping(org.id, input.rows, "mcp")).map(serializeDatevMappingRow), null, 2));
+        return ctx.ok(JSON.stringify((await saveDatevMapping(org.id, input.rows, MCP_ACTOR)).map(serializeDatevMappingRow), null, 2));
       } catch (e) {
         return datevFail(ctx, e);
       }
@@ -202,7 +203,7 @@ export function registerDatevTools(server: McpServer, ctx: McpToolsContext): voi
         rejectUiOnlyKeys(args);
         const input = datevTemplateInputSchema.parse(args ?? {});
         const org = await ctx.requireOrg();
-        return ctx.ok(JSON.stringify(await applyDatevTemplate(org.id, input.chart, "mcp", { overwriteEdited: input.overwriteEdited }), null, 2));
+        return ctx.ok(JSON.stringify(await applyDatevTemplate(org.id, input.chart, MCP_ACTOR, { overwriteEdited: input.overwriteEdited }), null, 2));
       } catch (e) {
         return datevFail(ctx, e);
       }

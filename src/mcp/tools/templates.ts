@@ -8,6 +8,7 @@
  * MCP-only-Pfad.
  */
 import { z } from "zod";
+import { MCP_ACTOR } from "../actor";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { dbInternal } from "@/lib/db";
@@ -85,7 +86,7 @@ export function registerTemplateTools(server: McpServer, ctx: McpToolsContext): 
       try {
         const org = await ctx.requireOrg();
         const doc = await ctx.resolveDocForAttachment(org.id, args.docType, args.docId);
-        const tpl = await saveTemplateFromDocument(org.id, { docType: args.docType, docId: doc.id, name: args.name }, "mcp");
+        const tpl = await saveTemplateFromDocument(org.id, { docType: args.docType, docId: doc.id, name: args.name }, MCP_ACTOR);
         return ctx.ok(`Vorlage "${tpl.name}" gespeichert. ID: ${tpl.id}.`);
       } catch (e) {
         if (e instanceof NotFoundError) return ctx.fail(e.message);
@@ -113,7 +114,7 @@ export function registerTemplateTools(server: McpServer, ctx: McpToolsContext): 
         const org = await ctx.requireOrg();
         const tpl = await resolveTemplate(org.id, args.template);
         const customer = args.customer ? await ctx.resolveCustomer(org.id, args.customer) : null;
-        const { docType, id } = await applyTemplate(org.id, tpl.id, { customerId: customer?.id }, "mcp");
+        const { docType, id } = await applyTemplate(org.id, tpl.id, { customerId: customer?.id }, MCP_ACTOR);
         return ctx.ok(`Entwurf aus Vorlage "${tpl.name}" erzeugt: ${docType} ${id}.`);
       } catch (e) {
         if (e instanceof NotFoundError) return ctx.fail(e.message);

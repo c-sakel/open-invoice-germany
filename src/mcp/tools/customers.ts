@@ -2,6 +2,7 @@
 // Task 1 (Phase 9): reiner Move aus server.ts + neue Tools update_customer/
 // archive_customer (Domain: archiveCustomer aus src/domain/customer/archive.ts).
 import { z } from "zod";
+import { MCP_ACTOR } from "../actor";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { dbInternal } from "@/lib/db";
@@ -155,7 +156,7 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
     async (args): Promise<Result> => {
       try {
         const org = await ctx.requireOrg();
-        const created = await createContactsBulk(org.id, { contacts: args.contacts }, { actor: "mcp", source: "MCP" });
+        const created = await createContactsBulk(org.id, { contacts: args.contacts }, { actor: MCP_ACTOR, source: "MCP" });
         return ctx.ok(`${created.length} Kunden angelegt: ${created.map((c) => c.id).join(", ")}.`);
       } catch (e) {
         if (e instanceof ContactsBulkRejectedError) {
@@ -203,7 +204,7 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
           const method = await ctx.resolvePaymentMethod(org.id, defaultPaymentMethod);
           payload.defaultPaymentMethodId = method.id;
         }
-        const customer = await updateCustomerWithDatev(org.id, existing.id, payload, "mcp");
+        const customer = await updateCustomerWithDatev(org.id, existing.id, payload, MCP_ACTOR);
         return ctx.ok(`Kunde aktualisiert: ${customer.name} (${customer.id}).`);
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
@@ -227,7 +228,7 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
       try {
         const org = await ctx.requireOrg();
         const existing = await ctx.resolveCustomer(org.id, customer);
-        await archiveCustomer(org.id, existing.id, "mcp");
+        await archiveCustomer(org.id, existing.id, MCP_ACTOR);
         return ctx.ok(`Kunde archiviert: ${existing.name}.`);
       } catch (e) {
         if (e instanceof ToolError) return ctx.fail(e.message);

@@ -1,6 +1,7 @@
 // ── Mahnwesen ──────────────────────────────────────────────────────────────────
 // Task 1 (Phase 9): reiner Move aus server.ts — Verhalten unveraendert.
 import { z } from "zod";
+import { MCP_ACTOR } from "../actor";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { dbInternal } from "@/lib/db";
@@ -40,7 +41,7 @@ export function registerDunningTools(server: McpServer, ctx: McpToolsContext): v
       try {
         const org = await ctx.requireOrg();
         const inv = await ctx.resolveInvoice(org.id, invoice);
-        const res = await createDunning(inv.id, { actor: "mcp", force, createdBy: "mcp", orgId: org.id });
+        const res = await createDunning(inv.id, { actor: MCP_ACTOR, force, createdBy: MCP_ACTOR, orgId: org.id });
         const d = res.dunning;
         const zins = res.stage.calculateInterest ? dunningInterestNote(d, (x) => x.toISOString().slice(0, 10)) : "";
         return ctx.ok(`${res.stage.name} ${d.number} erstellt · offen ${formatCents(res.openAmountCents)} · Gesamtforderung ${formatCents(res.totalCents)}${zins}.`);
@@ -68,7 +69,7 @@ export function registerDunningTools(server: McpServer, ctx: McpToolsContext): v
       try {
         const org = await ctx.requireOrg();
         const d = await ctx.resolveDunning(org.id, dunning);
-        const result = await sendDunning(org.id, d.id, { actor: "mcp", to });
+        const result = await sendDunning(org.id, d.id, { actor: MCP_ACTOR, to });
         if (result.status === "FAILED") return ctx.fail(result.error ?? "Versand fehlgeschlagen.");
         return ctx.ok(`Mahnung ${d.number ?? d.id} versendet.`);
       } catch (e) {
@@ -97,7 +98,7 @@ export function registerDunningTools(server: McpServer, ctx: McpToolsContext): v
       try {
         const org = await ctx.requireOrg();
         const inv = await ctx.resolveInvoice(org.id, invoice);
-        const res = await setDunningState(org.id, inv.id, { state, pausedUntil, note }, "mcp");
+        const res = await setDunningState(org.id, inv.id, { state, pausedUntil, note }, MCP_ACTOR);
         return ctx.ok(`Mahnprozess-Status: ${res.state}${res.pausedUntil ? ` bis ${res.pausedUntil.toISOString().slice(0, 10)}` : ""}.`);
       } catch (e) {
         if (e instanceof DunningError) return ctx.fail(e.message);

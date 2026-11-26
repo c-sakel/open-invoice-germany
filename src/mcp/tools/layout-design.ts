@@ -4,6 +4,7 @@
  * renderLayoutPreview.
  */
 import path from "node:path";
+import { MCP_ACTOR } from "../actor";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -58,8 +59,8 @@ export function registerLayoutDesignTools(server: McpServer, ctx: McpToolsContex
         const input = layoutDesignSaveSchema.parse(rest);
         // Mit id: Archivstatus zuerst (scheitert er, wird nichts gespeichert) — wie PUT /api/v1/Layout/{id}.
         const saved = input.id
-          ? await updateLayoutDesign(org.id, input.id, { name: input.name, config: input.config, archived }, "mcp")
-          : await saveLayoutDesign(org.id, input, "mcp");
+          ? await updateLayoutDesign(org.id, input.id, { name: input.name, config: input.config, archived }, MCP_ACTOR)
+          : await saveLayoutDesign(org.id, input, MCP_ACTOR);
         return ctx.ok(JSON.stringify(serializeLayoutDesign(saved, true), null, 2));
       } catch (e) {
         return failFrom(ctx, e);

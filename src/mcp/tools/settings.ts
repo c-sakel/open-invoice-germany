@@ -1,6 +1,7 @@
 // ── Einstellungen (Beleg-Defaults, Druck, Briefpapier, Nummernkreise, Mahnwesen) ─
 // Task 1 (Phase 9): reiner Move aus server.ts — Verhalten unveraendert.
 import { z } from "zod";
+import { MCP_ACTOR } from "../actor";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { loadDocumentSettings, saveDocumentSettings } from "@/domain/document/settings";
@@ -189,7 +190,7 @@ export function registerSettingsTools(server: McpServer, ctx: McpToolsContext): 
           yearlyReset: args.yearlyReset ?? current.yearlyReset,
           nextValue: args.nextValue ?? current.currentValue + 1,
         };
-        const saved = await updateNumberRange(org.id, docType, merged, "mcp");
+        const saved = await updateNumberRange(org.id, docType, merged, MCP_ACTOR);
         return ctx.ok(`Nummernkreis "${docType}" gespeichert: ${JSON.stringify(saved)}`);
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);

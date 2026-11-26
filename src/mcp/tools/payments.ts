@@ -1,6 +1,7 @@
 // ── Zahlungen / Zahlungsmethoden ──────────────────────────────────────────────
 // Task 1 (Phase 9): reiner Move aus server.ts — Verhalten unveraendert.
 import { z } from "zod";
+import { MCP_ACTOR } from "../actor";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { formatCents } from "@/lib/money";
@@ -46,7 +47,7 @@ export function registerPaymentTools(server: McpServer, ctx: McpToolsContext): v
             note: args.note,
             applySkonto: args.applySkonto,
           }),
-          { actor: "mcp", orgId: org.id, createdBy: "mcp" },
+          { actor: MCP_ACTOR, orgId: org.id, createdBy: MCP_ACTOR },
         );
         const updated = result.payment;
         const open = updated.grossTotalCents - updated.paidAmountCents;
@@ -86,7 +87,7 @@ export function registerPaymentTools(server: McpServer, ctx: McpToolsContext): v
       try {
         const org = await ctx.requireOrg();
         const input = reversePaymentInputSchema.parse({ amountCents: args.amountCents, reason: args.reason });
-        const result = await reversePayment(args.paymentId, input, { actor: "mcp", orgId: org.id, createdBy: "mcp" });
+        const result = await reversePayment(args.paymentId, input, { actor: MCP_ACTOR, orgId: org.id, createdBy: MCP_ACTOR });
         const skontoNote = result.skontoReversal ? ` Skontobuchung ${formatCents(-result.skontoReversal.amountCents)} mitgebucht.` : "";
         return ctx.ok(
           `Gegenbuchung ${formatCents(-result.reversal.amountCents)} erfasst (ID ${result.reversal.id}). ` +
