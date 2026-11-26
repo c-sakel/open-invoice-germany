@@ -52,7 +52,8 @@ function entgeltFrist30(anchor: Date): Date {
 
 /**
  * `from` = erster Zinstag, nur gesetzt, wenn er vor heute liegt. `verzugAt` = Verzugseintritt (Tag vor dem ersten Zinstag), gesetzt,
- * sobald er heute oder früher liegt; auch dann, wenn noch keine Zinstage vorliegen.
+ * sobald er heute oder früher liegt; auch dann, wenn noch keine Zinstage vorliegen. `basis` ist genau dann nicht `NONE`, wenn der
+ * Verzug eingetreten ist (`verzugAt` gesetzt); am ersten Zinstag selbst also `from` null mit Grund. `NONE` heißt: Verzug noch nicht eingetreten.
  */
 export function verzugStart(i: VerzugInput): { from: Date | null; basis: VerzugBasis; verzugAt: Date | null } {
   // § 193 BGB auch für die Fälligkeit: fällt sie auf Sa/So/Feiertag, ist erst am nächsten Werktag zu leisten.
@@ -101,8 +102,23 @@ export function verzugStart(i: VerzugInput): { from: Date | null; basis: VerzugB
   if (!from) return { from: null, basis: "NONE", verzugAt: null };
   const verzugAt = addDays(from, -1);
   if (verzugAt.getTime() > today.getTime()) return { from: null, basis: "NONE", verzugAt: null };
-  if (from.getTime() >= today.getTime()) return { from: null, basis: "NONE", verzugAt };
+  // Verzug ist eingetreten, aber der erste Zinstag ist heute oder spaeter: Grund bleibt erhalten, noch keine Zinstage.
+  if (from.getTime() >= today.getTime()) return { from: null, basis, verzugAt };
   return { from, basis, verzugAt };
+}
+
+/**
+ * Anzeigetext zu Zinsbeginn/Grund einer gespeicherten Mahnung (UI, MCP). Leer, wenn die Stufe nicht verzinst (Basis null)
+ * oder bei Altbestand ohne Angaben. Zinsdatum nur, wenn tatsächlich Zinsen > 0 berechnet wurden.
+ */
+export function dunningInterestNote(
+  d: { interestAmountCents: number; interestFrom: Date | null; interestBasis: string | null },
+  fmtDate: (x: Date) => string,
+): string {
+  if (d.interestAmountCents > 0 && d.interestFrom) return ` (ab ${fmtDate(d.interestFrom)}, ${verzugBasisLabel(d.interestBasis)})`;
+  if (d.interestBasis === "NONE") return " · keine Zinsen: Verzug noch nicht eingetreten";
+  if (d.interestBasis && !d.interestFrom) return ` · Verzug eingetreten (${verzugBasisLabel(d.interestBasis)}), noch keine Zinstage`;
+  return "";
 }
 
 /** Lesbarer Grund des Verzugsbeginns (UI, MCP). */

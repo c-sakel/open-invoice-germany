@@ -512,7 +512,7 @@ Weitere Felder: `ossCategory` (`NONE` | `GOODS_DISTANCE` | `ELECTRONIC_SERVICE`)
 `DocumentTemplate` — vollständige Liste mit Feldern, Filtern (`embed=`,
 Statusfilter, Datumsbereiche) und Beispielen: `GET /api/docs`.
 
-Zusatzfelder (nur lesend): `Invoice.skontoBaseCents` (Skonto-Basis in Cent, beim Festschreiben eingefroren; bei Schlussrechnungen der Zahlbetrag nach Abzug der Abschläge, sonst leer) sowie `Dunning.interestFrom` (Beginn der Verzugszinsen, `YYYY-MM-DD`) und `Dunning.interestBasis` (`MAHNUNG`, `ENTGELT_30`, `ENTGELT_30_LEISTUNG` oder `NONE`). Beide Mahnfelder sind leer, wenn die Stufe keine Zinsen berechnet und bei Mahnungen aus der Zeit vor der Einführung.
+Zusatzfelder (nur lesend): `Invoice.skontoBaseCents` (Skonto-Basis in Cent, beim Festschreiben eingefroren; bei Schlussrechnungen der Zahlbetrag nach Abzug der Abschläge, sonst leer) sowie `Dunning.interestFrom` (Beginn der Verzugszinsen, `YYYY-MM-DD`) und `Dunning.interestBasis` (`MAHNUNG`, `ENTGELT_30`, `ENTGELT_30_LEISTUNG` oder `NONE`). Beide Mahnfelder sind leer, wenn die Stufe keine Zinsen berechnet und bei Mahnungen aus der Zeit vor der Einführung. Ist `interestBasis` ein Verzugsgrund (nicht `NONE`) und `interestFrom` leer, ist der Verzug eingetreten, aber noch kein Zinstag angefallen (erster Zinstag ist der Mahntag); `NONE` bedeutet: Verzug noch nicht eingetreten.
 
 `BaseInterestRate` — Basiszinssatz-Historie (§ 288 Abs. 1 Satz 2 BGB,
 Bekanntgabe der Deutschen Bundesbank zum 01.01./01.07.), die

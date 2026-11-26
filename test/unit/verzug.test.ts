@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { verzugStart, zugangDay, type Dispatch, type VerzugInput } from "@/domain/dunning/verzug";
+import { dunningInterestNote, verzugStart, zugangDay, type Dispatch, type VerzugInput } from "@/domain/dunning/verzug";
 
 // Testjahr 2281 (nur Datums-Arithmetik, keine DB).
 const d = (m: number, day: number, h = 12, min = 0) => new Date(Date.UTC(2281, m - 1, day, h, min));
@@ -112,12 +112,26 @@ describe("verzugStart", () => {
     expect(r).toEqual(ohne);
   });
 
-  it("9: from = heute oder später -> NONE", () => {
+  it("9: erster Zinstag = heute -> Verzug eingetreten (Basis gesetzt), from null", () => {
     const r = verzugStart(input({ invoiceDispatches: [mail(3, 1)], now: d(4, 15, 8) }));
-    expect(r).toMatchObject({ from: null, basis: "NONE" });
+    expect(r).toMatchObject({ from: null, basis: "ENTGELT_30" });
     expect(iso(r.verzugAt)).toBe("2281-04-14"); // Verzug eingetreten, aber noch kein Zinstag
     const r2 = verzugStart(input({ invoiceDispatches: [mail(3, 1)], now: d(4, 16, 8) }));
     expect(iso(r2.from)).toBe("2281-04-15");
+  });
+
+  it("9b: erster Zinstag = heute per Mahnung -> basis MAHNUNG, from null, verzugAt gesetzt", () => {
+    const created = d(3, 20);
+    const r = verzugStart(
+      input({ priorDunnings: [{ createdAt: created, dispatches: [mail(3, 20)] }], now: d(3, 22, 8) }),
+    );
+    expect(r).toMatchObject({ from: null, basis: "MAHNUNG" });
+    expect(iso(r.verzugAt)).toBe("2281-03-21");
+  });
+
+  it("9c: Verzugseintritt erst morgen -> NONE, verzugAt null", () => {
+    const r = verzugStart(input({ invoiceDispatches: [mail(3, 1)], now: d(4, 13, 8) }));
+    expect(r).toEqual({ from: null, basis: "NONE", verzugAt: null });
   });
 
   it("11: mehrere Dispatches -> frühester zählt", () => {
@@ -279,5 +293,29 @@ describe("verzugStart: Zeitzonen, Kalender und § 193 BGB", () => {
     );
     expect(iso(r.from)).toBe("2281-03-22");
     expect(r.basis).toBe("MAHNUNG");
+  });
+});
+
+describe("dunningInterestNote", () => {
+  const fmt = (x: Date) => x.toISOString().slice(0, 10);
+  const from = new Date(Date.UTC(2281, 3, 15));
+  it("Zinsen > 0 mit Datum: (ab ..., Grund)", () => {
+    expect(dunningInterestNote({ interestAmountCents: 120, interestFrom: from, interestBasis: "ENTGELT_30" }, fmt)).toBe(
+      " (ab 2281-04-15, 30 Tage nach Fälligkeit und Zugang)",
+    );
+  });
+  it("Verzug eingetreten, kein Zinstag: eigener Text, kein (ab ...)", () => {
+    const t = dunningInterestNote({ interestAmountCents: 0, interestFrom: null, interestBasis: "MAHNUNG" }, fmt);
+    expect(t).toBe(" · Verzug eingetreten (Verzug durch Mahnung), noch keine Zinstage");
+    expect(t).not.toContain("(ab");
+  });
+  it("NONE: Verzug noch nicht eingetreten (Altfälle)", () => {
+    expect(dunningInterestNote({ interestAmountCents: 0, interestFrom: null, interestBasis: "NONE" }, fmt)).toBe(
+      " · keine Zinsen: Verzug noch nicht eingetreten",
+    );
+  });
+  it("ohne Basis: nichts; Zinsen 0 mit Datum: kein (ab ...) mit Betrag", () => {
+    expect(dunningInterestNote({ interestAmountCents: 0, interestFrom: null, interestBasis: null }, fmt)).toBe("");
+    expect(dunningInterestNote({ interestAmountCents: 0, interestFrom: from, interestBasis: "MAHNUNG" }, fmt)).toBe("");
   });
 });

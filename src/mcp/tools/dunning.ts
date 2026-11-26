@@ -44,9 +44,11 @@ export function registerDunningTools(server: McpServer, ctx: McpToolsContext): v
         const d = res.dunning;
         const zins = !res.stage.calculateInterest
           ? ""
-          : d.interestFrom
+          : d.interestAmountCents > 0 && d.interestFrom
             ? ` · Zinsen ab ${d.interestFrom.toISOString().slice(0, 10)} (${verzugBasisLabel(d.interestBasis)})`
-            : " · keine Zinsen: Verzug noch nicht eingetreten";
+            : d.interestBasis && d.interestBasis !== "NONE"
+              ? ` · Verzug eingetreten (${verzugBasisLabel(d.interestBasis)}), noch keine Zinstage`
+              : " · keine Zinsen: Verzug noch nicht eingetreten";
         return ctx.ok(`${res.stage.name} ${d.number} erstellt · offen ${formatCents(res.openAmountCents)} · Gesamtforderung ${formatCents(res.totalCents)}${zins}.`);
       } catch (e) {
         if (e instanceof NotFoundError) return ctx.fail(e.message);

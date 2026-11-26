@@ -96,3 +96,45 @@ describe("Mahnung nach Berliner Kalendertag", () => {
     expect(r.dunning.interestAmountCents).toBe(await interestTo(a.grossTotalCents, r.dunning.interestFrom!, U(7, 11, 0)));
   });
 });
+
+// Fester Erwartungswert: 238,00 EUR offen, B2B (Basiszins + 9 Punkte), erster Zinstag 07.02.2311 (Fristende 06.02. ist ein Montag),
+// Zinsen = Betrag * (Basis + 9 %) * Tage / 365, je Halbjahr gestueckelt, Summe kaufmaennisch gerundet.
+describe("Mahnung im Grenzfenster 0-2 Uhr Berliner Zeit: Jahreswechsel und Basiszins-Halbjahresgrenze", () => {
+  beforeAll(async () => {
+    await upsertBaseRate(orgId, { validFrom: "2311-07-01", rateBp: 400, source: "Test" });
+    await upsertBaseRate(orgId, { validFrom: "2312-01-01", rateBp: 300, source: "Test" });
+  });
+
+  it("31.12. 23:30 UTC = Berlin 01.01.: Zinsen bis einschliesslich 31.12. (144 Tage 2 %, 184 Tage 4 %) = 25,93 EUR", async () => {
+    const a = await overdueInvoice();
+    const b = await overdueInvoice();
+    expect(a.grossTotalCents).toBe(23800);
+    const late = await createDunning(a.id, { now: U(12, 31, 23, 30), force: true });
+    const noonNext = await createDunning(b.id, { now: new Date(Date.UTC(2312, 0, 1, 12)), force: true });
+    expect(iso(late.dunning.interestFrom!)).toBe(iso(new Date(Date.UTC(2311, 1, 7))));
+    expect(late.dunning.interestAmountCents).toBe(2593);
+    expect(noonNext.dunning.interestAmountCents).toBe(2593);
+    expect(iso(late.dunning.dueDate!)).toBe(iso(new Date(Date.UTC(2312, 0, 1 + newDueDays))));
+  });
+
+  it("31.12. 12:00 UTC (Berlin 31.12.): ein Zinstag weniger = 25,84 EUR (Gegenprobe)", async () => {
+    const a = await overdueInvoice();
+    const r = await createDunning(a.id, { now: U(12, 31, 12), force: true });
+    expect(r.dunning.interestAmountCents).toBe(2584);
+  });
+
+  it("30.06. 23:30 UTC = Berlin 01.07.: Zinsen bis einschliesslich 30.06. (144 Tage zu 2 %) = 10,33 EUR", async () => {
+    const a = await overdueInvoice();
+    const b = await overdueInvoice();
+    const late = await createDunning(a.id, { now: U(6, 30, 23, 30), force: true });
+    const noonNext = await createDunning(b.id, { now: U(7, 1, 12), force: true });
+    expect(late.dunning.interestAmountCents).toBe(1033);
+    expect(noonNext.dunning.interestAmountCents).toBe(1033);
+  });
+
+  it("30.06. 12:00 UTC: ein Zinstag weniger = 10,26 EUR (Gegenprobe)", async () => {
+    const a = await overdueInvoice();
+    const r = await createDunning(a.id, { now: U(6, 30, 12), force: true });
+    expect(r.dunning.interestAmountCents).toBe(1026);
+  });
+});
