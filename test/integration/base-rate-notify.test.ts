@@ -12,7 +12,7 @@ import { checkBaseRateNotifications } from "@/domain/dunning/base-rate-notify";
 const NOW = new Date("2310-03-10T10:00:00.000Z");
 let seq = 0;
 
-async function mkOrg(withInterestStage: boolean): Promise<string> {
+async function mkOrg(withInterestStage: boolean, enabled = true): Promise<string> {
   seq += 1;
   const org = await dbInternal.organization.create({
     data: { legalName: `Basiszins-Alarm ${seq} GmbH`, addressLine1: "Teststr. 1", postalCode: "10115", city: "Berlin", vatId: `DE2310${String(seq).padStart(5, "0")}` },
@@ -21,7 +21,7 @@ async function mkOrg(withInterestStage: boolean): Promise<string> {
   // Standard-Mahnstufen entfernen, damit der Zustand eindeutig ist.
   await dbInternal.dunningStage.deleteMany({ where: { orgId: org.id } });
   await dbInternal.dunningStage.create({
-    data: { orgId: org.id, order: 1, name: "Stufe", daysAfterDue: 7, calculateInterest: withInterestStage, includeB2BFlatFee: false },
+    data: { orgId: org.id, order: 1, name: "Stufe", daysAfterDue: 7, calculateInterest: withInterestStage, enabled, includeB2BFlatFee: false },
   });
   // Nur ein alter Satz: das laufende Halbjahr fehlt.
   await upsertBaseRate(org.id, { validFrom: "2309-07-01", rateBp: 250 });
@@ -47,6 +47,12 @@ describe("checkBaseRateNotifications", () => {
 
   it("ohne zinsrechnende Stufe keine Meldung", async () => {
     const orgId = await mkOrg(false);
+    expect(await checkBaseRateNotifications(orgId, NOW)).toBe(0);
+    expect(await count(orgId)).toBe(0);
+  });
+
+  it("deaktivierte zinsrechnende Stufe -> keine Meldung", async () => {
+    const orgId = await mkOrg(true, false);
     expect(await checkBaseRateNotifications(orgId, NOW)).toBe(0);
     expect(await count(orgId)).toBe(0);
   });

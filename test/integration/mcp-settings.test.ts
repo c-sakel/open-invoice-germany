@@ -335,30 +335,31 @@ describe("list_base_interest_rates / set_base_interest_rate / delete_base_intere
   it("set_base_interest_rate legt einen Eintrag an, list_base_interest_rates liefert ihn", async () => {
     const res = await callTool("set_base_interest_rate", { validFrom: "2058-01-01", rateBp: 342, source: "Testquelle" });
     expect(res.isError).toBeFalsy();
-    const list = (JSON.parse(text(await callTool("list_base_interest_rates"))) as { rates: BaseRateJson[] }).rates;
+    const list = (JSON.parse((await callTool("list_base_interest_rates")).content[0]?.text ?? "") as BaseRateJson[]);
     const entry = list.find((r) => r.validFrom.startsWith("2058-01-01"));
     expect(entry?.rateBp).toBe(342);
     expect(entry?.source).toBe("Testquelle");
   });
 
   it("list_base_interest_rates enthaelt das Feld currentHalfYearMissing (String oder null)", async () => {
-    const parsed = JSON.parse(text(await callTool("list_base_interest_rates"))) as { rates: BaseRateJson[]; currentHalfYearMissing: string | null };
-    expect(Array.isArray(parsed.rates)).toBe(true);
-    expect(parsed).toHaveProperty("currentHalfYearMissing");
-    // Nur Eintraege im Jahr 2058 -> das reale laufende Halbjahr ist nicht gepflegt.
-    expect(parsed.currentHalfYearMissing).toMatch(/^[12]\. Halbjahr \d{4}$/);
+    const res = await callTool("list_base_interest_rates");
+    // Abwaertskompatibel: erster Text-Block ist unveraendert das Array.
+    expect(Array.isArray(JSON.parse(res.content[0]?.text ?? ""))).toBe(true);
+    // Nur Eintraege im Jahr 2058 -> das reale laufende Halbjahr ist nicht gepflegt -> zweiter Block mit Warnung.
+    expect(res.content).toHaveLength(2);
+    expect(res.content[1]?.text).toMatch(/[12]\. Halbjahr \d{4}/);
   });
 
   it("ueberschreibt denselben Stichtag statt zu duplizieren (Upsert)", async () => {
     await callTool("set_base_interest_rate", { validFrom: "2058-01-01", rateBp: 400, source: "Korrektur" });
-    const list = (JSON.parse(text(await callTool("list_base_interest_rates"))) as { rates: BaseRateJson[] }).rates;
+    const list = (JSON.parse((await callTool("list_base_interest_rates")).content[0]?.text ?? "") as BaseRateJson[]);
     const matching = list.filter((r) => r.validFrom.startsWith("2058-01-01"));
     expect(matching.length).toBe(1);
     expect(matching[0]?.rateBp).toBe(400);
   });
 
   it("verweigert das Loeschen des letzten verbleibenden Eintrags", async () => {
-    const list = (JSON.parse(text(await callTool("list_base_interest_rates"))) as { rates: BaseRateJson[] }).rates;
+    const list = (JSON.parse((await callTool("list_base_interest_rates")).content[0]?.text ?? "") as BaseRateJson[]);
     expect(list.length).toBe(1);
     const res = await callTool("delete_base_interest_rate", { id: list[0]!.id });
     expect(res.isError).toBe(true);
@@ -367,11 +368,11 @@ describe("list_base_interest_rates / set_base_interest_rate / delete_base_intere
 
   it("loescht einen Eintrag, wenn mindestens ein weiterer existiert", async () => {
     await callTool("set_base_interest_rate", { validFrom: "2058-07-01", rateBp: 450 });
-    const before = (JSON.parse(text(await callTool("list_base_interest_rates"))) as { rates: BaseRateJson[] }).rates;
+    const before = (JSON.parse((await callTool("list_base_interest_rates")).content[0]?.text ?? "") as BaseRateJson[]);
     const toDelete = before.find((r) => r.validFrom.startsWith("2058-01-01"))!;
     const res = await callTool("delete_base_interest_rate", { id: toDelete.id });
     expect(res.isError).toBeFalsy();
-    const after = (JSON.parse(text(await callTool("list_base_interest_rates"))) as { rates: BaseRateJson[] }).rates;
+    const after = (JSON.parse((await callTool("list_base_interest_rates")).content[0]?.text ?? "") as BaseRateJson[]);
     expect(after.find((r) => r.id === toDelete.id)).toBeUndefined();
     expect(after.length).toBe(before.length - 1);
   });
@@ -386,16 +387,16 @@ describe("update_dunning_settings: Altschreibweg auf baseInterestRateBp/baseRate
   it("legt zusaetzlich einen BaseInterestRate-Eintrag an (Upsert, validFrom = baseRateValidFrom)", async () => {
     const res = await callTool("update_dunning_settings", { baseInterestRateBp: 555, baseRateValidFrom: "2058-09-01" });
     expect(res.isError).toBeFalsy();
-    const list = (JSON.parse(text(await callTool("list_base_interest_rates"))) as { rates: BaseRateJson[] }).rates;
+    const list = (JSON.parse((await callTool("list_base_interest_rates")).content[0]?.text ?? "") as BaseRateJson[]);
     const entry = list.find((r) => r.validFrom.startsWith("2058-09-01"));
     expect(entry?.rateBp).toBe(555);
   });
 
   it("ein Teil-Update OHNE baseInterestRateBp legt KEINEN neuen BaseInterestRate-Eintrag an", async () => {
-    const before = (JSON.parse(text(await callTool("list_base_interest_rates"))) as { rates: BaseRateJson[] }).rates;
+    const before = (JSON.parse((await callTool("list_base_interest_rates")).content[0]?.text ?? "") as BaseRateJson[]);
     const res = await callTool("update_dunning_settings", { gracePeriodDays: 3 });
     expect(res.isError).toBeFalsy();
-    const after = (JSON.parse(text(await callTool("list_base_interest_rates"))) as { rates: BaseRateJson[] }).rates;
+    const after = (JSON.parse((await callTool("list_base_interest_rates")).content[0]?.text ?? "") as BaseRateJson[]);
     expect(after.length).toBe(before.length);
   });
 });

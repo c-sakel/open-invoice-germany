@@ -25,8 +25,8 @@ export interface ListOptions extends PaginationParams {
   nextCursor?: string | null;
 }
 
-export function apiList<T>(items: T[], opts: ListOptions, status = 200): NextResponse {
-  const body = { data: items, total: opts.total, limit: opts.limit, offset: opts.offset, ...(opts.nextCursor !== undefined ? { nextCursor: opts.nextCursor } : {}) };
+export function apiList<T>(items: T[], opts: ListOptions, status = 200, extra: Record<string, unknown> = {}): NextResponse {
+  const body = { data: items, total: opts.total, limit: opts.limit, offset: opts.offset, ...(opts.nextCursor !== undefined ? { nextCursor: opts.nextCursor } : {}), ...extra };
   return NextResponse.json(body, { status });
 }
 

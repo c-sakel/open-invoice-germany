@@ -519,7 +519,7 @@ Bekanntgabe der Deutschen Bundesbank zum 01.01./01.07.), die
 alleinige Quelle der Verzugszinsberechnung (ersetzt das einzelne Feld
 `DunningSettings.baseInterestRateBp`). `GET /api/v1/BaseInterestRate` (Scope
 `admin`, keine Paginierung — die Historie wächst höchstens zweimal jährlich)
-liefert alle Einträge aufsteigend nach `validFrom`. `POST
+liefert alle Einträge aufsteigend nach `validFrom`; zusätzlich enthält die Antwort `currentHalfYearMissing` (Label des laufenden Halbjahres, z. B. „1. Halbjahr 2026“, falls dafür kein Satz gepflegt ist, sonst `null`; bis zur Eingabe wird mit dem letzten Satz gerechnet). `POST
 /api/v1/BaseInterestRate` (Scope `admin`, Body
 `{"validFrom":"2026-07-01","rateBp":342,"source":"Bundesbank"}` → `201`) legt
 einen Eintrag an oder überschreibt den bestehenden Eintrag zu genau diesem
