@@ -33,10 +33,17 @@ beforeAll(async () => {
   orgStore.id = org.id;
   await ensureOrgMasterdata(dbInternal, orgId);
   await upsertBaseRate(orgId, { validFrom: "2312-01-01", rateBp: 200, source: "Test" });
-  const s0 = (await listDunningStages(orgId)).find((s) => s.order === 0)!;
-  const { id, ...rest } = s0;
-  void id;
-  await updateDunningStage(orgId, s0.id, { ...rest, calculateInterest: true, includeB2BFlatFee: true });
+  // Mahngebuehr entsteht erst ab Stufe order >= 2: niedrigere Stufen aus, Stufe 2 verzinst mit Pauschale und Gebuehr.
+  for (const st of await listDunningStages(orgId)) {
+    if (st.order > 2) continue;
+    const { id, ...rest } = st;
+    void id;
+    await updateDunningStage(
+      orgId,
+      st.id,
+      st.order < 2 ? { ...rest, enabled: false } : { ...rest, enabled: true, calculateInterest: true, includeB2BFlatFee: true, feeCents: 500 },
+    );
+  }
 });
 
 async function overdueInvoice() {
@@ -68,6 +75,7 @@ describe("Mahnung am Verzugstag ohne Zinstage", () => {
     expect(r.dunning.interestFrom).toBeNull();
     expect(r.dunning.interestAmountCents).toBe(0);
     expect(r.dunning.flatFee40Cents).toBe(4000);
+    expect(r.dunning.feeCents).toBe(500);
   });
 
   it("Mahnung am 04.02. (Verzug erst morgen): NONE, keine Pauschale", async () => {

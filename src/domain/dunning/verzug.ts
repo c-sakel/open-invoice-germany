@@ -3,7 +3,8 @@ import { nextBusinessDay } from "@/lib/german-holidays";
 
 /**
  * Verzugsbeginn (§ 286 BGB) als reine Funktion. Alle Daten sind Berliner Kalendertage (UTC-Mitternacht).
- * Zugangsannahmen (konservativ): E-Mail = Versandtag + 1, Post = Versandtag + 3. Eine Mahnung ohne Versandnachweis begründet keinen Verzug.
+ * Zugangsannahmen (konservativ): E-Mail = Versandtag + 1, Post = Versandtag + 3, jeweils auf den nächsten Geschäftstag verschoben
+ * (Sa/So/bundeseinheitlicher Feiertag). Eine Mahnung ohne Versandnachweis begründet keinen Verzug.
  * `from` ist der erste Zinstag und liegt immer einen Tag NACH dem Verzugseintritt (§ 187 Abs. 1 BGB analog):
  * Mahnungsweg = Tag nach Zugang, 30-Tage-Weg = Tag nach Fristende (Zugang 15.03. -> Fristende 14.04. -> Zinsen ab 15.04.).
  * Fällt das Fristende der 30-Tage-Regel auf Samstag, Sonntag oder einen bundeseinheitlichen Feiertag, endet die Frist erst am
@@ -40,9 +41,9 @@ function earliest(days: Date[]): Date | null {
   return min;
 }
 
-/** Berliner Kalendertag des Versands + 1 (E-Mail) bzw. + 3 (Post). */
+/** Berliner Kalendertag des Versands + 1 (E-Mail) bzw. + 3 (Post), auf den nächsten Geschäftstag verschoben. */
 export function zugangDay(dispatch: Dispatch): Date {
-  return addDays(berlinCalendarDay(dispatch.at), dispatch.channel === "EMAIL" ? 1 : 3);
+  return nextBusinessDay(addDays(berlinCalendarDay(dispatch.at), dispatch.channel === "EMAIL" ? 1 : 3));
 }
 
 /** Fristende der 30-Tage-Regel (Anker + 30 Tage), nach § 193 BGB auf den nächsten Werktag verschoben; Rückgabe: erster Zinstag. */
@@ -109,13 +110,17 @@ export function verzugStart(i: VerzugInput): { from: Date | null; basis: VerzugB
 
 /**
  * Anzeigetext zu Zinsbeginn/Grund einer gespeicherten Mahnung (UI, MCP). Leer, wenn die Stufe nicht verzinst (Basis null)
- * oder bei Altbestand ohne Angaben. Zinsdatum nur, wenn tatsächlich Zinsen > 0 berechnet wurden.
+ * oder bei Altbestand ohne Angaben. "(ab …)" nur, wenn tatsächlich Zinsen > 0 berechnet wurden; bei Betrag 0 mit Zinsbeginn steht der Grund.
  */
 export function dunningInterestNote(
   d: { interestAmountCents: number; interestFrom: Date | null; interestBasis: string | null },
   fmtDate: (x: Date) => string,
 ): string {
-  if (d.interestAmountCents > 0 && d.interestFrom) return ` (ab ${fmtDate(d.interestFrom)}, ${verzugBasisLabel(d.interestBasis)})`;
+  if (d.interestFrom && d.interestBasis) {
+    return d.interestAmountCents > 0
+      ? ` (ab ${fmtDate(d.interestFrom)}, ${verzugBasisLabel(d.interestBasis)})`
+      : ` · keine Zinsen (Zinsbeginn ${fmtDate(d.interestFrom)}, ${verzugBasisLabel(d.interestBasis)}): Betrag 0`;
+  }
   if (d.interestBasis === "NONE") return " · keine Zinsen: Verzug noch nicht eingetreten";
   if (d.interestBasis && !d.interestFrom) return ` · Verzug eingetreten (${verzugBasisLabel(d.interestBasis)}), noch keine Zinstage`;
   return "";
