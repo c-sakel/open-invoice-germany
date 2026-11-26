@@ -204,7 +204,7 @@ describe("verzugStart: Zeitzonen, Kalender und § 193 BGB", () => {
   it("Winterzeit: 23:30 UTC am 31.01. ist 00:30 MEZ am 01.02. -> Zugang 02.02.", () => {
     expect(zug(new Date(Date.UTC(2281, 0, 31, 23, 30)))).toBe("2281-02-02");
   });
-  it("Schaltjahr 2280: Mail am Sa 28.02. -> Zugang So 29.02. -> Mo 01.03.; Rechnung Fr 30.01. -> Zugang Mo 02.02. (Fälligkeit 28.01.) -> Fristende Di 03.03., Zinsen ab 04.03.", () => {
+  it("Schaltjahr 2280: Mail am Sa 28.02. -> Zugang So 29.02. -> Mo 01.03.; Rechnung Fr 30.01. -> Zugang Mo 02.02. (Fälligkeit 28.01.) -> Fristende Mi 03.03., Zinsen ab 04.03.", () => {
     const y = (m: number, dd: number, h = 12) => new Date(Date.UTC(2280, m - 1, dd, h));
     expect(zugangDay({ channel: "EMAIL", at: y(2, 28) }).toISOString().slice(0, 10)).toBe("2280-03-01");
     const r = verzugStart({ ...input(), dueDate: y(1, 28, 0), issueDate: y(1, 20, 0), invoiceDispatches: [{ channel: "EMAIL", at: y(1, 30) }], now: y(6, 1) });
@@ -268,13 +268,24 @@ describe("verzugStart: Zeitzonen, Kalender und § 193 BGB", () => {
     expect(r2.basis).toBe("MAHNUNG");
     expect(iso(r2.from)).toBe("2281-03-17");
   });
+  it("§ 193 BGB: Fristende Ostermontag (Leistung Sa 12.03.2281 + 30 = Mo 11.04.) -> Di 12.04. letzter Tag, Zinsen ab 13.04.", () => {
+    const r = verzugStart(input({ dueDate: day(3, 1), issueDate: day(3, 1), serviceDate: day(3, 12), now: d(6, 1) }));
+    expect(r.basis).toBe("ENTGELT_30_LEISTUNG");
+    expect(iso(r.from)).toBe("2281-04-13");
+    expect(iso(r.verzugAt)).toBe("2281-04-12");
+  });
+  it("§ 193 BGB: Fristende 3.10. (Leistung Sa 03.09.2281 + 30 = Mo 03.10.) -> Di 04.10. letzter Tag, Zinsen ab 05.10.", () => {
+    const r = verzugStart(input({ dueDate: day(9, 1), issueDate: day(9, 1), serviceDate: day(9, 3), now: d(12, 1) }));
+    expect(r.basis).toBe("ENTGELT_30_LEISTUNG");
+    expect(iso(r.from)).toBe("2281-10-05");
+  });
   it("§ 193 BGB: Fristende 1. Mai (Sonntag) -> Montag 02.05. -> Zinsen ab 03.05.", () => {
     expect(iso(fristZugang(4, 1, 3, 31).from)).toBe("2281-05-03"); // Zugang Fr 01.04. + 30 = So 01.05.
   });
   it("§ 193 BGB Jahreswechsel: Fristende Samstag 31.12.2281 -> Neujahr (Sonntag) -> Montag 02.01.2282 -> Zinsen ab 03.01.", () => {
     expect(iso(fristZugang(12, 1, 11, 30).from)).toBe("2282-01-03"); // Zugang Do 01.12. + 30 = Sa 31.12.
   });
-  it("§ 193 BGB gilt nicht für den Mahnungsweg: Versand am Sonntag -> Zugang Montag, Zinsen am Dienstag", () => {
+  it("Mahnungsweg: Mahnung per Mail am Sonntag 20.03. -> Zugang Montag 21.03. (Geschäftstag) -> Zinsen ab Dienstag 22.03.", () => {
     const r = verzugStart(input({ invoiceDispatches: [mail(3, 1)], priorDunnings: [{ createdAt: d(3, 20), dispatches: [mail(3, 20)] }] }));
     expect(iso(r.from)).toBe("2281-03-22");
   });

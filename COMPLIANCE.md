@@ -2,7 +2,7 @@
 
 **Single Source of Truth** für alle rechtlichen Anforderungen, gegen die diese kostenlose Open-Source-Rechnungssoftware gebaut, getestet und validiert wird.
 
-**Stand: 2026-12** (Skonto-Basis bei Schlussrechnungen und Verzugsbeginn der Zinsen ergänzt, Pflichtprüfungen §§ 14a, 19, 33 UStG/§ 286 BGB; übrige Abschnitte mit eigenem Stand-Datum) · Geltungsbereich: Deutschland (UStG/UStDV/AO/HGB/BGB/DSGVO + EU-Normen EN 16931, MwStSystRL)
+**Stand: 2026-11** (Basiszins-Warnung bei fehlendem Halbjahressatz, Berliner Kalendertag für Mahnungen, Zugang frühestens am nächsten Geschäftstag, Leistungszeitpunkt im Freitext; Skonto-Basis bei Schlussrechnungen und Verzugsbeginn der Zinsen ergänzt, Pflichtprüfungen §§ 14a, 19, 33 UStG/§ 286 BGB; übrige Abschnitte mit eigenem Stand-Datum) · Geltungsbereich: Deutschland (UStG/UStDV/AO/HGB/BGB/DSGVO + EU-Normen EN 16931, MwStSystRL)
 
 ---
 
