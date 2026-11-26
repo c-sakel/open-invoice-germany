@@ -14,6 +14,30 @@ Serverkonfiguration (Volume, Cron, Offsite-Ziel, Passphrase) liegt nicht im Repo
   Scheduler-Job, freier Platz und Anzahl nicht archivierter Belege im Belegarchiv, letzte Hash-Ketten-Prüfung,
   letzte erfolgreiche Sicherung (aus `BACKUP_STATUS_FILE`).
 
+- `GET /api/live` (ohne Anmeldung): `200 {"status":"ok"}`, ohne Datenbankzugriff, `Cache-Control: no-store`.
+  Nur für die Liveness-Prüfung: Ein Datenbankausfall soll den Prozess nicht neu starten.
+
+### Kubernetes-Probes
+
+```yaml
+startupProbe:
+  httpGet: { path: /api/live, port: 3000 }
+  periodSeconds: 5
+  failureThreshold: 36   # bis zu 3 Minuten für Start und Migrationen
+livenessProbe:
+  httpGet: { path: /api/live, port: 3000 }
+  periodSeconds: 20
+  timeoutSeconds: 3
+  failureThreshold: 3
+readinessProbe:
+  httpGet: { path: /api/health, port: 3000 }
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+```
+
+Der Docker-`HEALTHCHECK` im Image bleibt bei `/api/health`.
+
 ## Sicherheitsheader und Content-Security-Policy
 
 - Alle Antworten tragen `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`,

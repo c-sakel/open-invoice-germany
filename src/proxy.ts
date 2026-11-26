@@ -23,7 +23,8 @@ export function requiresOriginCheck(method: string, pathname: string): boolean {
 // Öffentlich erreichbar (ohne Anmeldung):
 // "/api/health" (Phase 16a, Task 8): Erreichbarkeitspruefung fuer Monitoring/Docker, liefert nur
 // {"status"} ohne Daten; bewusst EXAKT (kein Praefix) — /api/health/x und /api/healthz bleiben geschuetzt.
-const PUBLIC_EXACT = new Set(["/", "/api/health"]);
+// "/api/live" (Liveness ohne Datenbank) ebenfalls exakt.
+const PUBLIC_EXACT = new Set(["/", "/api/health", "/api/live"]);
 // /api/cron ist nicht sessiongeschützt, sondern via CRON_SECRET in der Route.
 // /angebot/ (öffentliche Angebotsseite) und /api/public/ (öffentliche PDF-/Entscheidungs-
 // Aktionen, Phase 3b) sind bewusst die einzigen ohne-Login-Präfixe für Kundenzugriff —
@@ -115,7 +116,7 @@ async function proxyInner(req: NextRequest) {
     // /api/docs (Swagger UI, zeigt u. a. Beispieldaten) reichten bisher OHNE eigenen
     // cache-control-Header bis zu Cloudflare durch — Verteidigung in der Tiefe fuer eine
     // Produktivinstanz mit echten Kundendaten, analog /angebot//api/public/ oben (G3).
-    if (pathname === "/" || pathname === "/api/health" || matchesPublicPrefix(pathname, "/api/v1/") || matchesPublicPrefix(pathname, "/api/docs")) {
+    if (pathname === "/" || pathname === "/api/health" || pathname === "/api/live" || matchesPublicPrefix(pathname, "/api/v1/") || matchesPublicPrefix(pathname, "/api/docs")) {
       res.headers.set("cache-control", "private, no-store");
     }
     // Phase 17d: Anmelde-, Zweitfaktor- und Reset-Seiten nie zwischenspeichern; die Seite mit dem

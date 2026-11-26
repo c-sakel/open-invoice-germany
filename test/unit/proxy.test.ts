@@ -269,6 +269,14 @@ describe("Herkunftspruefung fuer Cookie-API-Routen", () => {
     expect(bad.status).toBe(403);
   });
 
+  it("x-forwarded-host gesetzt, interner host abweichend: passende Origin -> weiter, sonst 403", async () => {
+    const h = { ...cookie, host: "app:3000", "x-forwarded-host": "rechnung.example" };
+    const ok = await proxy(post("/api/invoices/x/finalize", { ...h, origin: "https://rechnung.example" }));
+    expect(ok.headers.get("x-middleware-next")).toBe("1");
+    const internal = await proxy(post("/api/invoices/x/finalize", { ...h, origin: "http://app:3000" }));
+    expect(internal.status).toBe(403);
+  });
+
   it("Bearer-API, Webhooks und Cron sind ausgenommen", async () => {
     for (const p of ["/api/v1/Invoice", "/api/public/payments/mollie/abc", "/api/cron/run-recurring"]) {
       const res = await proxy(post(p, { "sec-fetch-site": "cross-site" }));
