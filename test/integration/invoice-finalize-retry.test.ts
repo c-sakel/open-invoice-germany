@@ -45,13 +45,13 @@ type TxFn = (tx: Prisma.TransactionClient) => Promise<unknown>;
 type TxHost = { $transaction: (fn: TxFn) => Promise<unknown> };
 
 /** Der naechste Transaktionsaufruf laeuft vollstaendig und scheitert erst am Ende mit einem Kettenkonflikt (Rollback). */
-function conflictOnce(): { calls: () => number } {
+function conflictOnce(times = 1): { calls: () => number } {
   const host = dbInternal as unknown as TxHost;
   const original = host.$transaction.bind(host);
-  let armed = true;
+  let left = times;
   const spy = vi.spyOn(host, "$transaction").mockImplementation((fn: TxFn) => {
-    if (!armed) return original(fn);
-    armed = false;
+    if (left <= 0) return original(fn);
+    left--;
     return original(async (tx) => {
       await fn(tx);
       throw new Prisma.PrismaClientKnownRequestError("Unique", { code: "P2002", clientVersion: "x", meta: { target: ["orgId", "prevHash"] } });
@@ -86,6 +86,57 @@ describe("Kettenkonflikt beim Festschreiben und Stornieren", () => {
     expect(orig.reversedByInvoiceId).toBe(res.creditNote.id);
     expect(await dbInternal.invoice.count({ where: { orgId, type: "CREDIT_NOTE" } })).toBe(1);
     expect((await verifyOrgChain(orgId, "API")).valid).toBe(true);
+  });
+
+  it("sieben Konflikte nacheinander (8 Versuche): Nummer lueckenlos, genau ein Outbox-Eintrag", async () => {
+    await dbInternal.webhookEndpoint.create({
+      data: { orgId, url: "https://93.184.216.50/hook", secretEnc: "v1:x:x:x", eventsJson: '["invoice.finalized"]' },
+    });
+    const first = await finalizeInvoice(await draft(), { now: NOW });
+    const id = await draft();
+    const c = conflictOnce(7);
+    const inv = await finalizeInvoice(id, { now: NOW });
+    expect(c.calls()).toBe(8);
+    const seq = (n: string | null) => Number((n ?? "").match(/(\d+)$/)?.[1]);
+    expect(seq(inv.number)).toBe(seq(first.number) + 1);
+    expect(await dbInternal.webhookDelivery.count({ where: { orgId, objectId: id, event: "invoice.finalized" } })).toBe(1);
+    expect((await verifyOrgChain(orgId, "API")).valid).toBe(true);
+  });
+
+  it("Retry-Erschoepfung: dauerhafter Konflikt wirft nach 8 Versuchen, keine Nummer vergeben, nichts verbucht", async () => {
+    const id = await draft();
+    const before = await dbInternal.invoice.count({ where: { orgId, number: { not: null } } });
+    const c = conflictOnce(100);
+    await expect(finalizeInvoice(id, { now: NOW })).rejects.toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
+    expect(c.calls()).toBe(8);
+    vi.restoreAllMocks();
+    const after = await dbInternal.invoice.findUniqueOrThrow({ where: { id }, select: { status: true, number: true } });
+    expect(after).toEqual({ status: "DRAFT", number: null });
+    expect(await dbInternal.invoice.count({ where: { orgId, number: { not: null } } })).toBe(before);
+    expect(await dbInternal.webhookDelivery.count({ where: { orgId, objectId: id } })).toBe(0);
+    // Nummer wird beim naechsten Versuch nicht uebersprungen
+    const next = await finalizeInvoice(id, { now: NOW });
+    expect(next.number).toBeTruthy();
+  });
+
+  it("alreadyDone: parallel festgeschriebene Rechnung liefert den Satz des Gewinners ohne zweite Nummer", async () => {
+    const id = await draft();
+    const host = dbInternal as unknown as TxHost;
+    const original = host.$transaction.bind(host);
+    let first = true;
+    vi.spyOn(host, "$transaction").mockImplementation((fn: TxFn) => {
+      if (!first) return original(fn);
+      first = false;
+      // Der "Gewinner" schreibt fest, der eigene Versuch scheitert mit Kettenkonflikt.
+      return original(fn).then(() => {
+        throw new Prisma.PrismaClientKnownRequestError("Unique", { code: "P2002", clientVersion: "x", meta: { target: ["orgId", "prevHash"] } });
+      });
+    });
+    const before = await dbInternal.invoice.count({ where: { orgId, number: { not: null } } });
+    const inv = await finalizeInvoice(id, { now: NOW });
+    expect(inv.status).toBe("FINALIZED");
+    expect(await dbInternal.invoice.count({ where: { orgId, number: { not: null } } })).toBe(before + 1);
+    expect(await dbInternal.changeLog.count({ where: { orgId, entityId: id, action: "FINALIZE" } })).toBe(1);
   });
 
   it("anderer Fehler wird nicht wiederholt", async () => {

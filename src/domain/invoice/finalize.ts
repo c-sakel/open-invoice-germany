@@ -15,7 +15,7 @@ import { dbInternal } from "@/lib/db";
 import { computeTaxBreakdown, type TaxBreakdownEntry } from "@/lib/tax";
 import { assignDocumentNumber } from "@/domain/numbering/ranges";
 import { appendChangeLog } from "@/domain/audit";
-import { withChangeLogRetry } from "@/lib/chain-retry";
+import { withChangeLogRetry, CHAIN_RETRY_ATTEMPTS } from "@/lib/chain-retry";
 import { notifyOnlinePaymentWithinTx, onInvoiceFinalizedKu, onInvoiceFinalizedOss } from "@/domain/notifications/hooks";
 import { logActivity } from "@/domain/activity/log";
 import { emitEvent } from "@/domain/webhook/emit";
@@ -539,6 +539,7 @@ export async function finalizeInvoice(invoiceId: string, opts: FinalizeOptions =
   // Kettenkonflikt mit einem parallelen ChangeLog-Schreiber: die ganze Transaktion (inkl. Nummernvergabe) rollt
   // zurueck und wird wiederholt; ist die Rechnung zwischenzeitlich festgeschrieben, wird dieser Satz geliefert.
   const result = await withChangeLogRetry(() => dbInternal.$transaction((tx) => finalizeWithinTx(tx, invoiceId, opts)), {
+    attempts: CHAIN_RETRY_ATTEMPTS,
     alreadyDone: () => loadFinalizedInvoice(invoiceId),
   });
   // Phase 16e: OSS-Schwelle erst nach dem Commit pruefen (der Hook wirft nie, Fehler werden dort geloggt).

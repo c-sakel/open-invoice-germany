@@ -12,7 +12,7 @@ import { roundHalfUp } from "@/lib/money";
 import type { TaxBreakdownEntry } from "@/lib/tax";
 import { reconcileNetsForGross } from "@/lib/pricing/partial";
 import { appendChangeLog } from "@/domain/audit";
-import { withChangeLogRetry } from "@/lib/chain-retry";
+import { withChangeLogRetry, CHAIN_RETRY_ATTEMPTS } from "@/lib/chain-retry";
 import { logActivity } from "@/domain/activity/log";
 import { linkDocuments } from "@/domain/relations";
 import { emitEvent } from "@/domain/webhook/emit";
@@ -393,6 +393,7 @@ export async function cancelInvoice(invoiceId: string, opts: CancelOptions) {
 
     return { originalId: original.id, originalNumber: original.number, creditNote: finalizedCredit, refundDueCents };
   }), {
+    attempts: CHAIN_RETRY_ATTEMPTS,
     alreadyDone: async () => {
       const done = await dbInternal.invoice.findUnique({
         where: { id: invoiceId },

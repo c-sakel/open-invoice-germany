@@ -185,13 +185,13 @@ export async function onIncomingArchiveTampered(
 }
 
 /** Phase 16a (Belegarchiv): Erzeugen oder Ablegen der Archivdateien ist fehlgeschlagen. */
-export async function onArchiveFailed(orgId: string, input: { invoiceId: string; message: string; at: Date }): Promise<void> {
+export async function onArchiveFailed(orgId: string, input: { invoiceId: string; at: Date }): Promise<void> {
   await safeNotify(orgId, "ARCHIVE_FAILED", () =>
     createNotification({
       orgId,
       type: "ARCHIVE_FAILED",
       title: "Archivierung fehlgeschlagen",
-      body: input.message,
+      body: "Der Beleg konnte nicht archiviert werden. Details stehen im Serverprotokoll.",
       entityType: "INVOICE",
       entityId: input.invoiceId,
       dedupeKey: `ARCHIVE_FAILED:${input.invoiceId}:${input.at.toISOString().slice(0, 10)}`,

@@ -85,7 +85,7 @@ export async function ensureDunningArchive(orgId: string, dunningId: string): Pr
     if (winner?.pdfPath && winner.pdfSha256) return { path: winner.pdfPath, sha256: winner.pdfSha256 };
     throw new Error(`Mahnungsarchiv der Mahnung ${dunningId} nicht lesbar.`);
   } catch (e) {
-    await onArchiveFailed(orgId, { invoiceId: d.invoiceId, message: e instanceof Error ? e.message : String(e), at: new Date() });
+    await onArchiveFailed(orgId, { invoiceId: d.invoiceId, at: new Date() });
     throw e;
   }
 }
