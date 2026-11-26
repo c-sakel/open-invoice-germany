@@ -20,6 +20,10 @@ Bei jedem Lauf der Benachrichtigungen prüft das Programm und meldet als Pflicht
 `SCHEDULER_STALE` (Aufgabe seit über 2 Stunden ohne erfolgreichen Lauf), `BACKUP_STALE` (letzte Sicherung älter als 36 Stunden, nur wenn
 `BACKUP_STATUS_FILE` gesetzt ist) und `DISK_LOW` (weniger als 15 % Platz auf Belegarchiv oder Anhängen). Die Statusdatei enthält zeilenweise
 `OK <ISO-Zeitstempel>`; die letzte passende Zeile zählt. Frisch gestartete Installationen melden nie gelaufene Aufgaben erst 2 Stunden nach dem Start.
+Die Schwelle von 2 Stunden ist fest und gilt für alle Aufgaben; mit `SCHEDULER_INTERVAL_MINUTES` über 120 meldet der Wächter dauerhaft.
+Fällt der Prozess oder die Datenbank länger als 2 Stunden aus, werden die Meldungen je Aufgabe und Tag gebündelt in einer Alarm-Mail zusammengefasst
+(Mail-Takt höchstens stündlich); neue Befunde erscheinen spätestens im nächsten Lauf (15 Minuten). Fehlt die Statusdatei trotz gesetzter
+`BACKUP_STATUS_FILE`, meldet der Wächter erst nach 36 Stunden Laufzeit. Ist der freie Platz nicht ermittelbar, bleibt der Wächter stumm; die Oberfläche zeigt „nicht ermittelbar“.
 
 - `GET /api/live` (ohne Anmeldung): `200 {"status":"ok"}`, ohne Datenbankzugriff, `Cache-Control: no-store`.
   Nur für die Liveness-Prüfung: Ein Datenbankausfall soll den Prozess nicht neu starten.
@@ -61,6 +65,14 @@ ohne vorgeschalteten Proxy kann eine gerade laufende Anfrage abbrechen.
 - Kubernetes: `terminationGracePeriodSeconds: 60` (mindestens) im Pod setzen.
 - Docker Compose: `stop_grace_period: 60s` (in der mitgelieferten `docker-compose.yml` gesetzt).
 
+## Herkunftsprüfung
+
+Ändernde Aufrufe (alles außer GET, HEAD, OPTIONS) auf `/api/*` mit Sitzungs-Cookie werden abgelehnt (403), wenn der Browser sie von einer
+fremden Herkunft schickt (`Sec-Fetch-Site` nicht `same-origin`, sonst `Origin` gegen den Host). Das schützt auch vor anderen Subdomains
+derselben Site, die `SameSite=Lax` nicht abwehrt. Hinter einem Proxy wird gegen `X-Forwarded-Host` geprüft; der Proxy muss ihn setzen.
+Ausgenommen sind `/api/v1/` (API-Schlüssel), `/api/public/` (Webhooks), `/api/cron/` (Geheimnis), `/api/health` und `/api/live`.
+Aufrufe ohne Herkunfts-Header (Skripte, curl) bleiben möglich, benötigen aber weiterhin eine gültige Sitzung.
+
 ## Sicherheitsheader und Content-Security-Policy
 
 - Alle Antworten tragen `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`,
@@ -73,6 +85,9 @@ ohne vorgeschalteten Proxy kann eine gerade laufende Anfrage abbrechen.
   (Verstöße nur in der Browser-Konsole, nichts wird blockiert) oder `off`. Ein ungültiger Wert gilt als `enforce`
   und wird einmal im Log gemeldet. Notschalter bei unerwarteten Blockaden: `SECURITY_CSP=report-only` setzen und den
   Container neu starten.
+- Die Policy erlaubt Inline-Skripte (`'unsafe-inline'`, ohne Nonce). Sie ist daher **kein Schutz gegen eingeschleustes Inline-Skript (XSS)**,
+  sondern begrenzt Rahmen, Formularziele, Objekte und `base`. Gegen XSS schützt weiterhin die Maskierung der Ausgaben.
+- `report-only` meldet nur in der Browser-Konsole; es gibt keinen Meldeendpunkt, der dem Betreiber Verstöße zuschickt.
 
 ## Was auf dem Server anzupassen ist
 
