@@ -16,6 +16,21 @@ export async function register() {
   const raw = process.env.SCHEDULER_ENABLED?.trim().toLowerCase();
   if (raw && SCHEDULER_DISABLED_VALUES.has(raw)) return;
   const minutes = Number(process.env.SCHEDULER_INTERVAL_MINUTES ?? 15);
-  const { startScheduler } = await import("./domain/scheduler/loop");
+  const { startScheduler, stopScheduler } = await import("./domain/scheduler/loop");
   startScheduler(minutes);
+
+  // Geordnetes Herunterfahren: nur mit NEXT_MANUAL_SIG_HANDLE=true (Container-Entrypoint) uebernehmen
+  // wir SIGTERM/SIGINT selbst; ohne die Variable beendet Next sofort wie bisher.
+  if (process.env.NEXT_MANUAL_SIG_HANDLE === "true") {
+    const shutdown = (signal: string): void => {
+      void (async () => {
+        console.log(`${signal}: Hintergrundaufgaben werden zu Ende gefuehrt.`);
+        const outcome = await stopScheduler(45_000);
+        console.log(`Scheduler beendet (${outcome}).`);
+        process.exit(0);
+      })();
+    };
+    process.once("SIGTERM", () => shutdown("SIGTERM"));
+    process.once("SIGINT", () => shutdown("SIGINT"));
+  }
 }

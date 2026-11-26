@@ -11,7 +11,7 @@
  * gueltige, aber per Passwortwechsel entwertete Sitzung (pwc-Mismatch) — beide Faelle
  * unterscheidet erst `userIdFromToken`, nicht mehr `verifySessionToken` alleine.
  */
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { NextRequest } from "next/server";
 
 vi.mock("@/lib/auth/server", () => ({
@@ -312,5 +312,41 @@ describe("Herkunftspruefung fuer Cookie-API-Routen", () => {
       expect(portal.headers.get("referrer-policy")).toBe("no-referrer");
       expect(csp(await proxy(new NextRequest("http://localhost/api/invoices")))).toBeNull();
     });
+  });
+});
+
+describe("proxy: CSP-Modus (SECURITY_CSP)", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("report-only: nur der Report-Only-Header", async () => {
+    vi.stubEnv("SECURITY_CSP", "report-only");
+    const res = await proxy(new NextRequest("http://localhost/login"));
+    expect(res.headers.get("content-security-policy-report-only")).toContain("default-src 'self'");
+    expect(res.headers.get("content-security-policy")).toBeNull();
+  });
+
+  it("off: kein CSP-Header", async () => {
+    vi.stubEnv("SECURITY_CSP", "off");
+    const res = await proxy(new NextRequest("http://localhost/login"));
+    expect(res.headers.get("content-security-policy")).toBeNull();
+    expect(res.headers.get("content-security-policy-report-only")).toBeNull();
+  });
+
+  it.each(["/angebot/abc", "/zahlen/abc"])("enforce: oeffentliche Seite %s traegt die CSP", async (path) => {
+    vi.stubEnv("SECURITY_CSP", "enforce");
+    const res = await proxy(new NextRequest(`http://localhost${path}`));
+    expect(res.headers.get("content-security-policy")).toContain("frame-ancestors 'self'");
+  });
+
+  it("geschuetzte Seite: auch die Weiterleitung auf /login traegt die CSP", async () => {
+    vi.stubEnv("SECURITY_CSP", "enforce");
+    const res = await proxy(new NextRequest("http://localhost/rechnungen"));
+    expect(res.status).toBe(307);
+    expect(res.headers.get("content-security-policy")).toContain("object-src 'none'");
+  });
+
+  it("interne API-Antworten tragen keine Seiten-CSP", async () => {
+    const res = await proxy(new NextRequest("http://localhost/api/x"));
+    expect(res.headers.get("content-security-policy")).toBeNull();
   });
 });

@@ -350,3 +350,24 @@ describe("Phase 7 — RecurringInvoice.autoSend (recurring/run.ts)", () => {
     expect(provider.sent).toHaveLength(0);
   });
 });
+
+describe("Herunterfahren (Runner)", () => {
+  it("bei gesetztem stopping: alle Jobs skipped=shutdown, kein SchedulerRun, keine Sperre", async () => {
+    const before = await dbInternal.schedulerRun.count();
+    const prev = globalThis.__oigSchedulerLoop;
+    globalThis.__oigSchedulerLoop = { started: true, running: false, stopping: true, current: null, timer: null, startTimer: null };
+    try {
+      const results = await runScheduledJobs({ trigger: "MANUAL", now: new Date("2320-06-09T10:00:00.000Z") });
+      expect(results.length).toBeGreaterThan(0);
+      for (const r of results) {
+        expect(r.ok).toBe(true);
+        expect(r.summary).toEqual({ skipped: "shutdown" });
+        expect(r.runId).toBeUndefined();
+      }
+      expect(await dbInternal.schedulerRun.count()).toBe(before);
+      expect(await dbInternal.schedulerLock.count()).toBe(0);
+    } finally {
+      globalThis.__oigSchedulerLoop = prev;
+    }
+  });
+});

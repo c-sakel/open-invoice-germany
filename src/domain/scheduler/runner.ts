@@ -23,6 +23,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { onSchedulerFailed } from "@/domain/notifications/hooks";
 import { jobs } from "./jobs";
+import { isSchedulerStopping } from "./loop";
 
 export type SchedulerJob = "fx" | "dunning" | "postal" | "recurring" | "auto-send" | "archive" | "mailbox" | "bank-fetch" | "online-payments" | "payment-rules" | "notifications" | "webhooks" | "audit" | "cleanup";
 
@@ -98,6 +99,11 @@ export async function runScheduledJobs(opts: RunScheduledJobsOptions): Promise<J
 
   const results: JobResult[] = [];
   for (const job of order) {
+    // Geordnetes Herunterfahren: begonnene Jobs laufen zu Ende, neue starten nicht (kein SchedulerRun).
+    if (isSchedulerStopping()) {
+      results.push({ job, ok: true, summary: { skipped: "shutdown" } });
+      continue;
+    }
     await clearStaleLock(job, now);
 
     const runId = randomUUID();

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { buildCsp, cspHeaderName, cspModeFromEnv } from "@/lib/http/csp";
+import { applyCsp, buildCsp, cspHeaderName, cspModeFromEnv } from "@/lib/http/csp";
 
 describe("csp", () => {
   it("Produktion: kein unsafe-eval, Rahmen-, Frame- und Formularregeln", () => {
@@ -27,11 +27,28 @@ describe("csp", () => {
 
   describe("ungueltiger Wert", () => {
     afterEach(() => vi.restoreAllMocks());
-    it("ergibt enforce und warnt einmal", () => {
+    it("ergibt enforce und warnt genau einmal", async () => {
+      vi.resetModules(); // frisches Modul: der Warn-Merker ist zurueckgesetzt
+      const fresh = await import("@/lib/http/csp");
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-      expect(cspModeFromEnv("quatsch")).toBe("enforce");
-      expect(cspModeFromEnv("noch-mehr")).toBe("enforce");
-      expect(warn.mock.calls.length).toBeLessThanOrEqual(1);
+      expect(fresh.cspModeFromEnv("quatsch")).toBe("enforce");
+      expect(fresh.cspModeFromEnv("noch-mehr")).toBe("enforce");
+      expect(warn).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("applyCsp auf Seitenpfaden", () => {
+    afterEach(() => vi.unstubAllEnvs());
+    it.each(["/angebot/abc", "/zahlen/abc", "/portal/abc", "/rechnungen", "/api/docs"])("%s traegt die Policy", (path) => {
+      vi.stubEnv("SECURITY_CSP", "enforce");
+      const res = new Response(null);
+      applyCsp(res, path);
+      expect(res.headers.get("Content-Security-Policy")).toContain("frame-ancestors 'self'");
+    });
+    it("API-Downloads behalten ihre eigene Policy", () => {
+      const res = new Response(null);
+      applyCsp(res, "/api/invoices/x/pdf");
+      expect(res.headers.get("Content-Security-Policy")).toBeNull();
     });
   });
 });

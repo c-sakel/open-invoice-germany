@@ -38,6 +38,15 @@ readinessProbe:
 
 Der Docker-`HEALTHCHECK` im Image bleibt bei `/api/health`.
 
+## Herunterfahren
+
+Bei SIGTERM (Neustart, Node-Drain, `docker compose stop`) startet die Anwendung keine neue Hintergrundaufgabe mehr
+und wartet bis zu 45 s, bis eine begonnene Aufgabe (z. B. ein automatischer Versand) zu Ende ist. Danach gibt sie
+ihre Sperre frei und beendet sich mit Exitcode 0. Das Image setzt dafür `NEXT_MANUAL_SIG_HANDLE=true`.
+
+- Kubernetes: `terminationGracePeriodSeconds: 60` (mindestens) im Pod setzen.
+- Docker Compose: `stop_grace_period: 60s` (in der mitgelieferten `docker-compose.yml` gesetzt).
+
 ## Sicherheitsheader und Content-Security-Policy
 
 - Alle Antworten tragen `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`,

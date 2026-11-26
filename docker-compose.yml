@@ -35,6 +35,8 @@ services:
     image: ghcr.io/c-sakel/open-invoice-germany:${OIG_VERSION:-1}
     build: .
     restart: unless-stopped
+    # Laufende Hintergrundaufgaben (z. B. Versand) duerfen beim Stoppen bis zu 45 s zu Ende laufen.
+    stop_grace_period: 60s
     depends_on:
       db:
         condition: service_healthy
