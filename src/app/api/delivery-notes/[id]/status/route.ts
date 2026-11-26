@@ -6,6 +6,7 @@ import { OverDeliveryError } from "@/domain/delivery-note/quantities";
 import { NotFoundError } from "@/domain/errors";
 import { getActiveOrg } from "@/lib/org";
 import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/lib/auth/require-session";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 
@@ -47,7 +48,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     if (e instanceof StatusTransitionError || e instanceof OverDeliveryError) {
       return NextResponse.json({ error: e.message }, { status: 409 });
     }
-    console.error("POST /api/delivery-notes/[id]/status:", e);
+    console.error("POST /api/delivery-notes/[id]/status:", describeError(e));
     return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }
 }

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { dbInternal } from "@/lib/db";
 import { hashPassword } from "@/lib/auth/password";
 import { setSession } from "@/lib/auth/server";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 
@@ -21,7 +22,7 @@ export async function POST(req: Request) {
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "E-Mail ungültig oder Passwort zu kurz (min. 8 Zeichen)." }, { status: 400 });
     }
-    console.error("auth/setup:", e);
+    console.error("auth/setup:", describeError(e));
     return NextResponse.json({ error: "Einrichtung fehlgeschlagen." }, { status: 400 });
   }
 }

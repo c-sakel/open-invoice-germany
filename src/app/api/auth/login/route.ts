@@ -4,6 +4,7 @@ import { setPendingMfa, setSession } from "@/lib/auth/server";
 import { attemptLogin } from "@/domain/auth/login";
 import { RateLimitError } from "@/lib/rate-limit";
 import { clientIpFromHeaders } from "@/lib/http/client-ip";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 
@@ -41,7 +42,7 @@ export async function POST(req: Request) {
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "Bitte E-Mail und Passwort eingeben." }, { status: 400 });
     }
-    console.error("auth/login:", e);
+    console.error("auth/login:", describeError(e));
     return NextResponse.json({ error: "Anmeldung fehlgeschlagen." }, { status: 400 });
   }
 }

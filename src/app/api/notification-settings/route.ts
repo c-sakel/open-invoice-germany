@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getActiveOrg } from "@/lib/org";
 import { loadNotificationSettings, saveNotificationSettings, ALL_NOTIFICATION_TYPES } from "@/domain/notifications/settings";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,7 +27,7 @@ export async function PUT(req: Request) {
     return NextResponse.json({ settings });
   } catch (e) {
     if (e instanceof z.ZodError) return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });
-    console.error("PUT /api/notification-settings:", e);
+    console.error("PUT /api/notification-settings:", describeError(e));
     return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }
 }

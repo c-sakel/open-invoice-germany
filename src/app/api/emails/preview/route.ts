@@ -4,6 +4,7 @@ import { getActiveOrg } from "@/lib/org";
 import { buildTemplateContext, sampleTemplateContext, DocumentNotFoundError } from "@/domain/email/context";
 import { renderTemplate } from "@/lib/template/render";
 import { EmailTemplateDocType } from "@/schemas/email";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 
@@ -44,7 +45,7 @@ export async function POST(req: Request) {
     if (e instanceof DocumentNotFoundError) {
       return NextResponse.json({ error: e.message }, { status: 404 });
     }
-    console.error("POST /api/emails/preview:", e);
+    console.error("POST /api/emails/preview:", describeError(e));
     return NextResponse.json({ error: "Vorschau fehlgeschlagen." }, { status: 500 });
   }
 }

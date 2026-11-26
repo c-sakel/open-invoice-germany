@@ -4,6 +4,7 @@ import { getActiveOrg } from "@/lib/org";
 import { listApiRequestLogs } from "@/domain/api-log/list";
 import { clearApiRequestLogs } from "@/domain/api-log/purge";
 import { loadApiSettings, saveApiSettings } from "@/domain/api-log/settings";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,7 +22,7 @@ export async function GET(req: Request) {
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });
     }
-    console.error("GET /api/settings/api-log:", e);
+    console.error("GET /api/settings/api-log:", describeError(e));
     return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }
 }
@@ -36,7 +37,7 @@ export async function PUT(req: Request) {
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });
     }
-    console.error("PUT /api/settings/api-log:", e);
+    console.error("PUT /api/settings/api-log:", describeError(e));
     return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }
 }
@@ -47,7 +48,7 @@ export async function DELETE() {
     const deleted = await clearApiRequestLogs(org.id);
     return NextResponse.json({ deleted });
   } catch (e) {
-    console.error("DELETE /api/settings/api-log:", e);
+    console.error("DELETE /api/settings/api-log:", describeError(e));
     return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }
 }

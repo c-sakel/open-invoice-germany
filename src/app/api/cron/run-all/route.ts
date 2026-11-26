@@ -5,6 +5,7 @@
 import { NextResponse } from "next/server";
 import { runScheduledJobs } from "@/domain/scheduler/runner";
 import { checkCronAuth } from "@/lib/cron-auth";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,7 +22,7 @@ async function handle(req: Request) {
     const safeResults = results.map((r) => ({ job: r.job, ok: r.ok, runId: r.runId, summary: r.summary, ...(r.ok ? {} : { error: "Lauf fehlgeschlagen." }) }));
     return NextResponse.json({ ok, results: safeResults }, { status: ok ? 200 : 207 });
   } catch (e) {
-    console.error("cron/run-all:", e);
+    console.error("cron/run-all:", describeError(e));
     return NextResponse.json({ error: "Lauf fehlgeschlagen." }, { status: 500 });
   }
 }

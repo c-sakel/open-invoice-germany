@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getActiveOrg } from "@/lib/org";
 import { findApiRequestLog } from "@/domain/api-log/list";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,7 +14,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     if (!row) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
     return NextResponse.json({ row });
   } catch (e) {
-    console.error("GET /api/settings/api-log/[id]:", e);
+    console.error("GET /api/settings/api-log/[id]:", describeError(e));
     return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }
 }

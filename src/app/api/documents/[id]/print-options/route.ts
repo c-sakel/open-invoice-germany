@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getActiveOrg } from "@/lib/org";
 import { setPrintOptions } from "@/domain/settings/print";
 import { NotFoundError, InvalidOperationError } from "@/domain/errors";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,7 +26,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
     if (e instanceof InvalidOperationError) {
       return NextResponse.json({ error: e.message }, { status: 409 });
     }
-    console.error("PUT /api/documents/[id]/print-options:", e);
+    console.error("PUT /api/documents/[id]/print-options:", describeError(e));
     return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }
 }

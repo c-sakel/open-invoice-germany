@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getActiveOrg } from "@/lib/org";
 import { replayWebhookDelivery } from "@/domain/webhook/actions";
 import { NotFoundError } from "@/domain/errors";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,7 +15,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ delivery: result.delivery, attempt: result.attempt }, { status: 201 });
   } catch (e) {
     if (e instanceof NotFoundError) return NextResponse.json({ error: e.message }, { status: 404 });
-    console.error("POST /api/webhooks/[id]/deliveries/[deliveryId]/replay:", e);
+    console.error("POST /api/webhooks/[id]/deliveries/[deliveryId]/replay:", describeError(e));
     return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }
 }

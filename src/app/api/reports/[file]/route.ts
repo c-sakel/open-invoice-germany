@@ -10,6 +10,7 @@ import { getActiveOrg } from "@/lib/org";
 import { runReport } from "@/domain/reporting/query";
 import { csvResponse } from "@/lib/http/csv-response";
 import { reportCsvFilename, reportToCsv } from "@/domain/reporting/csv";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,7 +34,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ file: st
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: e.issues.map((i) => i.message).join("; ") }, { status: 400 });
     }
-    console.error("GET /api/reports:", e);
+    console.error("GET /api/reports:", describeError(e));
     return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }
 }

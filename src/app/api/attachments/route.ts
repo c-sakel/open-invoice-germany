@@ -7,6 +7,7 @@ import { AttachmentValidationError } from "@/lib/attachments/storage";
 import { RelationError } from "@/domain/relations";
 import { DocRefType } from "@/schemas";
 import { MAX_ATTACHMENT_FILE_BYTES, MAX_ATTACHMENT_TOTAL_BYTES_PER_DOC } from "@/lib/attachments/mime";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 
@@ -45,7 +46,7 @@ function classifyError(e: unknown): { status: number; message: string } {
   if (e instanceof Error && e.message.includes("ueberschreiten insgesamt")) {
     return { status: 400, message: e.message };
   }
-  console.error("POST /api/attachments:", e);
+  console.error("POST /api/attachments:", describeError(e));
   return { status: 500, message: "Anhang konnte nicht gespeichert werden." };
 }
 
@@ -83,7 +84,7 @@ export async function POST(req: Request) {
     actor = await requireSessionActor();
   } catch (e) {
     if (e instanceof AuthRequiredError) return authRequiredResponse();
-    console.error("POST /api/attachments:", e);
+    console.error("POST /api/attachments:", describeError(e));
     return NextResponse.json({ error: "Anhang konnte nicht gespeichert werden." }, { status: 500 });
   }
 

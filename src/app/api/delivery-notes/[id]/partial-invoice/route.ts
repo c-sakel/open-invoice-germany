@@ -6,6 +6,7 @@ import { PricingError } from "@/lib/pricing/errors";
 import { NotFoundError } from "@/domain/errors";
 import { getActiveOrg } from "@/lib/org";
 import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/lib/auth/require-session";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 
@@ -39,7 +40,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     if (e instanceof PartialInvoiceError || e instanceof PricingError) {
       return NextResponse.json({ error: e.message }, { status: 409 });
     }
-    console.error("POST /api/delivery-notes/[id]/partial-invoice:", e);
+    console.error("POST /api/delivery-notes/[id]/partial-invoice:", describeError(e));
     return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }
 }

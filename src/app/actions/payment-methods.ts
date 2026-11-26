@@ -13,6 +13,7 @@ import {
   PaymentMethodInUseError,
 } from "@/domain/payment-method/manage";
 import type { ActionResult } from "./result";
+import { describeError } from "@/lib/safe-error";
 
 function str(fd: FormData, key: string): string | undefined {
   const v = fd.get(key);
@@ -52,7 +53,7 @@ export async function savePaymentMethodAction(_prev: ActionResult, fd: FormData)
     if (e instanceof SystemPaymentMethodProtectedError) return { ok: false, error: e.message };
     if (e instanceof PaymentMethodCodeConflictError) return { ok: false, error: e.message };
     if (e instanceof z.ZodError) return { ok: false, error: firstError(e.issues) };
-    console.error("savePaymentMethodAction:", e);
+    console.error("savePaymentMethodAction:", describeError(e));
     return { ok: false, error: "Speichern fehlgeschlagen." };
   }
   revalidatePath("/einstellungen/zahlungsmethoden");
@@ -71,7 +72,7 @@ export async function deletePaymentMethodAction(_prev: ActionResult, fd: FormDat
     if (e instanceof PaymentMethodNotFoundError) return { ok: false, error: "Zahlungsmethode nicht gefunden." };
     if (e instanceof SystemPaymentMethodProtectedError) return { ok: false, error: e.message };
     if (e instanceof PaymentMethodInUseError) return { ok: false, error: e.message };
-    console.error("deletePaymentMethodAction:", e);
+    console.error("deletePaymentMethodAction:", describeError(e));
     return { ok: false, error: "Löschen fehlgeschlagen." };
   }
   revalidatePath("/einstellungen/zahlungsmethoden");

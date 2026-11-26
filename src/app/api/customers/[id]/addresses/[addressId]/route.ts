@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getActiveOrg } from "@/lib/org";
 import { updateAddress, deleteAddress } from "@/domain/customer/addresses";
 import { NotFoundError, InvalidOperationError } from "@/domain/errors";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,7 +18,7 @@ function mapError(e: unknown, routeLabel: string) {
   if (e instanceof InvalidOperationError) {
     return NextResponse.json({ error: e.message }, { status: 409 });
   }
-  console.error(routeLabel, e);
+  console.error(routeLabel, describeError(e));
   return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
 }
 

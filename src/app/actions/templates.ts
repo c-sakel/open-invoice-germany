@@ -12,6 +12,7 @@ import {
   TemplateNameConflictError,
 } from "@/domain/email/templates";
 import type { ActionResult } from "./result";
+import { describeError } from "@/lib/safe-error";
 
 function str(fd: FormData, key: string): string | undefined {
   const v = fd.get(key);
@@ -45,7 +46,7 @@ export async function saveEmailTemplateAction(_prev: ActionResult, fd: FormData)
     // G6: eine verstaendliche Meldung bei doppeltem Namen/docType; alle anderen Fehler
     // nur generisch — e.message wird nicht mehr durchgereicht.
     if (e instanceof TemplateNameConflictError) return { ok: false, error: e.message };
-    console.error("saveEmailTemplateAction:", e);
+    console.error("saveEmailTemplateAction:", describeError(e));
     return { ok: false, error: "Speichern fehlgeschlagen." };
   }
   revalidatePath("/einstellungen/vorlagen");
@@ -66,7 +67,7 @@ export async function deleteEmailTemplateAction(_prev: ActionResult, fd: FormDat
   } catch (e) {
     if (e instanceof TemplateNotFoundError) return { ok: false, error: "Vorlage nicht gefunden." };
     if (e instanceof SystemTemplateProtectedError) return { ok: false, error: e.message };
-    console.error("deleteEmailTemplateAction:", e);
+    console.error("deleteEmailTemplateAction:", describeError(e));
     return { ok: false, error: "Löschen fehlgeschlagen." };
   }
   revalidatePath("/einstellungen/vorlagen");
@@ -89,7 +90,7 @@ export async function setDefaultEmailTemplateAction(_prev: ActionResult, fd: For
       await tx.emailTemplate.update({ where: { id: tpl.id }, data: { isDefault: true } });
     });
   } catch (e) {
-    console.error("setDefaultEmailTemplateAction:", e);
+    console.error("setDefaultEmailTemplateAction:", describeError(e));
     return { ok: false, error: "Aktion fehlgeschlagen." };
   }
   revalidatePath("/einstellungen/vorlagen");

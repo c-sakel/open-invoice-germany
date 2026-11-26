@@ -6,6 +6,7 @@ import { listQuotes } from "@/domain/document/list";
 import { getActiveOrg } from "@/lib/org";
 import { parseListQuery } from "@/lib/list-query";
 import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/lib/auth/require-session";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 
@@ -25,7 +26,7 @@ export async function GET(req: Request) {
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "Ungültiger Filter.", issues: e.issues }, { status: 400 });
     }
-    console.error("GET /api/documents:", e);
+    console.error("GET /api/documents:", describeError(e));
     return NextResponse.json({ error: "Dokumente konnten nicht geladen werden." }, { status: 500 });
   }
 }
@@ -42,7 +43,7 @@ export async function POST(req: Request) {
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });
     }
-    console.error("POST /api/documents:", e);
+    console.error("POST /api/documents:", describeError(e));
     return NextResponse.json({ error: "Dokument konnte nicht angelegt werden. Bitte Eingaben prüfen." }, { status: 400 });
   }
 }

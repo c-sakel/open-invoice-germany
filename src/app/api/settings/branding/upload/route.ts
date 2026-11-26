@@ -5,6 +5,7 @@ import { storeFile, AttachmentValidationError } from "@/lib/attachments/storage"
 import { loadBrandingSettings, saveBrandingSettings } from "@/domain/settings/branding";
 import { pngSize } from "@/lib/images/png-size";
 import { jpegComponents } from "@/lib/images/jpeg-info";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 
@@ -117,7 +118,7 @@ export async function POST(req: Request) {
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });
     }
-    console.error("POST /api/settings/branding/upload:", e);
+    console.error("POST /api/settings/branding/upload:", describeError(e));
     return NextResponse.json({ error: "Datei konnte nicht gespeichert werden." }, { status: 500 });
   }
 }
@@ -141,7 +142,7 @@ export async function DELETE(req: Request) {
     });
     return NextResponse.json({ settings });
   } catch (e) {
-    console.error("DELETE /api/settings/branding/upload:", e);
+    console.error("DELETE /api/settings/branding/upload:", describeError(e));
     return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }
 }

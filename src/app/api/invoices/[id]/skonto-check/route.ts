@@ -5,6 +5,7 @@ import { getActiveOrg } from "@/lib/org";
 import { skontoCheckQuerySchema } from "@/schemas";
 import { detectSkonto } from "@/lib/pricing/skonto";
 import { payableBaseCents, skontoTermsForInvoice } from "@/domain/invoice/amounts";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 
@@ -57,7 +58,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });
     }
-    console.error("GET /api/invoices/[id]/skonto-check:", e);
+    console.error("GET /api/invoices/[id]/skonto-check:", describeError(e));
     return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }
 }

@@ -4,6 +4,7 @@ import { textTemplatePickQuerySchema } from "@/schemas";
 import { pickTextTemplate } from "@/domain/text-template/pick";
 import { dbInternal } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 
@@ -22,7 +23,7 @@ export async function GET(req: Request) {
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });
     }
-    console.error("GET /api/text-templates/pick:", e);
+    console.error("GET /api/text-templates/pick:", describeError(e));
     return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }
 }

@@ -6,6 +6,7 @@ import { removeAttachment, type AttachmentDocType } from "@/domain/attachment/ma
 import { readFile } from "@/lib/attachments/storage";
 import { NotFoundError } from "@/domain/errors";
 import { contentDispositionAttachment } from "@/lib/http/content-disposition";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 
@@ -32,7 +33,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     });
   } catch (e) {
     if (e instanceof AuthRequiredError) return authRequiredResponse();
-    console.error("GET /api/attachments/[id]:", e);
+    console.error("GET /api/attachments/[id]:", describeError(e));
     return NextResponse.json({ error: "Anhang konnte nicht gelesen werden." }, { status: 500 });
   }
 }
@@ -53,7 +54,7 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
     if (e instanceof NotFoundError) {
       return NextResponse.json({ error: e.message }, { status: 404 });
     }
-    console.error("DELETE /api/attachments/[id]:", e);
+    console.error("DELETE /api/attachments/[id]:", describeError(e));
     return NextResponse.json({ error: "Anhang konnte nicht geloescht werden." }, { status: 500 });
   }
 }

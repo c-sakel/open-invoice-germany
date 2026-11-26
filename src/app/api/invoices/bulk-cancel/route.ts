@@ -5,6 +5,7 @@ import { cancelInvoicesBulk } from "@/domain/invoice/bulk-cancel";
 import { getActiveOrg } from "@/lib/org";
 import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/lib/auth/require-session";
 import { rateLimit, RateLimitError } from "@/lib/rate-limit";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 
@@ -37,7 +38,7 @@ export async function POST(req: Request) {
         { status: 429, headers: { ...NO_STORE, "retry-after": String(Math.ceil(e.retryAfterMs / 1000)) } },
       );
     }
-    console.error("[bulk-cancel] Route", e);
+    console.error("[bulk-cancel] Route", describeError(e));
     return NextResponse.json({ error: "Sammel-Storno fehlgeschlagen." }, { status: 500, headers: NO_STORE });
   }
 }

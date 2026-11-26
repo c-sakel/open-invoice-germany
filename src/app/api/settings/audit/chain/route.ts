@@ -7,13 +7,14 @@ import { z } from "zod";
 import { getActiveOrg } from "@/lib/org";
 import { listChainVerifications, verifyOrgChain } from "@/domain/audit/verify-chain";
 import { auditChainListQuerySchema, auditChainVerifyInputSchema } from "@/schemas/audit";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function errorResponse(e: unknown) {
   if (e instanceof z.ZodError) return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });
-  console.error("[audit-chain]", e);
+  console.error("[audit-chain]", describeError(e));
   return NextResponse.json({ error: "Unerwarteter Fehler" }, { status: 500 });
 }
 

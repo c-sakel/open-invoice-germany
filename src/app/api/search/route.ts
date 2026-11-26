@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getActiveOrg } from "@/lib/org";
 import { searchQuerySchema } from "@/schemas/search";
 import { globalSearch } from "@/domain/search/query";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,7 +22,7 @@ export async function GET(req: Request) {
     const result = await globalSearch(org.id, parsed.data);
     return NextResponse.json(result, { headers: { "cache-control": "no-store" } });
   } catch (e) {
-    console.error("GET /api/search:", e);
+    console.error("GET /api/search:", describeError(e));
     return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }
 }

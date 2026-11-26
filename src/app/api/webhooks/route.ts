@@ -4,6 +4,7 @@ import { getActiveOrg } from "@/lib/org";
 import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/lib/auth/require-session";
 import { listWebhookEndpoints, createWebhookEndpoint } from "@/domain/webhook/endpoints";
 import { SsrfBlockedError } from "@/domain/webhook/ssrf";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,7 +31,7 @@ export async function POST(req: Request) {
     if (e instanceof SsrfBlockedError) {
       return NextResponse.json({ error: e.message }, { status: 400 });
     }
-    console.error("POST /api/webhooks:", e);
+    console.error("POST /api/webhooks:", describeError(e));
     return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }
 }

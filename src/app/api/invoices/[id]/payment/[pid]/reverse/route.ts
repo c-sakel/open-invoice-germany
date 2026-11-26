@@ -7,6 +7,7 @@ import { PaymentError } from "@/domain/invoice/payment";
 import { NotFoundError } from "@/domain/errors";
 import { reversePaymentInputSchema } from "@/schemas/payment-correction";
 import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/lib/auth/require-session";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 
@@ -40,7 +41,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string; pi
     if (e instanceof NotFoundError) return NextResponse.json({ error: e.message }, { status: 404 });
     // Fachlicher Konflikt wie REST (Spec: 409); sonst generische Meldung ohne interne Details.
     if (e instanceof PaymentError) return NextResponse.json({ error: e.message }, { status: 409 });
-    console.error("payment reverse: unerwarteter Fehler", e);
+    console.error("payment reverse: unerwarteter Fehler", describeError(e));
     return NextResponse.json({ error: "Interner Fehler bei der Gegenbuchung." }, { status: 500 });
   }
 }

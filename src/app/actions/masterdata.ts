@@ -286,7 +286,7 @@ export async function saveProduct(_prev: ActionResult, fd: FormData): Promise<Ac
     // verwertbare Meldung ("Steuersatz X % ist ... nicht freigegeben") — die ging vorher
     // im generischen "Speichern fehlgeschlagen." unter.
     if (e instanceof TaxRateNotAllowedError) return { ok: false, error: e.message };
-    console.error("saveProduct:", e);
+    console.error("saveProduct:", describeError(e));
     return { ok: false, error: "Speichern fehlgeschlagen." };
   }
   revalidatePath("/produkte");
@@ -339,7 +339,7 @@ export async function createProductInline(input: CreateProductInlineInput): Prom
     return { ok: true, product: { id: product.id, name: product.name, unit: product.unit, netPriceCents: product.netPriceCents, taxRate: product.taxRate } };
   } catch (e) {
     if (e instanceof TaxRateNotAllowedError) return { ok: false, error: e.message };
-    console.error("createProductInline:", e);
+    console.error("createProductInline:", describeError(e));
     return { ok: false, error: "Speichern fehlgeschlagen." };
   }
 }

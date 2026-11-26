@@ -17,6 +17,7 @@ import { tagDocument, untagDocument } from "@/domain/tag/assign";
 import { NotFoundError } from "@/domain/errors";
 import { RelationError } from "@/domain/relations";
 import type { TagColor, TagDocType } from "@/schemas/tag";
+import { describeError } from "@/lib/safe-error";
 
 export interface TagActionResult {
   ok: boolean;
@@ -41,7 +42,7 @@ export async function saveTagAction(input: { id: string | null; name: string; co
     if (e instanceof TagNotFoundError) return { ok: false, error: "Tag nicht gefunden." };
     if (e instanceof TagNameConflictError) return { ok: false, error: e.message };
     if (e instanceof z.ZodError) return { ok: false, error: firstError(e.issues) };
-    console.error("saveTagAction:", e);
+    console.error("saveTagAction:", describeError(e));
     return { ok: false, error: "Speichern fehlgeschlagen." };
   }
   revalidatePath("/einstellungen/tags");
@@ -58,7 +59,7 @@ export async function deleteTagAction(input: { id: string }): Promise<DeleteTagA
     return { ok: true, removedAssignments };
   } catch (e) {
     if (e instanceof TagNotFoundError) return { ok: false, error: "Tag nicht gefunden." };
-    console.error("deleteTagAction:", e);
+    console.error("deleteTagAction:", describeError(e));
     return { ok: false, error: "Löschen fehlgeschlagen." };
   }
 }
@@ -74,7 +75,7 @@ export async function tagDocumentAction(input: { docType: TagDocType; docId: str
   } catch (e) {
     if (e instanceof NotFoundError) return { ok: false, error: "Tag nicht gefunden." };
     if (e instanceof RelationError) return { ok: false, error: "Beleg nicht gefunden." };
-    console.error("tagDocumentAction:", e);
+    console.error("tagDocumentAction:", describeError(e));
     return { ok: false, error: "Tag konnte nicht gesetzt werden." };
   }
   revalidatePath(docPath(input.docType, input.docId));
@@ -89,7 +90,7 @@ export async function untagDocumentAction(input: { docType: TagDocType; docId: s
     await untagDocument(org.id, input.tagId, { docType: input.docType, docId: input.docId }, actor);
   } catch (e) {
     if (e instanceof NotFoundError) return { ok: false, error: "Tag nicht gefunden." };
-    console.error("untagDocumentAction:", e);
+    console.error("untagDocumentAction:", describeError(e));
     return { ok: false, error: "Tag konnte nicht entfernt werden." };
   }
   revalidatePath(docPath(input.docType, input.docId));

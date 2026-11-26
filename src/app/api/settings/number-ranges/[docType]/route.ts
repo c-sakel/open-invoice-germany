@@ -4,6 +4,7 @@ import { getActiveOrg } from "@/lib/org";
 import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/lib/auth/require-session";
 import { updateNumberRange, NUMBER_RANGE_DOC_TYPES } from "@/domain/numbering/ranges";
 import { InvalidOperationError } from "@/domain/errors";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,7 +28,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ docType: string
     if (e instanceof InvalidOperationError) {
       return NextResponse.json({ error: e.message }, { status: 409 });
     }
-    console.error("PUT /api/settings/number-ranges/[docType]:", e);
+    console.error("PUT /api/settings/number-ranges/[docType]:", describeError(e));
     return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }
 }

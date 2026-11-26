@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getActiveOrg } from "@/lib/org";
 import { NotFoundError, ValidationError } from "@/domain/errors";
 import { renderLayoutPreview } from "@/domain/layout-design/preview";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,7 +37,7 @@ export async function POST(req: Request) {
     }
     if (e instanceof ValidationError) return NextResponse.json({ error: e.message }, { status: 400 });
     if (e instanceof NotFoundError) return NextResponse.json({ error: e.message }, { status: 404 });
-    console.error("POST /api/settings/layout-design/preview:", e);
+    console.error("POST /api/settings/layout-design/preview:", describeError(e));
     return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }
 }
