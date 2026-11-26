@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  draftLacksDeliveryInfo,
   type DraftLine,
   type DraftState,
   draftReducer,
@@ -527,5 +528,19 @@ describe("editor/draft", () => {
     expect(s.lines[0]!.ossCategory).toBeUndefined();
     expect((toInvoicePayload(s, true).lines as { ossCategory?: string }[])[0]!.ossCategory).toBeUndefined();
     expect(base.lines[0]!.ossCategory).toBeUndefined();
+  });
+});
+
+describe("draftLacksDeliveryInfo (Vorabwarnung Leistungszeitpunkt)", () => {
+  const base = { deliveryDate: "", deliveryStart: "", deliveryEnd: "", deliveryDateFollowsIssue: false, notes: "" };
+  it("warnt ohne Datum, Zeitraum und Freitext-Datum", () => {
+    expect(draftLacksDeliveryInfo(base)).toBe(true);
+    expect(draftLacksDeliveryInfo({ ...base, notes: "Danke 2311", deliveryStart: "2311-06-01" })).toBe(true);
+  });
+  it("warnt nicht bei Datum, Zeitraum, Folgen des Belegdatums oder Datum im Freitext", () => {
+    expect(draftLacksDeliveryInfo({ ...base, deliveryDate: "2311-06-01" })).toBe(false);
+    expect(draftLacksDeliveryInfo({ ...base, deliveryStart: "2311-06-01", deliveryEnd: "2311-06-30" })).toBe(false);
+    expect(draftLacksDeliveryInfo({ ...base, deliveryDateFollowsIssue: true })).toBe(false);
+    expect(draftLacksDeliveryInfo({ ...base, notes: "Leistung im June 2311" })).toBe(false);
   });
 });

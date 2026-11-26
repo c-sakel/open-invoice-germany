@@ -88,7 +88,8 @@ describe("Scheduler-Routen: Session-Schutz", () => {
     sessionStore.userId = "user-1";
     const res = await schedulerRunPost(new Request("http://localhost/api/scheduler/run", { method: "POST" }));
     expect([200, 207]).toContain(res.status);
-  });
+    // Der Lauf fuehrt alle Jobs ueber saemtliche Organisationen der gemeinsamen Test-DB aus; deren Zahl waechst mit der Suite.
+  }, 60_000);
 
   it("GET /api/scheduler/runs: 401 ohne Session", async () => {
     sessionStore.userId = null;

@@ -8,7 +8,7 @@ import { loadPrintSettings, savePrintSettings, setPrintOptions } from "@/domain/
 import { loadBrandingSettings, saveBrandingSettings } from "@/domain/settings/branding";
 import { listNumberRanges, updateNumberRange } from "@/domain/numbering/ranges";
 import { loadDunningSettings, saveDunningSettings } from "@/domain/dunning/settings";
-import { listBaseRates, upsertBaseRate, deleteBaseRate } from "@/domain/dunning/base-rate";
+import { listBaseRates, upsertBaseRate, deleteBaseRate, missingBaseRateHalfYear } from "@/domain/dunning/base-rate";
 import { NotFoundError, InvalidOperationError, ValidationError } from "@/domain/errors";
 import {
   documentSettingsInputSchema,
@@ -283,14 +283,22 @@ export function registerSettingsTools(server: McpServer, ctx: McpToolsContext): 
     {
       title: "Basiszinssatz-Historie auflisten",
       description:
-        "Listet die Basiszinssatz-Historie der Organisation (§ 288 Abs. 1 Satz 2 BGB, Bekanntgabe der Deutschen Bundesbank zum 01.01./01.07.), aufsteigend nach 'gueltig ab'. Der fuer einen Tag gueltige Satz ist der Eintrag mit dem groessten 'gueltig ab' <= diesem Tag.",
+        "Listet die Basiszinssatz-Historie der Organisation (§ 288 Abs. 1 Satz 2 BGB, Bekanntgabe der Deutschen Bundesbank zum 01.01./01.07.), aufsteigend nach 'gueltig ab', als JSON-Array im ersten Text-Block; fehlt fuer das laufende Halbjahr ein Satz, folgt ein zweiter Text-Block mit einer Warnung (bis zur Eingabe wird mit dem letzten Satz gerechnet). Der fuer einen Tag gueltige Satz ist der Eintrag mit dem groessten 'gueltig ab' <= diesem Tag.",
       inputSchema: {},
     },
     async (): Promise<Result> => {
       try {
         const org = await ctx.requireOrg();
         const rates = await listBaseRates(org.id);
-        return ctx.ok(JSON.stringify(rates, null, 2));
+        const missing = missingBaseRateHalfYear(rates, new Date());
+        const content: Result["content"] = [{ type: "text", text: JSON.stringify(rates, null, 2) }];
+        if (missing) {
+          content.push({
+            type: "text",
+            text: `Warnung: Für das ${missing.label} ist kein Basiszinssatz gepflegt; bis zur Eingabe wird mit dem letzten Satz gerechnet.`,
+          });
+        }
+        return { content };
       } catch (e) {
         if (e instanceof ToolError) return ctx.fail(e.message);
         return ctx.failUnknown(e);

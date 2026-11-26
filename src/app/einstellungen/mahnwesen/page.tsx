@@ -2,7 +2,7 @@ import { getActiveOrg } from "@/lib/org";
 import { SettingsTabs } from "@/components/SettingsTabs";
 import { listDunningStages } from "@/domain/dunning/stages";
 import { loadDunningSettings } from "@/domain/dunning/settings";
-import { listBaseRates } from "@/domain/dunning/base-rate";
+import { listBaseRates, missingBaseRateHalfYear, rateForDate } from "@/domain/dunning/base-rate";
 import { DunningStagesEditor } from "@/components/dunning/DunningStagesEditor";
 import { DunningSettingsForm } from "@/components/dunning/DunningSettingsForm";
 import { BaseRateTable } from "@/components/dunning/BaseRateTable";
@@ -12,6 +12,9 @@ export const dynamic = "force-dynamic";
 export default async function DunningSettingsPage() {
   const org = await getActiveOrg();
   const [stages, settings, baseRates] = await Promise.all([listDunningStages(org.id), loadDunningSettings(org.id), listBaseRates(org.id)]);
+
+  const missing = missingBaseRateHalfYear(baseRates, new Date());
+  const lastRatePercent = baseRates.length > 0 ? (rateForDate(baseRates, new Date()).rateBp / 100).toFixed(2).replace(".", ",") : null;
 
   return (
     <div className="space-y-6">
@@ -25,6 +28,12 @@ export default async function DunningSettingsPage() {
 
       <section className="space-y-3">
         <h2 className="text-sm font-semibold text-ink">Basiszinssatz-Historie (§ 288 Abs. 1 Satz 2 BGB)</h2>
+        {missing && (
+          <p role="alert" className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            Für das {missing.label} ist kein Basiszinssatz hinterlegt.
+            {lastRatePercent ? ` Bis zur Eingabe wird mit dem letzten Satz (${lastRatePercent} %) gerechnet.` : ""}
+          </p>
+        )}
         <BaseRateTable initial={baseRates.map((r) => ({ id: r.id, validFrom: r.validFrom.toISOString().slice(0, 10), rateBp: r.rateBp, source: r.source }))} />
       </section>
 

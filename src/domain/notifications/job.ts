@@ -25,6 +25,7 @@ import type { MailProvider } from "@/lib/mail/provider";
 import { loadBrand } from "@/domain/settings/brand";
 import { withHtmlPart } from "@/domain/email/html-part";
 import { checkOssNotifications } from "@/domain/reporting/oss-notify";
+import { checkBaseRateNotifications } from "@/domain/dunning/base-rate-notify";
 import { checkKuNotifications } from "@/domain/reporting/ku-notify";
 import { datevStatus } from "@/domain/export/datev/late";
 import { berlinDateKey } from "@/lib/berlin-time";
@@ -265,6 +266,12 @@ export async function runNotificationsJob(now: Date = new Date(), opts: RunNotif
         await processDatevLateItems(org.id, now, enabled, result.byType);
       } catch (e) {
         result.errors.push({ orgId: org.id, message: `DATEV-Nachtraege: ${e instanceof Error ? e.message : String(e)}` });
+      }
+      try {
+        const created = await checkBaseRateNotifications(org.id, now);
+        if (created > 0) result.byType.BASE_RATE_MISSING = (result.byType.BASE_RATE_MISSING ?? 0) + created;
+      } catch (e) {
+        result.errors.push({ orgId: org.id, message: `Basiszinssatz: ${e instanceof Error ? e.message : String(e)}` });
       }
       try {
         await processIncomingDue(org.id, now, enabled, result.byType);

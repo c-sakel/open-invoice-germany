@@ -14,7 +14,8 @@ import { withApi } from "@/api/auth";
 import { apiData, apiList } from "@/api/response";
 import { apiDataResponseSchema, apiListResponseSchema, type RouteSpec } from "@/api/spec";
 import { serializeBaseInterestRate, baseInterestRateSchema } from "@/api/serializers/base-interest-rate";
-import { listBaseRates, upsertBaseRate } from "@/domain/dunning/base-rate";
+import { z } from "zod";
+import { listBaseRates, upsertBaseRate, missingBaseRateHalfYear } from "@/domain/dunning/base-rate";
 import { baseInterestRateInputSchema } from "@/schemas";
 
 export const runtime = "nodejs";
@@ -23,7 +24,8 @@ export const dynamic = "force-dynamic";
 export const GET = withApi(async (_req, ctx) => {
   const rows = await listBaseRates(ctx.orgId);
   const serialized = rows.map(serializeBaseInterestRate);
-  return apiList(serialized, { total: serialized.length, limit: serialized.length, offset: 0 });
+  const missing = missingBaseRateHalfYear(rows, new Date());
+  return apiList(serialized, { total: serialized.length, limit: serialized.length, offset: 0 }, 200, { currentHalfYearMissing: missing?.label ?? null });
 }, { scope: "admin" });
 
 export const POST = withApi(async (_req, ctx) => {
@@ -35,9 +37,11 @@ export const spec = {
   list: {
     path: "/api/v1/BaseInterestRate",
     method: "GET",
-    summary: "Basiszinssatz-Historie auflisten (aufsteigend nach 'gueltig ab', keine Paginierung)",
+    summary: "Basiszinssatz-Historie auflisten (aufsteigend nach 'gueltig ab', keine Paginierung); zusaetzlich zum Listenumschlag liefert die Antwort 'currentHalfYearMissing' (Label des laufenden Halbjahres, z. B. '1. Halbjahr 2026', falls dafuer kein Satz gepflegt ist, sonst null; bis zur Eingabe wird mit dem letzten Satz gerechnet)",
     scope: "admin",
-    response: apiListResponseSchema(baseInterestRateSchema),
+    response: apiListResponseSchema(baseInterestRateSchema).extend({
+      currentHalfYearMissing: z.string().nullable().optional().describe("Label des laufenden Halbjahres, falls dafuer kein Satz gepflegt ist, sonst null"),
+    }),
     errors: [401, 403, 429],
   },
   create: {

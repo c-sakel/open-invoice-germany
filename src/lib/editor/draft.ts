@@ -14,7 +14,7 @@
 import { optionalSelectValue } from "@/lib/forms/optional-select";
 import { SCHEME_CATEGORY, schemeNoticeFor, FALLBACK_TAX_RATES, type EditorMode } from "./constants";
 import type { DocLanguage } from "@/lib/i18n/doc/types";
-import { SCHEME_NOTICE_ACCEPTED, normalizeNotice, swapSchemeNotice } from "@/domain/invoice/mandatory";
+import { SCHEME_NOTICE_ACCEPTED, normalizeNotice, notesStateDeliveryTime, swapSchemeNotice } from "@/domain/invoice/mandatory";
 import { toCents, toMilli, toPermille, fromCents, fromMilli, fromPermille, centsOrZero, milliOrZero, permilleOrZero, priceFieldError, priceFieldsOrZero, normalizePriceInput, toPrice, PRICE_FIELD_ERROR } from "./parse";
 import { newLineKey } from "./ids";
 import { blockRange, isNoopMove, slotToMoveTarget } from "./reorder";
@@ -520,6 +520,19 @@ export function draftLinesToPayload(lines: readonly DraftLine[], taxScheme: TaxS
       ...(usage && label ? { usageUnitLabel: label } : {}),
     };
   });
+}
+
+/**
+ * Editor-Vorabwarnung zu § 14 Abs. 4 Nr. 6: true, wenn der Entwurf weder Leistungsdatum noch vollstaendigen
+ * Zeitraum noch einen Freitext mit Leistungszeitpunkt traegt — dieselbe Regel wie beim Festschreiben
+ * (`notesStateDeliveryTime`). Folgt das Leistungsdatum dem Belegdatum, gilt es als gesetzt. Kennzeichnet nur.
+ */
+export function draftLacksDeliveryInfo(
+  d: Pick<DraftState, "deliveryDate" | "deliveryStart" | "deliveryEnd" | "deliveryDateFollowsIssue" | "notes">,
+): boolean {
+  if (d.deliveryDate.trim() || d.deliveryDateFollowsIssue) return false;
+  if (d.deliveryStart.trim() && d.deliveryEnd.trim()) return false;
+  return !notesStateDeliveryTime(d.notes);
 }
 
 export function toInvoicePayload(d: DraftState, isEdit: boolean): Record<string, unknown> {

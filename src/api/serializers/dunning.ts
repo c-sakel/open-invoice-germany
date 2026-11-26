@@ -43,8 +43,11 @@ export const dunningSchema = z.object({
   baseInterestRatePermille: z.number().int().nullable(),
   interestRatePoints: z.number().int().nullable(),
   interestAmountCents: z.number().int(),
-  interestFrom: z.string().nullable(),
-  interestBasis: z.enum(["MAHNUNG", "ENTGELT_30", "ENTGELT_30_LEISTUNG", "NONE"]).nullable(),
+  interestFrom: z.string().nullable().describe("Erster Zinstag (YYYY-MM-DD); leer, solange noch keine Zinstage angefallen sind"),
+  interestBasis: z
+    .enum(["MAHNUNG", "ENTGELT_30", "ENTGELT_30_LEISTUNG", "NONE"])
+    .nullable()
+    .describe("Grund des Verzugs; interestFrom leer = noch keine Zinstage; NONE = Verzug noch nicht eingetreten"),
   lateFeeCents: z.number().int(),
   flatFee40Cents: z.number().int(),
   claimBaseCents: z.number().int(),

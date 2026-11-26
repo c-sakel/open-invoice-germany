@@ -6,6 +6,7 @@
  * Stufe dran ist und ob sie bereits faellig ist.
  */
 import { dbInternal } from "@/lib/db";
+import { berlinCalendarDay } from "@/lib/berlin-time";
 import { assignDocumentNumber } from "@/domain/numbering/ranges";
 import { computeInterestSegments } from "@/lib/dunning";
 import { loadBaseRates } from "@/domain/dunning/base-rate";
@@ -217,10 +218,13 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
     // eingetreten ist; sonst 0 (der Hinweis auf fehlenden Verzug bleibt). Unabhaengig vom Zinsschalter der Stufe.
     const inVerzug = v.verzugAt !== null;
     const applyFlatFee = stage.includeB2BFlatFee && !isConsumer && !alreadyHasFlat && inVerzug;
+    // Berliner Kalendertag der Mahnung (date-only): Zinsende (exklusiv, d. h. Zinsen bis einschliesslich Vortag wie bisher)
+    // und Basis der neuen Zahlungsfrist. Zwischen 0 und 2 Uhr Berliner Zeit liegt der UTC-Tag noch einen Tag zurueck.
+    const mahnDay = berlinCalendarDay(now);
     const seg = computeInterestSegments({
       openAmountCents: openAmount,
-      from: v.from ?? now,
-      to: now,
+      from: v.from ?? mahnDay,
+      to: mahnDay,
       isConsumer,
       rates,
     });
@@ -236,7 +240,7 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
     // B3 (Final-Review): ueber assignDocumentNumber() — siehe invoice/finalize.ts.
     const number = await assignDocumentNumber(tx, inv.orgId, "DUNNING", now);
 
-    const newDueDate = new Date(now.getTime() + stage.newDueDays * 24 * 60 * 60 * 1000);
+    const newDueDate = new Date(mahnDay.getTime() + stage.newDueDays * 24 * 60 * 60 * 1000);
 
     const sellerSnapshotJson = JSON.stringify(buildSellerSnapshot(inv.org));
     const buyerSnapshotJson = JSON.stringify(buildBuyerSnapshot(inv.customer));

@@ -5,6 +5,8 @@
  * dran ist und ob sie bereits faellig ist.
  */
 
+import { berlinParts } from "@/lib/berlin-time";
+
 export interface StageLike {
   id: string;
   order: number;
@@ -31,7 +33,7 @@ export interface DunningSchedule<S extends StageLike = StageLike> {
   nextStage: S | null;
   /** Zeitpunkt, ab dem `nextStage` faellig wird (null, wenn es keine `nextStage` gibt). */
   dueAt: Date | null;
-  /** `now` liegt taggenau (UTC-Datum) auf oder nach `dueAt`. */
+  /** `now` liegt taggenau (Berliner Kalendertag) auf oder nach `dueAt`. */
   isDue: boolean;
   /** Ganze Tage seit der Rechnungsfaelligkeit bis `now` (Basis fuer den Verzugszins). */
   daysOverdue: number;
@@ -41,8 +43,15 @@ function addDays(d: Date, days: number): Date {
   return new Date(d.getTime() + days * 24 * 60 * 60 * 1000);
 }
 
-/** Nur das UTC-Kalenderdatum (ohne Uhrzeit) als Millisekunden-Zeitstempel — fuer den
- *  tagesgenauen Faelligkeitsvergleich (`isDue`), unabhaengig von der Uhrzeit von `now`. */
+/** Berliner Kalendertag von `now` als UTC-Mitternacht-Zeitstempel (Y-M-D aus berlinParts). `dueAt`
+ *  ist ein reines Kalenderdatum (UTC-Mitternacht, Faelligkeit/daysAfterDue) und wird weiter per
+ *  UTC-Datum gelesen; nur der Bezugstag `now` zaehlt nach Berliner Kalender. */
+function berlinDateOnly(d: Date): number {
+  const p = berlinParts(d);
+  return Date.UTC(p.year, p.month - 1, p.day);
+}
+
+/** Kalenderdatum eines Datums-Feldes (UTC-Mitternacht) als Zeitstempel. */
 function utcDateOnly(d: Date): number {
   return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
 }
@@ -128,7 +137,7 @@ export function dunningScheduleFor<S extends StageLike>(input: DunningScheduleIn
   const base = input.lastDunning ? (input.lastDunning.dueDate ?? input.lastDunning.sentAt) : input.invoiceDueDate;
   const grace = nextStage.order === 0 ? input.gracePeriodDays : 0;
   const dueAt = addDays(base, nextStage.daysAfterDue + grace);
-  const isDue = utcDateOnly(input.now) >= utcDateOnly(dueAt);
+  const isDue = berlinDateOnly(input.now) >= utcDateOnly(dueAt);
 
   return { nextStage, dueAt, isDue, daysOverdue };
 }
