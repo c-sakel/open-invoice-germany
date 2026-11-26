@@ -22,6 +22,7 @@ import { computeTaxBreakdown } from "@/lib/tax";
 import { splitByTaxRate, formatPermilleDE, type TaxRateSplit } from "@/lib/pricing/partial";
 import { PricingError } from "@/lib/pricing/errors";
 import type { RateBucket } from "@/lib/pricing/allocate";
+import { withChangeLogRetry } from "@/lib/chain-retry";
 import { appendChangeLog } from "@/domain/audit";
 import { linkDocuments, listRelations } from "@/domain/relations";
 import { createDraftInvoiceWithinTx } from "@/domain/invoice/create";
@@ -51,7 +52,7 @@ export async function createDownpaymentInvoice(orgId: string, rawInput: unknown,
   const now = opts.now ?? new Date();
   const actor = opts.actor ?? "system";
 
-  return dbInternal.$transaction(async (tx: Prisma.TransactionClient) => {
+  return withChangeLogRetry(() => dbInternal.$transaction(async (tx: Prisma.TransactionClient) => {
     // Zeilensperre (17b) schliesst das Fenster unter Postgres (SQLite: No-op).
     await lockRow(tx, "Quote", input.sourceId, orgId);
     const quote = await tx.quote.findFirst({ where: { id: input.sourceId, orgId }, include: { lines: { orderBy: { position: "asc" } } } });
@@ -206,5 +207,5 @@ export async function createDownpaymentInvoice(orgId: string, rawInput: unknown,
     });
 
     return tx.invoice.findUniqueOrThrow({ where: { id: invoice.id }, include: { lines: { orderBy: { position: "asc" } } } });
-  });
+  }));
 }

@@ -13,6 +13,7 @@
 import { lockRow } from "@/lib/db-lock";
 import type { Prisma, Payment, Invoice } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
+import { withChangeLogRetry } from "@/lib/chain-retry";
 import { appendChangeLog } from "@/domain/audit";
 import { logActivity } from "@/domain/activity/log";
 import { emitEvent } from "@/domain/webhook/emit";
@@ -78,7 +79,7 @@ export async function recordPayment(
   input: RecordPaymentInput,
   opts: RecordPaymentOptions = {},
 ): Promise<RecordPaymentResult> {
-  const result = await dbInternal.$transaction((tx) => recordPaymentWithinTx(tx, invoiceId, input, opts));
+  const result = await withChangeLogRetry(() => dbInternal.$transaction((tx) => recordPaymentWithinTx(tx, invoiceId, input, opts)));
   // Nach dem Commit: faellige Regel-Laeufe anstossen (Fehler beruehren die Zahlung nie).
   kickPaymentRules(result.payment.orgId);
   await onPaymentChangedKu(result.payment.orgId, opts.now);

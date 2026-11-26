@@ -7,6 +7,7 @@
 import { lockRow } from "@/lib/db-lock";
 import { dbInternal } from "@/lib/db";
 import { computeTaxBreakdown } from "@/lib/tax";
+import { withChangeLogRetry } from "@/lib/chain-retry";
 import { appendChangeLog } from "@/domain/audit";
 import { logActivity, type ActivityEntityType } from "@/domain/activity/log";
 import { linkDocuments } from "@/domain/relations";
@@ -60,7 +61,7 @@ export async function convertDocumentToInvoice(orgId: string, documentId: string
   const now = opts.now ?? new Date();
   const actor = opts.actor ?? "system";
 
-  return dbInternal.$transaction(async (tx) => {
+  return withChangeLogRetry(() => dbInternal.$transaction(async (tx) => {
     // Zeilensperre (17b) als erste Anweisung: serialisiert parallele Umwandlungen unter Postgres;
     // die convertedToInvoiceId-Pruefung unten liest erst nach der Sperre.
     await lockRow(tx, "Quote", documentId, orgId);
@@ -181,7 +182,7 @@ export async function convertDocumentToInvoice(orgId: string, documentId: string
     await logActivity(tx, { orgId: q.orgId, entityType: "QUOTE", entityId: documentId, type: "CONVERTED", actor, at: now, data: { toInvoice: invoice.id } });
 
     return invoice;
-  });
+  }));
 }
 
 /**
@@ -195,7 +196,7 @@ export async function convertDocumentToInvoice(orgId: string, documentId: string
 async function convertQuoteToOrderConfirmation(orgId: string, fromId: string, opts: ResolvedConvertOptions): Promise<Quote> {
   const { actor, now } = opts;
 
-  return dbInternal.$transaction(async (tx) => {
+  return withChangeLogRetry(() => dbInternal.$transaction(async (tx) => {
     // Zeilensperre (17b) als erste Anweisung (serialisiert parallele Umwandlungen und den Statuswechsel).
     await lockRow(tx, "Quote", fromId, orgId);
     const src = await tx.quote.findFirst({ where: { id: fromId, orgId }, include: { lines: { orderBy: { position: "asc" } } } });
@@ -255,7 +256,7 @@ async function convertQuoteToOrderConfirmation(orgId: string, fromId: string, op
     await logActivity(tx, { orgId, entityType: "QUOTE", entityId: fromId, type: "CONVERTED", actor, at: now, data: { toOrderConfirmation: ab.id } });
 
     return ab;
-  });
+  }));
 }
 
 /**
@@ -271,7 +272,7 @@ async function convertToDeliveryNote(orgId: string, input: ConvertDocumentInput,
   const fromType = input.fromType as DeliverySourceType;
   const fromId = input.fromId;
 
-  return dbInternal.$transaction(async (tx) => {
+  return withChangeLogRetry(() => dbInternal.$transaction(async (tx) => {
     // Zeilensperre (17b, W1): serialisiert parallele Lieferscheine aus derselben Quelle unter Postgres (SQLite: No-op).
     await lockRow(tx, fromType === "QUOTE" ? "Quote" : "Invoice", fromId, orgId);
     let sourceLanguage: string | undefined;
@@ -339,7 +340,7 @@ async function convertToDeliveryNote(orgId: string, input: ConvertDocumentInput,
     await logActivity(tx, { orgId, entityType: sourceEntityType, entityId: fromId, type: "CONVERTED", actor: opts.actor, at: opts.now, data: { toDeliveryNote: note.id } });
 
     return note;
-  });
+  }));
 }
 
 /** Generischer Einstieg: dispatcht nach `toKind`, parst die Eingabe selbst. */

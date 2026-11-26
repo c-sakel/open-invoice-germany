@@ -10,6 +10,7 @@
  * innerhalb einer Prisma-Transaktion (SQLite-Sperre).
  */
 import { dbInternal } from "@/lib/db";
+import { withChangeLogRetry } from "@/lib/chain-retry";
 import { appendChangeLog } from "@/domain/audit";
 import { logActivity, type ActivityEntityType } from "@/domain/activity/log";
 import { emitEvent } from "@/domain/webhook/emit";
@@ -98,7 +99,7 @@ export interface FinishEmailLogInput {
 /** Verbucht das Versandergebnis (Update des Logs + ChangeLog EMAIL) in EINER Transaktion. */
 export async function finishEmailLog(input: FinishEmailLogInput): Promise<void> {
   const at = input.at ?? new Date();
-  await dbInternal.$transaction(async (tx) => {
+  await withChangeLogRetry(() => dbInternal.$transaction(async (tx) => {
     const updated = await tx.emailLog.update({
       where: { id: input.logId },
       data: {
@@ -158,7 +159,7 @@ export async function finishEmailLog(input: FinishEmailLogInput): Promise<void> 
       data: serializeEmailLog(updated),
       now: at,
     });
-  });
+  }));
 }
 
 /**
@@ -170,7 +171,7 @@ export async function markEmailBounced(orgId: string, logId: string, actor = "sy
   const log = await dbInternal.emailLog.findFirst({ where: { id: logId, orgId } });
   if (!log || log.status !== "SENT") return false;
 
-  const changed = await dbInternal.$transaction(async (tx) => {
+  const changed = await withChangeLogRetry(() => dbInternal.$transaction(async (tx) => {
     const upd = await tx.emailLog.updateMany({ where: { id: logId, orgId, status: "SENT" }, data: { status: "BOUNCED" } });
     if (upd.count !== 1) return false;
     await appendChangeLog(tx, {
@@ -187,7 +188,7 @@ export async function markEmailBounced(orgId: string, logId: string, actor = "sy
       await logActivity(tx, { orgId, entityType, entityId: log.docId, type: "BOUNCED", actor, at: now });
     }
     return true;
-  });
+  }));
   if (!changed) return false;
 
   const to = (JSON.parse(log.toJson) as string[])[0];
@@ -232,7 +233,7 @@ export async function reconcileStaleQueuedEmails(now: Date, opts: { limit?: numb
     // Je Zeile abgefangen: eine Kollision der ChangeLog-Kette mit einem parallelen Schreiber
     // derselben Org darf den Cleanup-Job (und die nachfolgenden Loeschschritte) nicht abbrechen;
     // die Zeile bleibt QUEUED und wird im naechsten Lauf erneut versucht.
-    const done = await dbInternal.$transaction(async (tx) => {
+    const done = await withChangeLogRetry(() => dbInternal.$transaction(async (tx) => {
       const res = await tx.emailLog.updateMany({
         where: { id: row.id, status: "QUEUED" },
         data: { status: "FAILED", error: QUEUED_RECONCILE_ERROR, sentAt: null },
@@ -267,7 +268,7 @@ export async function reconcileStaleQueuedEmails(now: Date, opts: { limit?: numb
         now,
       });
       return true;
-    }).catch((e: unknown) => {
+    })).catch((e: unknown) => {
       console.warn("[email-reconcile] Zeile uebersprungen:", row.id, e instanceof Error ? e.message : e);
       return false;
     });

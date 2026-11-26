@@ -24,6 +24,7 @@ import { computeLineNet } from "@/lib/pricing/line";
 import { splitByTaxRate, formatPermilleDE, type TaxRateSplit } from "@/lib/pricing/partial";
 import { PricingError } from "@/lib/pricing/errors";
 import type { RateBucket } from "@/lib/pricing/allocate";
+import { withChangeLogRetry } from "@/lib/chain-retry";
 import { appendChangeLog } from "@/domain/audit";
 import { linkDocuments, listRelations } from "@/domain/relations";
 import { createDraftInvoiceWithinTx } from "@/domain/invoice/create";
@@ -579,7 +580,7 @@ export async function createPartialInvoice(orgId: string, rawInput: unknown, opt
   const now = opts.now ?? new Date();
   const actor = opts.actor ?? "system";
 
-  return dbInternal.$transaction(async (tx) => {
+  return withChangeLogRetry(() => dbInternal.$transaction(async (tx) => {
     // Zeilensperre (17b) schliesst das Fenster unter Postgres (SQLite: No-op).
     await lockRow(tx, input.sourceType === "QUOTE" ? "Quote" : "DeliveryNote", input.sourceId, orgId);
     const source = await loadPartialSource(tx, orgId, input.sourceType, input.sourceId);
@@ -699,5 +700,5 @@ export async function createPartialInvoice(orgId: string, rawInput: unknown, opt
     });
 
     return tx.invoice.findUniqueOrThrow({ where: { id: invoice.id }, include: { lines: { orderBy: { position: "asc" } } } });
-  });
+  }));
 }

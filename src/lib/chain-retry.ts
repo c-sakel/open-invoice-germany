@@ -8,11 +8,11 @@ export function isChangeLogChainConflict(e: unknown): boolean {
   return text.includes("prevHash");
 }
 
-/** Versuche fuer Festschreiben/Storno: mehr parallele Schreiber als Versuche gaebe 500 unter Last (Bulk, Abo-Lauf). */
+/** Standardversuche fuer alle ChangeLog-Schreiber: mehr parallele Schreiber als Versuche gaebe 500 unter Last (Bulk, Abo-Lauf). */
 export const CHAIN_RETRY_ATTEMPTS = 8;
 
 export interface ChangeLogRetryOptions<T> {
-  /** Gesamtzahl der Versuche (Standard 4; Festschreiben/Storno 8). */
+  /** Gesamtzahl der Versuche (Standard CHAIN_RETRY_ATTEMPTS = 8). */
   attempts?: number;
   /** Vor jeder Wiederholung: liefert ein Wert, ist die Arbeit bereits erledigt (idempotent) und wird zurueckgegeben. */
   alreadyDone?: () => Promise<T | undefined>;
@@ -25,7 +25,7 @@ export interface ChangeLogRetryOptions<T> {
  * kollidiert (P2002 auf orgId+prevHash). Alle anderen Fehler werden sofort durchgereicht.
  */
 export async function withChangeLogRetry<T>(fn: () => Promise<T>, opts: ChangeLogRetryOptions<T> = {}): Promise<T> {
-  const attempts = opts.attempts ?? 4;
+  const attempts = opts.attempts ?? CHAIN_RETRY_ATTEMPTS;
   const delay = opts.delayMs ?? ((n: number) => 5 + Math.random() * 35 * (n + 1));
   for (let attempt = 0; ; attempt++) {
     try {

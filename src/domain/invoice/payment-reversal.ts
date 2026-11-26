@@ -11,6 +11,7 @@
 import { lockRow } from "@/lib/db-lock";
 import type { Prisma, Payment } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
+import { withChangeLogRetry } from "@/lib/chain-retry";
 import { appendChangeLog } from "@/domain/audit";
 import { logActivity } from "@/domain/activity/log";
 import { emitEvent } from "@/domain/webhook/emit";
@@ -247,7 +248,7 @@ export async function reversePayment(
   const now = opts.now ?? new Date();
   const createdBy = opts.createdBy ?? "user";
 
-  const result = await dbInternal.$transaction((tx) => reversePaymentWithinTx(tx, paymentId, input, { actor: opts.actor, orgId: opts.orgId, now, createdBy }));
+  const result = await withChangeLogRetry(() => dbInternal.$transaction((tx) => reversePaymentWithinTx(tx, paymentId, input, { actor: opts.actor, orgId: opts.orgId, now, createdBy })));
 
   await onPaymentChangedKu(result.orgId, now);
 

@@ -8,6 +8,7 @@
 import { dbInternal } from "@/lib/db";
 import { computeLineNet } from "@/lib/pricing/line";
 import { computeTaxBreakdown } from "@/lib/tax";
+import { withChangeLogRetry } from "@/lib/chain-retry";
 import { appendChangeLog } from "@/domain/audit";
 import { assertOverrideAllowed } from "@/domain/fx/correction";
 import { logActivity } from "@/domain/activity/log";
@@ -39,7 +40,7 @@ export async function updateDraftInvoice(orgId: string, id: string, rawInput: un
   const input = updateInvoiceSchema.parse(rawInput);
   const now = new Date();
 
-  return dbInternal.$transaction(async (tx) => {
+  return withChangeLogRetry(() => dbInternal.$transaction(async (tx) => {
     const invoice = await tx.invoice.findFirst({ where: { id, orgId }, include: { lines: { orderBy: { position: "asc" } } } });
     if (!invoice) throw new NotFoundError(`Rechnung ${id} nicht gefunden.`);
     if (invoice.status !== "DRAFT") {
@@ -292,5 +293,5 @@ export async function updateDraftInvoice(orgId: string, id: string, rawInput: un
     await logActivity(tx, { orgId, entityType: "INVOICE", entityId: id, type: "UPDATED", actor, at: now, data: { changedFields } });
 
     return updated;
-  });
+  }));
 }
