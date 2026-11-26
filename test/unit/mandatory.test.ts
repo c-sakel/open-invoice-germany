@@ -191,3 +191,22 @@ describe("englische Pflichthinweise (Phase 16b)", () => {
     expect(swapSchemeNotice(SCHEME_NOTICE_BY_LANG.en.AUSFUHR!, "AUSFUHR", "en", "en")).toBe(SCHEME_NOTICE_BY_LANG.en.AUSFUHR);
   });
 });
+
+describe("Freitext als Leistungszeitpunkt (nur mit Datum)", () => {
+  const ohne = (notes: string) => validateMandatoryFields(inv({ deliveryDate: null, notes }));
+  it("Freitext ohne Datum wird gemeldet", () => {
+    for (const n of ["Vielen Dank für Ihren Auftrag", "Leistungsdatum: siehe Lieferschein"])
+      expect(ohne(n).join(" ")).toMatch(/Leistungs-\/Lieferzeitpunkt/);
+  });
+  it("Datum, Monat/Jahr, Quartal und Rechnungsdatum-Bezug genuegen", () => {
+    for (const n of ["Leistungszeitraum: März 2311", "Lieferung am 03.04.2311", "Leistungsdatum entspricht dem Rechnungsdatum", "Q2/2311", "2311-04-03", "Service date equals invoice date"])
+      expect(ohne(n)).toEqual([]);
+  });
+  it("deliveryDate/Zeitraum gesetzt: notes egal", () => {
+    expect(validateMandatoryFields(inv({ notes: "Danke" }))).toEqual([]);
+    expect(validateMandatoryFields(inv({ deliveryDate: null, deliveryStart: new Date("2026-06-01"), deliveryEnd: new Date("2026-06-30"), notes: "Danke" }))).toEqual([]);
+  });
+  it("Korrekturbeleg behaelt den alten Freitext-Pfad", () => {
+    expect(validateMandatoryFields(inv({ deliveryDate: null, notes: "Danke" }), { isCorrection: true })).toEqual([]);
+  });
+});

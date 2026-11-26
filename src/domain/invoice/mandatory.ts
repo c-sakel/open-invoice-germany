@@ -166,8 +166,23 @@ export function categoryNoticesToPrint(categories: Iterable<string>, notes: stri
   return out;
 }
 
-function hasDeliveryInfo(inv: MandatoryInvoice): boolean {
-  return Boolean(inv.deliveryDate || (inv.deliveryStart && inv.deliveryEnd) || inv.notes);
+/** Freitext gilt nur als Leistungszeitpunkt, wenn er ein Datum, Monat/Jahr, Quartal oder den Bezug aufs Rechnungsdatum nennt. */
+export const DELIVERY_NOTE_PATTERNS: readonly RegExp[] = [
+  /\b\d{1,2}\.\s?\d{1,2}\.\s?(\d{2}|\d{4})\b/,
+  /\b\d{4}-\d{2}-\d{2}\b/,
+  /\b(Januar|Februar|März|Maerz|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember|Jan|Feb|Mär|Apr|Jun|Jul|Aug|Sep|Sept|Okt|Nov|Dez)\.?\s+\d{4}\b/i,
+  /\b\d{1,2}\/\d{4}\b/,
+  /\bQ[1-4]\s?\/?\s?\d{4}\b/i,
+  /leistungs(datum|zeitpunkt)\s+(entspricht|ist|=|gleich)\s+(dem\s+)?(rechnungs|ausstellungs)datum/i,
+  /(delivery|service) date (equals|is|=) (the )?invoice date/i,
+];
+
+function hasDeliveryInfo(inv: MandatoryInvoice, lenientNotes = false): boolean {
+  if (inv.deliveryDate || (inv.deliveryStart && inv.deliveryEnd)) return true;
+  const notes = inv.notes ?? "";
+  if (!notes.trim()) return false;
+  // Korrekturbelege (Storno/Gutschrift) spiegeln einen bereits festgeschriebenen Beleg: Freitext genuegt weiter.
+  return lenientNotes || DELIVERY_NOTE_PATTERNS.some((re) => re.test(notes));
 }
 
 /** BR-IC-11: bei ig. Lieferung genuegt der Freitext NICHT — es braucht BT-72 oder BG-14. */
@@ -242,8 +257,8 @@ export function validateMandatoryFields(inv: MandatoryInvoice, opts: ValidateMan
   });
 
   // § 14 Abs. 4 Nr. 6 — Leistungszeitpunkt (nicht bei Kleinbetrag)
-  if (!smallAmount && !hasDeliveryInfo(inv))
-    problems.push("Leistungs-/Lieferzeitpunkt fehlt (§ 14 Abs. 4 Nr. 6) — Datum oder Zeitraum oder Hinweis erforderlich.");
+  if (!smallAmount && !hasDeliveryInfo(inv, isCorrection))
+    problems.push("Leistungs-/Lieferzeitpunkt fehlt (§ 14 Abs. 4 Nr. 6) — Datum oder Zeitraum oder Hinweis erforderlich (Freitext nur mit Datum, Monat/Jahr oder „Leistungsdatum entspricht Rechnungsdatum“).");
 
   // § 14 Abs. 4 Nr. 8 / § 14a — Steuerausweis oder Befreiungshinweis. C1 (Fix-Welle):
   // NICHT bei Korrekturbelegen — siehe ValidateMandatoryOptions.isCorrection. Ein
