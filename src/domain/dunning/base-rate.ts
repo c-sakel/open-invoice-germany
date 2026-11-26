@@ -23,6 +23,7 @@ import { dbInternal } from "@/lib/db";
 import { baseInterestRateInputSchema, type BaseInterestRateInput } from "@/schemas";
 import { NotFoundError, ValidationError } from "@/domain/errors";
 import { DEFAULT_DUNNING_SETTINGS } from "@/domain/dunning/settings";
+import { berlinParts } from "@/lib/berlin-time";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -139,4 +140,25 @@ export function rateForDate<T extends BaseRateEntry>(rates: readonly T[], date: 
     }
   }
   return candidate;
+}
+
+export interface MissingBaseRateHalfYear {
+  /** Halbjahresbeginn (1.1./1.7.) als UTC-Mitternacht des Kalendertags, wie `validFrom`. */
+  validFrom: Date;
+  /** z. B. "1. Halbjahr 2311". */
+  label: string;
+}
+
+/**
+ * Fehlt fuer das laufende Halbjahr (Berliner Kalender, § 288 Abs. 1 Satz 2 BGB) ein Eintrag mit
+ * genau dem Halbjahresbeginn als `validFrom`? Dann liefert die Funktion dieses Halbjahr, sonst
+ * `null`. Rein; die Berechnung selbst rechnet bei fehlendem Eintrag unveraendert mit dem letzten
+ * Satz weiter (`rateForDate`).
+ */
+export function missingBaseRateHalfYear(rates: readonly BaseRateEntry[], now: Date): MissingBaseRateHalfYear | null {
+  const { year, month } = berlinParts(now);
+  const half = month <= 6 ? 1 : 2;
+  const validFrom = new Date(Date.UTC(year, half === 1 ? 0 : 6, 1));
+  if (rates.some((r) => r.validFrom.getTime() === validFrom.getTime())) return null;
+  return { validFrom, label: `${half}. Halbjahr ${year}` };
 }
