@@ -58,9 +58,9 @@ oder per Cron angestoßen) zu Ende sind. Enden sie rechtzeitig, sind ihre Sperre
 bestehen und die Aufgabe wird danach erneut aufgenommen. Anschließend beendet sich die Anwendung mit Exitcode 0.
 Das Image setzt dafür `NEXT_MANUAL_SIG_HANDLE=true`.
 
-Laufende HTTP-Anfragen werden nicht abgewartet: Der Prozess schließt den HTTP-Server beim Beenden nicht geordnet.
-Kubernetes nimmt den Pod vor dem SIGTERM aus den Endpoints (neue Anfragen kommen nicht mehr an); bei Docker Compose
-ohne vorgeschalteten Proxy kann eine gerade laufende Anfrage abbrechen.
+Laufende HTTP-Anfragen bekommen eine Mindestwartezeit von 10 s (`SHUTDOWN_DRAIN_MS`, 0–45000), auch wenn keine
+Hintergrundaufgabe läuft und auch bei abgeschaltetem Scheduler. Kubernetes nimmt den Pod vor dem SIGTERM aus den
+Endpoints (neue Anfragen kommen nicht mehr an); Anfragen, die länger als die Wartezeit dauern, können abbrechen.
 
 - Kubernetes: `terminationGracePeriodSeconds: 60` (mindestens) im Pod setzen.
 - Docker Compose: `stop_grace_period: 60s` (in der mitgelieferten `docker-compose.yml` gesetzt).
