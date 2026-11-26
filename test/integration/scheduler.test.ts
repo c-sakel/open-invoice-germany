@@ -222,7 +222,7 @@ describe("Phase 6 — runScheduledJobs (scheduler/runner.ts)", () => {
   });
 
   it("Lock: alter (stale) SchedulerLock -> entfernt, SchedulerRun auf FAILED gesetzt, Job laeuft trotzdem", async () => {
-    const started = new Date("2051-06-09T09:00:00.000Z"); // 70 Min vor `now` -> stale (> 30 Min)
+    const started = new Date(Date.now() - 70 * 60_000); // 70 Min alt -> stale (> 30 Min, Wanduhr)
     const stale = await dbInternal.schedulerRun.create({ data: { job: "recurring", trigger: "SCHEDULER", status: "RUNNING", startedAt: started } });
     await dbInternal.schedulerLock.create({ data: { job: "recurring", runId: stale.id, lockedAt: started } });
 

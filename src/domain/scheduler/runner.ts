@@ -24,6 +24,7 @@ import { dbInternal } from "@/lib/db";
 import { onSchedulerFailed } from "@/domain/notifications/hooks";
 import { jobs } from "./jobs";
 import { isSchedulerStopping } from "./loop";
+import { inflightJobs } from "./inflight";
 
 export type SchedulerJob = "fx" | "dunning" | "postal" | "recurring" | "auto-send" | "archive" | "mailbox" | "bank-fetch" | "online-payments" | "payment-rules" | "notifications" | "webhooks" | "audit" | "cleanup";
 
@@ -48,11 +49,15 @@ export interface JobResult {
 // nie eine Zeile, die derselbe Lauf gerade erst als faellig behandelt hat.
 export const JOB_ORDER: SchedulerJob[] = ["fx", "recurring", "auto-send", "dunning", "postal", "archive", "mailbox", "bank-fetch", "online-payments", "payment-rules", "notifications", "webhooks", "audit", "cleanup"];
 const STALE_MS = 30 * 60 * 1000;
+/** Zeitlimit je Job. Danach: FAILED "timeout" + Alarm; die Sperre bleibt bis zum tatsaechlichen Ende. */
+export const JOB_TIMEOUT_MS = 20 * 60 * 1000;
 
 export interface RunScheduledJobsOptions {
   jobs?: SchedulerJob[];
   trigger: "SCHEDULER" | "CRON" | "MANUAL";
   now?: Date;
+  /** Nur fuer Tests: Zeitlimit je Job (Standard `JOB_TIMEOUT_MS`). */
+  jobTimeoutMs?: number;
 }
 
 function isUniqueConstraintError(e: unknown): boolean {
@@ -94,8 +99,10 @@ async function alertOnRepeatedFailure(job: SchedulerJob, runId: string, now: Dat
 
 export async function runScheduledJobs(opts: RunScheduledJobsOptions): Promise<JobResult[]> {
   const now = opts.now ?? new Date();
+  const timeoutMs = opts.jobTimeoutMs ?? JOB_TIMEOUT_MS;
   const wanted = opts.jobs ? new Set(opts.jobs) : null;
   const order = JOB_ORDER.filter((j) => !wanted || wanted.has(j));
+  const inflight = inflightJobs();
 
   const results: JobResult[] = [];
   for (const job of order) {
@@ -104,11 +111,17 @@ export async function runScheduledJobs(opts: RunScheduledJobsOptions): Promise<J
       results.push({ job, ok: true, summary: { skipped: "shutdown" } });
       continue;
     }
-    await clearStaleLock(job, now);
+    // Der Job laeuft in diesem Prozess noch (z. B. nach Zeitueberschreitung): weder neu starten noch Sperre abraeumen.
+    if (inflight.has(job)) {
+      results.push({ job, ok: true, summary: { skipped: "still-running" } });
+      continue;
+    }
+    await clearStaleLock(job, new Date());
 
     const runId = randomUUID();
+    const startedAt = new Date();
     try {
-      await dbInternal.schedulerLock.create({ data: { job, runId, lockedAt: now } });
+      await dbInternal.schedulerLock.create({ data: { job, runId, lockedAt: startedAt } });
     } catch (e) {
       if (isUniqueConstraintError(e)) {
         results.push({ job, ok: true, summary: { skipped: "locked" } });
@@ -117,32 +130,72 @@ export async function runScheduledJobs(opts: RunScheduledJobsOptions): Promise<J
       throw e;
     }
 
+    const release = async (): Promise<void> => {
+      try {
+        await dbInternal.schedulerLock.deleteMany({ where: { job, runId } });
+      } finally {
+        inflight.delete(job);
+      }
+    };
+
+    let entryId: string;
     try {
       const entry = await dbInternal.schedulerRun.create({
-        data: { id: runId, job, trigger: opts.trigger, status: "RUNNING", startedAt: now },
+        data: { id: runId, job, trigger: opts.trigger, status: "RUNNING", startedAt },
       });
+      entryId = entry.id;
+    } catch (e) {
+      await release();
+      throw e;
+    }
 
-      try {
-        const summary = await jobs[job](now);
-        // Nit (Fix-Welle): finishedAt war bisher `now` (= startedAt) — die Spalte
-        // "Beendet" in SchedulerRunsTable zeigte damit immer die Startzeit, eine
-        // Laufzeit war nicht ablesbar. `new Date()` = tatsaechlicher Abschlusszeitpunkt.
-        await dbInternal.schedulerRun.update({
-          where: { id: entry.id },
-          data: { status: "OK", finishedAt: new Date(), summaryJson: JSON.stringify(summary) },
+    // Fachlich bleibt `now` (Stichtag) fuer den Job; die Sperre haengt an der tatsaechlichen Laufzeit.
+    type Outcome = { ok: true; summary: Record<string, unknown> } | { ok: false; error: string };
+    const settled: Promise<Outcome> = (async () => jobs[job](now))().then(
+      (summary): Outcome => ({ ok: true, summary }),
+      (e: unknown): Outcome => ({ ok: false, error: e instanceof Error ? e.message : String(e) }),
+    );
+    // Sperre und Eintrag in der Liste enden erst, wenn der Job WIRKLICH fertig ist (auch nach Zeitueberschreitung).
+    const tail = settled.then(release, release);
+    inflight.set(job, tail);
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<"timeout">((resolve) => {
+      timer = setTimeout(() => resolve("timeout"), timeoutMs);
+      timer.unref?.();
+    });
+    const outcome = await Promise.race([settled, timeout]);
+    clearTimeout(timer);
+
+    if (outcome === "timeout") {
+      // Sperre NICHT loeschen: der Job laeuft evtl. noch (Doppelversand-Gefahr). Spaeteres Ergebnis aendert FAILED nicht.
+      await dbInternal.schedulerRun.updateMany({
+        where: { id: entryId, status: "RUNNING" },
+        data: { status: "FAILED", finishedAt: new Date(), error: "timeout" },
+      });
+      results.push({ job, ok: false, summary: {}, error: "timeout", runId: entryId });
+      await onSchedulerFailed(job, entryId, now);
+      continue;
+    }
+
+    try {
+      if (outcome.ok) {
+        // finishedAt = tatsaechlicher Abschlusszeitpunkt (nicht `now`).
+        await dbInternal.schedulerRun.updateMany({
+          where: { id: entryId, status: "RUNNING" },
+          data: { status: "OK", finishedAt: new Date(), summaryJson: JSON.stringify(outcome.summary) },
         });
-        results.push({ job, ok: true, summary, runId: entry.id });
-      } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
-        await dbInternal.schedulerRun.update({
-          where: { id: entry.id },
-          data: { status: "FAILED", finishedAt: new Date(), error: message },
+        results.push({ job, ok: true, summary: outcome.summary, runId: entryId });
+      } else {
+        await dbInternal.schedulerRun.updateMany({
+          where: { id: entryId, status: "RUNNING" },
+          data: { status: "FAILED", finishedAt: new Date(), error: outcome.error },
         });
-        results.push({ job, ok: false, summary: {}, error: message, runId: entry.id });
-        await alertOnRepeatedFailure(job, entry.id, now);
+        results.push({ job, ok: false, summary: {}, error: outcome.error, runId: entryId });
+        await alertOnRepeatedFailure(job, entryId, now);
       }
     } finally {
-      await dbInternal.schedulerLock.deleteMany({ where: { job, runId } });
+      await tail;
     }
   }
   return results;

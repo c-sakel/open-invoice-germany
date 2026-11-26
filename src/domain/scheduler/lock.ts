@@ -6,6 +6,7 @@
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
+import { inflightJobs } from "./inflight";
 
 const STALE_MS = 30 * 60 * 1000;
 
@@ -15,6 +16,8 @@ export async function withJobLock<T extends Record<string, unknown>>(
   now: Date,
   fn: () => Promise<T>,
 ): Promise<{ locked: true } | { locked: false; value: T }> {
+  // Der Job laeuft in diesem Prozess noch (z. B. nach Zeitueberschreitung des Runners): kein Parallellauf.
+  if (inflightJobs().has(job)) return { locked: true };
   const stale = await dbInternal.schedulerLock.findFirst({ where: { job, lockedAt: { lt: new Date(now.getTime() - STALE_MS) } } });
   if (stale) {
     await dbInternal.schedulerRun.updateMany({ where: { id: stale.runId, status: "RUNNING" }, data: { status: "FAILED", error: "stale", finishedAt: now } });
@@ -22,7 +25,7 @@ export async function withJobLock<T extends Record<string, unknown>>(
   }
   const runId = randomUUID();
   try {
-    await dbInternal.schedulerLock.create({ data: { job, runId, lockedAt: now } });
+    await dbInternal.schedulerLock.create({ data: { job, runId, lockedAt: new Date() } });
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") return { locked: true };
     throw e;

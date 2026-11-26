@@ -64,7 +64,8 @@ describe("Phase 6 — SchedulerLock (Fix Runde 1, atomarer Erwerb via Unique-Con
     // Der zweite Lauf muss JETZT (waehrend der erste noch haengt) fertig sein --
     // er wurde vom Unique-Constraint (P2002) abgewiesen, nicht von einer Wartezeit.
     const [r2] = await Promise.all([p2]);
-    expect(r2.find((r) => r.job === "dunning")!.summary.skipped).toBe("locked");
+    // Im selben Prozess greift der Schutz der laufenden Jobs (still-running) vor der DB-Sperre.
+    expect(r2.find((r) => r.job === "dunning")!.summary.skipped).toBe("still-running");
 
     releaseFirst?.();
     const [r1] = await Promise.all([p1]);
@@ -78,8 +79,8 @@ describe("Phase 6 — SchedulerLock (Fix Runde 1, atomarer Erwerb via Unique-Con
   });
 
   it("(b) Lock aelter als 30 Minuten wird uebernommen", async () => {
-    const started = new Date("2051-07-02T09:00:00.000Z");
-    const now = new Date("2051-07-02T09:31:00.000Z"); // 31 Min spaeter -> stale
+    const started = new Date(Date.now() - 31 * 60_000); // 31 Min alt -> stale (Zeit der Sperre ist Wanduhr, nicht `now`)
+    const now = new Date("2051-07-02T09:31:00.000Z");
     const run = await dbInternal.schedulerRun.create({ data: { job: "recurring", trigger: "SCHEDULER", status: "RUNNING", startedAt: started } });
     await dbInternal.schedulerLock.create({ data: { job: "recurring", runId: run.id, lockedAt: started } });
 
