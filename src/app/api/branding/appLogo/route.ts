@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getActiveOrg } from "@/lib/org";
 import { dbInternal } from "@/lib/db";
 import { readFile, sniffMime } from "@/lib/attachments/storage";
-import { ASSET_CACHE_HEADERS, assetEtag, isWithinAttachmentsRoot } from "../asset";
+import { ASSET_CACHE_HEADERS, assetEtag, brandingRateLimited, isWithinAttachmentsRoot } from "../asset";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,7 +25,9 @@ function notFound() {
  * Cache-Busting fuer den Browser — diese Route liest den Parameter nicht, sondern setzt
  * auf ETag + `must-revalidate`.
  */
-export async function GET() {
+export async function GET(req: Request) {
+  const limited = brandingRateLimited(req);
+  if (limited) return limited;
   try {
     const org = await getActiveOrg();
     const row = await dbInternal.brandingSettings.findUnique({

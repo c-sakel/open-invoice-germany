@@ -15,6 +15,9 @@
  */
 import path from "node:path";
 import { createHash } from "node:crypto";
+import { NextResponse } from "next/server";
+import { clientIpFromHeaders } from "@/lib/http/client-ip";
+import { RateLimitError, rateLimit } from "@/lib/rate-limit";
 
 export const ASSET_CACHE_HEADERS = {
   "cache-control": "public, max-age=300, must-revalidate",
@@ -40,4 +43,25 @@ export function isWithinAttachmentsRoot(storagePath: string): boolean {
  *  bei jedem Re-Upload (neuer storagePath UND neues updatedAt), bleibt sonst stabil. */
 export function assetEtag(updatedAt: Date, storagePath: string): string {
   return `"${createHash("sha256").update(`${updatedAt.toISOString()}:${storagePath}`).digest("hex").slice(0, 32)}"`;
+}
+
+const BRANDING_LIMIT = 120;
+const BRANDING_WINDOW_MS = 60_000;
+
+/**
+ * Bremse je Client-IP fuer die oeffentlichen Marken-Grafiken (jede Anfrage zaehlt, auch
+ * Wiederholungen mit passendem ETag). Liefert bei Ueberschreitung die 429-Antwort mit
+ * `retry-after`, sonst `null`.
+ */
+export function brandingRateLimited(req: Request): NextResponse | null {
+  try {
+    rateLimit(`branding:${clientIpFromHeaders(req.headers) ?? "unbekannt"}`, { limit: BRANDING_LIMIT, windowMs: BRANDING_WINDOW_MS });
+    return null;
+  } catch (e) {
+    if (!(e instanceof RateLimitError)) throw e;
+    return NextResponse.json(
+      { error: "Zu viele Anfragen" },
+      { status: 429, headers: { "cache-control": "no-store", "retry-after": String(Math.max(1, Math.ceil(e.retryAfterMs / 1000))) } },
+    );
+  }
 }

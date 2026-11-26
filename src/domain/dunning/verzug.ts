@@ -10,7 +10,7 @@ import { nextBusinessDay } from "@/lib/german-holidays";
  * Fällt das Fristende der 30-Tage-Regel auf Samstag, Sonntag oder einen bundeseinheitlichen Feiertag, endet die Frist erst am
  * nächsten Werktag (§ 193 BGB); die Zinsen beginnen am Tag danach. Landesfeiertage bleiben unberücksichtigt.
  */
-export type Dispatch = { channel: "EMAIL" | "POST" | "NONE"; at: Date };
+export type Dispatch = { channel: "EMAIL" | "POST"; at: Date };
 
 export interface VerzugInput {
   isConsumer: boolean;
