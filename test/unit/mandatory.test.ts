@@ -203,11 +203,11 @@ describe("Freitext als Leistungszeitpunkt (nur mit Datum)", () => {
       expect(ohne(n)).toEqual([]);
   });
   it("englische Monatsnamen, Quartal/Halbjahr ausgeschrieben, Lieferdatum-Bezug", () => {
-    for (const n of ["Service period: March 2311", "June 2311", "December 2311", "January 2311", "2. Quartal 2311", "1. Halbjahr 2311", "2nd quarter 2311", "Lieferdatum entspricht dem Rechnungsdatum", "Leistungszeitpunkt ist identisch mit dem Rechnungsdatum", "Supply date is the same as invoice date", "Lieferung 3.4.11"])
+    for (const n of ["Service period: March 2311", "June 2311", "December 2311", "January 2311", "2. Quartal 2311", "1. Halbjahr 2311", "2nd quarter 2311", "Lieferdatum entspricht dem Rechnungsdatum", "Leistungszeitpunkt ist identisch mit dem Rechnungsdatum", "Supply date is the same as invoice date", "Lieferung 3.4.11", "Leistungsdatum: Rechnungsdatum", "Leistungszeitpunkt: Rechnungsdatum", "Datum der Leistung entspricht dem Rechnungsdatum", "Datum der Lieferung = Rechnungsdatum"])
       expect(ohne(n), n).toEqual([]);
   });
   it("unplausible Daten und Monate zaehlen nicht", () => {
-    for (const n of ["99.99.2311", "13/2311", "0/2311", "2311-13-45", "Danke 2311", "Pflichthinweis ohne Datum", "Quartal ohne Jahr"])
+    for (const n of ["99.99.2311", "13/2311", "0/2311", "2311-13-45", "Danke 2311", "Pflichthinweis ohne Datum", "Quartal ohne Jahr", "Leistungsdatum: siehe Rechnungsdatum der Vorrechnung", "Datum der Leistung: offen"])
       expect(ohne(n).join(" "), n).toMatch(/Leistungs-\/Lieferzeitpunkt/);
   });
   it("nur Leistungsbeginn ohne Ende genuegt nicht", () => {

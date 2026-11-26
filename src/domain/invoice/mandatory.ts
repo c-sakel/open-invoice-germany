@@ -182,7 +182,7 @@ export const DELIVERY_NOTE_PATTERNS: readonly RegExp[] = [
   /\b(0?[1-9]|1[0-2])\/\d{4}\b/,
   /\bQ[1-4]\s?\/?\s?\d{4}\b/i,
   /\b(Quartal|Halbjahr|quarter|half[- ]?year)\s+\d{4}\b/i,
-  /(leistungs|liefer)(datum|zeitpunkt)\s+(entspricht|ist|=|gleich|identisch)(\s+(mit|dem|ist|identisch|gleich))*\s+(rechnungs|ausstellungs)datum/i,
+  /((leistungs|liefer)(datum|zeitpunkt)|datum der (leistung|lieferung))(\s+(entspricht|ist|gleich|identisch)|\s*[:=])(\s+(mit|dem|ist|identisch|gleich))*\s+(rechnungs|ausstellungs)datum/i,
   /(delivery|service|supply) date\s+(equals|is|=|is identical to|is the same as|corresponds to)\s+(the\s+)?invoice date/i,
 ];
 
