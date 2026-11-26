@@ -9,6 +9,8 @@
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { finalizeAction } from "@/app/actions/invoices";
+import { ConfirmDialog, type ConfirmDialogHandle } from "@/components/ui/ConfirmDialog";
 import { draftReducer, emptyDraft, toInvoicePayload, toDocumentPayload, toDeliveryNotePayload, validateDraft, type DraftState } from "@/lib/editor/draft";
 import { computeDraftTotals } from "@/lib/editor/totals";
 import type { EditorMode } from "@/lib/editor/constants";
@@ -345,6 +347,43 @@ export function DocumentEditor({
     }
   }
 
+  // Strg+S: speichern ohne Navigation, mit kurzer Rueckmeldung.
+  const [justSaved, setJustSaved] = useState(false);
+  useEffect(() => {
+    if (!justSaved) return;
+    const t = setTimeout(() => setJustSaved(false), 3000);
+    return () => clearTimeout(t);
+  }, [justSaved]);
+  async function quickSave(): Promise<void> {
+    const id = await save({ navigate: false });
+    if (id) setJustSaved(true);
+  }
+
+  // "Speichern und festschreiben" (nur Rechnungen): erst speichern; bei Fehler (Validierung,
+  // Server) bleibt es beim Fehlerbanner und es wird NICHT festgeschrieben. Danach immer die
+  // Bestaetigung; erst "Festschreiben" ruft die vorhandene Server-Action (finalizeInvoice) auf.
+  const finalizeDialogRef = useRef<ConfirmDialogHandle>(null);
+  const [finalizeId, setFinalizeId] = useState<string | null>(null);
+  const [finalizing, setFinalizing] = useState(false);
+  async function saveAndFinalize(): Promise<void> {
+    const id = await save({ navigate: false });
+    if (!id) return;
+    setFinalizeId(id);
+    finalizeDialogRef.current?.open();
+  }
+  async function confirmFinalize(): Promise<void> {
+    if (!finalizeId) return;
+    setFinalizing(true);
+    const fd = new FormData();
+    fd.set("id", finalizeId);
+    try {
+      await finalizeAction(fd);
+    } finally {
+      setFinalizing(false);
+      finalizeDialogRef.current?.close();
+    }
+  }
+
   // Phase 17b: Zweitaktion "Lieferschein erstellen" — Entwurf speichern (ohne Navigation),
   // dann Statuswechsel MARK_CREATED. Bei 409 (z. B. Restmenge unterschritten) bleibt der
   // Editor offen, der Entwurf ist gespeichert.
@@ -386,9 +425,16 @@ export function DocumentEditor({
           secondaryLabel={mode === "DELIVERY_NOTE" ? "Lieferschein erstellen" : undefined}
           onSecondary={mode === "DELIVERY_NOTE" ? () => void createDeliveryNote() : undefined}
           onPreview={() => setPreviewOpen(true)}
+          onQuickSave={() => void quickSave()}
+          onSaveAndFinalize={mode === "INVOICE" ? () => void saveAndFinalize() : undefined}
         />
 
         <ErrorBanner message={error ?? undefined} />
+        {justSaved && (
+          <p role="status" className="text-sm text-ink-muted">
+            Entwurf gespeichert.
+          </p>
+        )}
 
         <RecipientBlock
           mode={mode}
@@ -429,6 +475,16 @@ export function DocumentEditor({
         <AttachmentsBlock mode={mode} docId={draft.id} attachments={attachments} onEnsureDocId={() => save({ navigate: false })} />
       </div>
 
+      {mode === "INVOICE" && (
+        <ConfirmDialog
+          ref={finalizeDialogRef}
+          title="Rechnung festschreiben?"
+          message="Der Entwurf ist gespeichert. Nach dem Festschreiben bekommt die Rechnung ihre Nummer und kann nicht mehr geändert werden, nur noch storniert oder korrigiert. Pflichtangaben-Hinweise zeigt die Rechnung danach an."
+          confirmLabel="Festschreiben"
+          busy={finalizing}
+          onConfirm={() => void confirmFinalize()}
+        />
+      )}
       <PreviewSheet open={previewOpen} onClose={() => setPreviewOpen(false)} mode={mode} draft={draft} layoutId={printOverride?.layoutId} />
     </EditorCurrencyContext.Provider>
   );

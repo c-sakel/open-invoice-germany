@@ -40,6 +40,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { ConfirmDialog, type ConfirmDialogHandle } from "@/components/ui/ConfirmDialog";
+import { useSaveShortcut } from "@/components/editor/use-save-shortcut";
 
 function isModifiedClick(e: MouseEvent): boolean {
   return e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey;
@@ -56,6 +57,8 @@ export function EditorHeader({
   onSecondary,
   onPreview,
   previewDisabled,
+  onQuickSave,
+  onSaveAndFinalize,
 }: {
   backHref: string;
   title: string;
@@ -68,7 +71,12 @@ export function EditorHeader({
   onSecondary?: () => void;
   onPreview: () => void;
   previewDisabled?: boolean;
+  /** Strg+S / Cmd+S: speichert ohne Navigation. */
+  onQuickSave?: () => void;
+  /** Nur Rechnungsentwürfe: speichern, dann Bestätigung zum Festschreiben (Aufrufer). */
+  onSaveAndFinalize?: () => void;
 }) {
+  useSaveShortcut(() => (onQuickSave ?? onSave)(), !saving);
   const dialogRef = useRef<ConfirmDialogHandle>(null);
   // Ziel-Href eines abgefangenen In-App-Navigationsklicks (Sidebar/Topbar/Breadcrumb) —
   // `null` bedeutet "der eigene Zurueck-Link hat den Dialog geoeffnet", dann greift
@@ -146,6 +154,16 @@ export function EditorHeader({
               className="rounded-md border border-rule-strong px-3 py-2 text-sm font-medium text-ink-soft hover:bg-paper disabled:opacity-60"
             >
               {secondaryLabel}
+            </button>
+          )}
+          {onSaveAndFinalize && (
+            <button
+              type="button"
+              onClick={onSaveAndFinalize}
+              disabled={saving}
+              className="rounded-md border border-rule-strong px-3 py-2 text-sm font-medium text-ink-soft hover:bg-paper disabled:opacity-60"
+            >
+              Speichern und festschreiben
             </button>
           )}
           <button

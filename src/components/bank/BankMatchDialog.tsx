@@ -147,7 +147,13 @@ export function BankMatchDialog({ row, onConfirm, initialLines }: Props) {
               </p>
             )}
             <div className="space-y-1">
-              <div className="flex gap-2">
+              <form
+                className="flex gap-2"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void search();
+                }}
+              >
                 <input
                   aria-label="Rechnung suchen"
                   placeholder="Rechnungsnummer oder Kunde"
@@ -155,10 +161,10 @@ export function BankMatchDialog({ row, onConfirm, initialLines }: Props) {
                   onChange={(e) => setQuery(e.target.value)}
                   className="min-w-0 flex-1 rounded-md border border-rule-strong bg-paper px-2 py-1 text-sm"
                 />
-                <button type="button" onClick={() => void search()} className="rounded-md border border-rule-strong px-3 py-1 text-sm hover:bg-paper">
+                <button type="submit" className="rounded-md border border-rule-strong px-3 py-1 text-sm hover:bg-paper">
                   Suchen
                 </button>
-              </div>
+              </form>
               {searchMessage && <p className="text-xs text-ink-muted">{searchMessage}</p>}
               <ul className="space-y-1">
                 {hits.map((h) => (
