@@ -11,6 +11,7 @@
  */
 import { processIncomingDue } from "@/domain/incoming/due-notify";
 import { dbInternal } from "@/lib/db";
+import { runWatchdog } from "@/domain/system/watchdog";
 import { createNotification } from "@/domain/notifications/create";
 import { sendAlarmMailIfDue } from "@/domain/notifications/alarm-mail";
 import { loadNotificationSettings, markDigestSent, type NotificationType } from "@/domain/notifications/settings";
@@ -278,6 +279,15 @@ export async function runNotificationsJob(now: Date = new Date(), opts: RunNotif
       await sendDigestIfDue(org.id, now, opts.provider, result);
     } catch (e) {
       result.errors.push({ orgId: org.id, message: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  if (!opts.orgId) {
+    // Instanzweiter Waechter, einmal je Lauf (nicht je Organisation).
+    try {
+      await runWatchdog(now);
+    } catch (e) {
+      result.errors.push({ orgId: "", message: `Waechter: ${e instanceof Error ? e.name : "Fehler"}` });
     }
   }
 

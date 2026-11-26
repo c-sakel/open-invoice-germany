@@ -19,6 +19,7 @@ import { checkOssNotifications } from "@/domain/reporting/oss-notify";
 import { checkKuNotifications } from "@/domain/reporting/ku-notify";
 import { createNotification } from "@/domain/notifications/create";
 import { berlinDateKey } from "@/lib/berlin-time";
+import type { WatchdogFinding } from "@/domain/system/watchdog";
 import { isMandatoryNotificationType, loadNotificationSettings, type NotificationType } from "@/domain/notifications/settings";
 
 async function safeNotify(orgId: string, type: NotificationType, fn: () => Promise<unknown>): Promise<void> {
@@ -366,4 +367,46 @@ export async function onWebhookDead(orgId: string, input: { endpointId: string; 
       at: input.at,
     }),
   );
+}
+
+/**
+ * Befund des Waechters (system/watchdog.ts): Pflicht-Alarm fuer JEDE Organisation (instanzweit), eine Meldung je
+ * Typ, Gegenstand und Berliner Tag. Nur feste Bausteine, nie Servertext.
+ */
+export async function onWatchdogFinding(finding: WatchdogFinding, at: Date): Promise<void> {
+  const day = berlinDateKey(at);
+  let type: NotificationType;
+  let subject: string;
+  let title: string;
+  let body: string;
+  let link: string;
+  if (finding.kind === "SCHEDULER_STALE") {
+    type = "SCHEDULER_STALE";
+    subject = finding.job;
+    title = `Hintergrundaufgabe "${finding.job}" läuft nicht mehr`;
+    body = "Die Aufgabe hatte seit über zwei Stunden keinen erfolgreichen Lauf. Details unter Einstellungen, Automatisierung.";
+    link = "/einstellungen/automatisierung";
+  } else if (finding.kind === "BACKUP_STALE") {
+    type = "BACKUP_STALE";
+    subject = "backup";
+    title = "Sicherung veraltet";
+    body = "Die letzte erfolgreiche Sicherung liegt über 36 Stunden zurück oder ist nicht feststellbar. Bitte den Sicherungsauftrag prüfen.";
+    link = "/einstellungen/pruefung";
+  } else {
+    type = "DISK_LOW";
+    subject = finding.volume;
+    title = finding.volume === "archive" ? "Speicherplatz des Belegarchivs knapp" : "Speicherplatz der Anhänge knapp";
+    body = "Weniger als 15 % des Speicherplatzes sind frei. Bitte Speicher erweitern, bevor Dokumente nicht mehr abgelegt werden können.";
+    link = "/einstellungen/pruefung";
+  }
+  try {
+    const orgs = await dbInternal.organization.findMany({ select: { id: true } });
+    for (const org of orgs) {
+      await safeNotify(org.id, type, () =>
+        createNotification({ orgId: org.id, type, title, body, link, dedupeKey: `${type}:${subject}:${day}`, at }),
+      );
+    }
+  } catch (e) {
+    console.error(`notifications hook: ${type} fehlgeschlagen`, e);
+  }
 }

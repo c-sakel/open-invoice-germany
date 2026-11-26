@@ -12,7 +12,14 @@ Serverkonfiguration (Volume, Cron, Offsite-Ziel, Passphrase) liegt nicht im Repo
   `Cache-Control: no-store`. Die Datenbankabfrage hat ein Timeout von 2 s (dann 503). Geeignet für Monitoring und den Docker-Healthcheck.
 - `GET /api/v1/System/health` (API-Schlüssel mit Scope `admin`): Datenbank, letzter erfolgreicher Lauf je
   Scheduler-Job, freier Platz und Anzahl nicht archivierter Belege im Belegarchiv, letzte Hash-Ketten-Prüfung,
-  letzte erfolgreiche Sicherung (aus `BACKUP_STATUS_FILE`).
+  letzte erfolgreiche Sicherung (aus `BACKUP_STATUS_FILE`), freier Platz der Anhänge.
+
+### Wächter
+
+Bei jedem Lauf der Benachrichtigungen prüft das Programm und meldet als Pflicht-Benachrichtigung (auch per Alarm-Mail, je Typ und Tag einmal):
+`SCHEDULER_STALE` (Aufgabe seit über 2 Stunden ohne erfolgreichen Lauf), `BACKUP_STALE` (letzte Sicherung älter als 36 Stunden, nur wenn
+`BACKUP_STATUS_FILE` gesetzt ist) und `DISK_LOW` (weniger als 15 % Platz auf Belegarchiv oder Anhängen). Die Statusdatei enthält zeilenweise
+`OK <ISO-Zeitstempel>`; die letzte passende Zeile zählt. Frisch gestartete Installationen melden nie gelaufene Aufgaben erst 2 Stunden nach dem Start.
 
 - `GET /api/live` (ohne Anmeldung): `200 {"status":"ok"}`, ohne Datenbankzugriff, `Cache-Control: no-store`.
   Nur für die Liveness-Prüfung: Ein Datenbankausfall soll den Prozess nicht neu starten.
