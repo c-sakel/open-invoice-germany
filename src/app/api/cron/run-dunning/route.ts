@@ -1,6 +1,6 @@
 /**
  * Cron-Endpunkt: fuehrt nur den Mahn-Job aus (Phase 6, Task 3). Auth-Muster identisch zu
- * `/api/cron/run-recurring` (CRON_SECRET als Bearer-Header oder `?secret=`).
+ * `/api/cron/run-recurring` (CRON_SECRET nur als Bearer-Header).
  */
 import { NextResponse } from "next/server";
 import { runScheduledJobs } from "@/domain/scheduler/runner";

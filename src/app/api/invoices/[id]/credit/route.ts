@@ -6,6 +6,7 @@ import { FinalizeError } from "@/domain/invoice/finalize-error";
 import { NotFoundError } from "@/domain/errors";
 import { getActiveOrg } from "@/lib/org";
 import { TaxRateNotAllowedError } from "@/domain/settings/tax-rates";
+import { describeError, INTERNAL_ERROR_TEXT } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 
@@ -32,6 +33,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     if (e instanceof NotFoundError) return NextResponse.json({ error: e.message }, { status: 404 });
     if (e instanceof TaxRateNotAllowedError) return NextResponse.json({ error: e.message }, { status: 409 });
     const status = e instanceof CreditError || e instanceof FinalizeError ? 422 : 500;
+    if (status === 500) {
+      console.error("/api/invoices/[id]/credit:", describeError(e));
+      return NextResponse.json({ error: INTERNAL_ERROR_TEXT }, { status });
+    }
     return NextResponse.json({ error: (e as Error).message }, { status });
   }
 }

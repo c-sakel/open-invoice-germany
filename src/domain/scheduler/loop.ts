@@ -12,6 +12,7 @@
  * (`globalThis`), nicht am Modul, und ueberlebt HMR-Neuladungen.
  */
 import { runScheduledJobs } from "./runner";
+import { describeError } from "@/lib/safe-error";
 
 interface SchedulerLoopState {
   started: boolean;
@@ -50,7 +51,7 @@ export function startScheduler(minutes: number): void {
       try {
         await runScheduledJobs({ trigger: "SCHEDULER" });
       } catch (e) {
-        console.error("Scheduler-Loop fehlgeschlagen:", e);
+        console.error("Scheduler-Loop fehlgeschlagen:", describeError(e));
       } finally {
         state.running = false;
         state.current = null;

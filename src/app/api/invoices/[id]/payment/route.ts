@@ -5,6 +5,7 @@ import { getActiveOrg } from "@/lib/org";
 import { recordPaymentSchema } from "@/schemas";
 import { recordPayment, PaymentError } from "@/domain/invoice/payment";
 import { NotFoundError } from "@/domain/errors";
+import { describeError, INTERNAL_ERROR_TEXT } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 
@@ -38,6 +39,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       return NextResponse.json({ error: e.message }, { status: 404 });
     }
     const status = e instanceof PaymentError ? 422 : 500;
+    if (status === 500) {
+      console.error("/api/invoices/[id]/payment:", describeError(e));
+      return NextResponse.json({ error: INTERNAL_ERROR_TEXT }, { status });
+    }
     return NextResponse.json({ error: (e as Error).message }, { status });
   }
 }

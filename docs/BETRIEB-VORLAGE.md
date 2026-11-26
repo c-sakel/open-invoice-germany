@@ -90,6 +90,8 @@ ihre Sperre frei und beendet sich mit Exitcode 0. Das Image setzt dafür `NEXT_M
        30 3 1 * * cd /opt/open-invoice-germany && BACKUP_PASSPHRASE_FILE=/etc/oig/backup.pass scripts/ops/restore-test.sh "$(ls -1t backups/oig-backup-*.tar.enc | head -n1)" >> /var/log/oig-restore-test.log 2>&1
 
    Nach dem ersten Lauf prüfen: letzte Log-Zeile `OK <datei>`, Statusdatei enthält `OK <ISO>`.
+   Externe Aufrufer der Cron-Endpunkte (`/api/cron/*`) übergeben `CRON_SECRET` ausschließlich als Header
+   `Authorization: Bearer <CRON_SECRET>`; ein Query-Parameter wird nicht akzeptiert (er stünde in Zugriffsprotokollen).
 7. **Erster Deploy mit Belegarchiv (Backfill)**: Bestandsrechnungen und -mahnungen werden vom Scheduler-Job
    `archive` nachträglich archiviert (Quelle `BACKFILL`), je Lauf höchstens `ARCHIVE_JOB_BATCH` Belege
    (Default 50, Lauf alle 15 min; bei ~1400 Belegen also rund 7 h). Gerendert wird im Web-Prozess; für weniger

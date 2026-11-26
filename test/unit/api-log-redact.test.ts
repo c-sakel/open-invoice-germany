@@ -7,6 +7,14 @@ import { describe, it, expect } from "vitest";
 import { redactJson, redactQuery, prepareBody, shouldLogPath, MAX_BODY_BYTES, MAX_INPUT_BYTES, REDACTED } from "@/domain/api-log/redact";
 
 describe("redactJson", () => {
+  it("schwaerzt E-Mail-Adressen und Empfaengerfelder im Body, rekursiv und in Arrays (O-08)", () => {
+    expect(redactJson({ to: "a@b.de", cc: ["c@d.de"], nested: { email: "x@y.de" }, subject: "Hallo" })).toEqual({
+      to: REDACTED, cc: REDACTED, nested: { email: REDACTED }, subject: "Hallo",
+    });
+    expect(redactJson({ list: [{ Email: "a@b.de", ReplyTo: "r@b.de", bcc: "b@b.de", recipients: ["z@b.de"], name: "n" }] })).toEqual({
+      list: [{ Email: REDACTED, ReplyTo: REDACTED, bcc: REDACTED, recipients: REDACTED, name: "n" }],
+    });
+  });
   it("schwaerzt verdaechtige Schluessel, gross wie klein, verschachtelt und in Arrays", () => {
     expect(redactJson({ token: "x", Secret: "y", passwort: "z", apiKey: "a", api_key: "b" })).toEqual({
       token: REDACTED, Secret: REDACTED, passwort: REDACTED, apiKey: REDACTED, api_key: REDACTED,
