@@ -4,6 +4,7 @@ import { getActiveOrg } from "@/lib/org";
 import { NotFoundError } from "@/domain/errors";
 import { buildDraftPreview, PREVIEW_KINDS, type PreviewBody } from "@/domain/settings/preview-draft";
 import { layoutIdSchema } from "@/schemas/settings";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,7 +47,7 @@ export async function POST(req: Request) {
     const org = await getActiveOrg();
     orgId = org.id;
   } catch (e) {
-    console.error("POST /api/pdf/preview:", e);
+    console.error("POST /api/pdf/preview:", describeError(e));
     return NextResponse.json({ error: "Kein Unternehmen eingerichtet." }, { status: 404 });
   }
 
@@ -71,7 +72,7 @@ export async function POST(req: Request) {
     // gemacht" (400/404); alles andere (Renderer-Absturz, DB-Fehler etc.) ist ein
     // interner Fehler und gehoert auf 500 (analog `/api/search`, `mapError` in
     // customers/[id]/last-document/route.ts).
-    console.error("POST /api/pdf/preview:", e);
+    console.error("POST /api/pdf/preview:", describeError(e));
     return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }
 }

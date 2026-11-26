@@ -4,7 +4,8 @@ import { apiDataResponseSchema, type RouteSpec } from "@/api/spec";
 import { serializeRecurring, recurringSchema } from "@/api/serializers/recurring";
 import { updateRecurringInvoice } from "@/domain/recurring/update";
 import { updateRecurringSchema } from "@/schemas";
-import { prisma } from "@/lib/db";
+import { prisma, dbInternal } from "@/lib/db";
+import { findPreviewBasis } from "@/domain/recurring/last-billed";
 import { NotFoundError } from "@/domain/errors";
 
 export const runtime = "nodejs";
@@ -15,7 +16,8 @@ export const GET = withApi<{ id: string }>(async (_req, ctx) => {
     include: { lines: { orderBy: { position: "asc" } } },
   });
   if (!row) throw new NotFoundError("Abo nicht gefunden.");
-  return apiData(serializeRecurring(row));
+  const basis = await findPreviewBasis(dbInternal, row);
+  return apiData(serializeRecurring(row, basis.previousEnd, basis.anchorDay));
 }, { scope: "read" });
 
 export const PATCH = withApi<{ id: string }>(async (_req, ctx) => {

@@ -36,6 +36,22 @@ beforeEach(async () => {
 });
 
 describe("runWatchdog", () => {
+  it("ohne In-App-Scheduler (Cron-Betrieb) keine SCHEDULER_STALE, Sicherung wird weiter geprueft", async () => {
+    const res = await runWatchdog(NOW, { startedAt: STARTED, jobs: ["fx"], schedulerEnabled: false, freeRatios: { archive: 0.5, attachments: 0.5 } });
+    expect(res.map((f) => f.kind)).toEqual(["BACKUP_STALE"]);
+    expect(await count("SCHEDULER_STALE")).toBe(0);
+  });
+
+  it("Cron-Betrieb: Job mit frueherem OK-Lauf wird weiter gemeldet, nie gelaufener nicht", async () => {
+    await dbInternal.schedulerRun.create({
+      data: { job: "fx", status: "OK", trigger: "SCHEDULER", startedAt: new Date("2322-06-10T08:00:00Z"), finishedAt: new Date("2322-06-10T08:01:00Z") },
+    });
+    const res = await runWatchdog(NOW, { startedAt: STARTED, jobs: ["fx", "cleanup"], schedulerEnabled: false, freeRatios: { archive: 0.5, attachments: 0.5 } });
+    const stale = res.filter((f) => f.kind === "SCHEDULER_STALE");
+    expect(stale).toHaveLength(1);
+    expect(stale[0]).toMatchObject({ job: "fx" });
+  });
+
   it("meldet stehenden Job und alte Sicherung je einmal, am selben Berliner Tag nicht erneut", async () => {
     await dbInternal.schedulerRun.create({
       data: { job: "fx", status: "OK", trigger: "SCHEDULER", startedAt: new Date("2322-06-10T08:00:00Z"), finishedAt: new Date("2322-06-10T08:01:00Z") },

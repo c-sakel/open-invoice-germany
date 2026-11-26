@@ -3,6 +3,7 @@
 // Kein Werkzeug nimmt einen Schluessel entgegen oder gibt einen aus; Schluessel und Einschalter nur in der Oberflaeche.
 // Die Bezahladresse liefern nur `get_invoice_pay_link` und `create_invoice_pay_link`.
 import { z } from "zod";
+import { MCP_ACTOR } from "../actor";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import {
@@ -66,7 +67,7 @@ export function registerOnlinePaymentTools(server: McpServer, ctx: McpToolsConte
       try {
         const org = await ctx.requireOrg();
         const input = parseOnlinePaymentSettingsInput(args);
-        return ctx.ok(JSON.stringify(serializeOnlinePaymentSettings(await saveOnlinePaymentSettings(org.id, input, "mcp")), null, 2));
+        return ctx.ok(JSON.stringify(serializeOnlinePaymentSettings(await saveOnlinePaymentSettings(org.id, input, MCP_ACTOR)), null, 2));
       } catch (e) {
         return fail(ctx, e);
       }
@@ -84,7 +85,7 @@ export function registerOnlinePaymentTools(server: McpServer, ctx: McpToolsConte
       try {
         const org = await ctx.requireOrg();
         await assertConnectionTestCooldown(org.id, provider);
-        return ctx.ok(JSON.stringify(await testProviderConnection(org.id, provider, "mcp"), null, 2));
+        return ctx.ok(JSON.stringify(await testProviderConnection(org.id, provider, MCP_ACTOR), null, 2));
       } catch (e) {
         return fail(ctx, e);
       }
@@ -121,7 +122,7 @@ export function registerOnlinePaymentTools(server: McpServer, ctx: McpToolsConte
       try {
         const org = await ctx.requireOrg();
         const inv = await ctx.resolveInvoice(org.id, invoice);
-        const { view } = await createInvoicePayLink(org.id, inv.id, "mcp");
+        const { view } = await createInvoicePayLink(org.id, inv.id, MCP_ACTOR);
         return ctx.ok(JSON.stringify(serializePayLink(view), null, 2));
       } catch (e) {
         return fail(ctx, e);
@@ -140,7 +141,7 @@ export function registerOnlinePaymentTools(server: McpServer, ctx: McpToolsConte
       try {
         const org = await ctx.requireOrg();
         const inv = await ctx.resolveInvoice(org.id, invoice);
-        return ctx.ok(JSON.stringify(serializePayLink(await disableInvoicePayLink(org.id, inv.id, "mcp")), null, 2));
+        return ctx.ok(JSON.stringify(serializePayLink(await disableInvoicePayLink(org.id, inv.id, MCP_ACTOR)), null, 2));
       } catch (e) {
         return fail(ctx, e);
       }
@@ -158,7 +159,7 @@ export function registerOnlinePaymentTools(server: McpServer, ctx: McpToolsConte
       try {
         const org = await ctx.requireOrg();
         const inv = await ctx.resolveInvoice(org.id, invoice);
-        return ctx.ok(JSON.stringify(serializeRefresh(await refreshInvoicePayLink(org.id, inv.id, { createdBy: "mcp", actor: "mcp" })), null, 2));
+        return ctx.ok(JSON.stringify(serializeRefresh(await refreshInvoicePayLink(org.id, inv.id, { createdBy: MCP_ACTOR, actor: MCP_ACTOR })), null, 2));
       } catch (e) {
         return fail(ctx, e);
       }

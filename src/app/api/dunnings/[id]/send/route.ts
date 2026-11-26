@@ -11,6 +11,7 @@ import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/
 import { sendDunning } from "@/domain/dunning/send";
 import { DunningError } from "@/domain/dunning/create";
 import { MailNotConfiguredError } from "@/domain/email/settings";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,7 +41,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     if (e instanceof DunningError) {
       return NextResponse.json({ error: e.message }, { status: 409 });
     }
-    console.error("POST /api/dunnings/[id]/send:", e);
+    console.error("POST /api/dunnings/[id]/send:", describeError(e));
     return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }
 }

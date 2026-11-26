@@ -7,6 +7,7 @@ import { listDeliveryNotes } from "@/domain/document/list";
 import { getActiveOrg } from "@/lib/org";
 import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/lib/auth/require-session";
 import { parseListQuery } from "@/lib/list-query";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 
@@ -23,7 +24,7 @@ export async function GET(req: Request) {
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "Ungültiger Filter.", issues: e.issues }, { status: 400 });
     }
-    console.error("GET /api/delivery-notes:", e);
+    console.error("GET /api/delivery-notes:", describeError(e));
     return NextResponse.json({ error: "Lieferscheine konnten nicht geladen werden." }, { status: 500 });
   }
 }
@@ -47,7 +48,7 @@ export async function POST(req: Request) {
     if (e instanceof DeliveryNoteError || e instanceof OverDeliveryError) {
       return NextResponse.json({ error: e.message }, { status: 409 });
     }
-    console.error("POST /api/delivery-notes:", e);
+    console.error("POST /api/delivery-notes:", describeError(e));
     return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }
 }

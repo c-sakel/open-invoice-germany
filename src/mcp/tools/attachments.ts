@@ -1,6 +1,7 @@
 // ── Beleganhaenge ──────────────────────────────────────────────────────────────
 // Task 1 (Phase 9): reiner Move aus server.ts — Verhalten unveraendert.
 import { z } from "zod";
+import { MCP_ACTOR } from "../actor";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { addAttachment, removeAttachment, listAttachments } from "@/domain/attachment/manage";
@@ -40,7 +41,7 @@ export function registerAttachmentTools(server: McpServer, ctx: McpToolsContext)
         const org = await ctx.requireOrg();
         const doc = await ctx.resolveDocForAttachment(org.id, args.docType, args.docId);
         const buffer = Buffer.from(args.contentBase64, "base64");
-        const row = await addAttachment(org.id, args.docType, doc.id, { filename: args.filename, mime: args.mime, buffer }, "mcp");
+        const row = await addAttachment(org.id, args.docType, doc.id, { filename: args.filename, mime: args.mime, buffer }, MCP_ACTOR);
         return ctx.ok(`Anhang gespeichert: ${row.filename} (${(row.sizeBytes / 1024).toFixed(0)} KB). ID: ${row.id}.`);
       } catch (e) {
         if (e instanceof AttachmentValidationError) return ctx.fail(e.message);
@@ -97,7 +98,7 @@ export function registerAttachmentTools(server: McpServer, ctx: McpToolsContext)
       try {
         const org = await ctx.requireOrg();
         const doc = await ctx.resolveDocForAttachment(org.id, args.docType, args.docId);
-        await removeAttachment(org.id, args.docType, doc.id, args.attachmentId, "mcp");
+        await removeAttachment(org.id, args.docType, doc.id, args.attachmentId, MCP_ACTOR);
         return ctx.ok(`Anhang ${args.attachmentId} entfernt.`);
       } catch (e) {
         if (e instanceof NotFoundError) return ctx.fail(e.message);

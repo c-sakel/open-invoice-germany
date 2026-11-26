@@ -5,6 +5,7 @@
  * es gibt kein automatisches Buchen und einen Ueberschuss bucht nichts. IBANs sind maskiert.
  */
 import { z } from "zod";
+import { MCP_ACTOR } from "../actor";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { NotFoundError } from "@/domain/errors";
@@ -76,7 +77,7 @@ export function registerBankTools(server: McpServer, ctx: McpToolsContext): void
         const org = await ctx.requireOrg();
         const input = bankImportInputSchema.parse(args);
         const bytes = decodeBase64Strict(input.contentBase64, MCP_BANK_IMPORT_MAX_BYTES);
-        const result = await importBankStatement(org.id, bytes, { actor: "mcp", source: "MCP", fileName: input.fileName, dryRun: input.dryRun });
+        const result = await importBankStatement(org.id, bytes, { actor: MCP_ACTOR, source: "MCP", fileName: input.fileName, dryRun: input.dryRun });
         return json(serializeBankImportResult(result));
       } catch (e) {
         return bankFailure(ctx, e);
@@ -176,7 +177,7 @@ export function registerBankTools(server: McpServer, ctx: McpToolsContext): void
     async ({ transactionId, ...body }): Promise<Result> => {
       try {
         const org = await ctx.requireOrg();
-        return json(serializeConfirmResult(await confirmBankMatch(org.id, transactionId, body, { actor: "mcp", createdBy: "mcp" })));
+        return json(serializeConfirmResult(await confirmBankMatch(org.id, transactionId, body, { actor: MCP_ACTOR, createdBy: MCP_ACTOR })));
       } catch (e) {
         return bankFailure(ctx, e);
       }
@@ -195,7 +196,7 @@ export function registerBankTools(server: McpServer, ctx: McpToolsContext): void
     async (args): Promise<Result> => {
       try {
         const org = await ctx.requireOrg();
-        return json(await confirmUnambiguous(org.id, args, { actor: "mcp", createdBy: "mcp" }));
+        return json(await confirmUnambiguous(org.id, args, { actor: MCP_ACTOR, createdBy: MCP_ACTOR }));
       } catch (e) {
         return bankFailure(ctx, e);
       }
@@ -212,7 +213,7 @@ export function registerBankTools(server: McpServer, ctx: McpToolsContext): void
     async ({ transactionId, ...body }): Promise<Result> => {
       try {
         const org = await ctx.requireOrg();
-        return json(serializeBankView(await ignoreBankTransaction(org.id, transactionId, body, { actor: "mcp", createdBy: "mcp" })));
+        return json(serializeBankView(await ignoreBankTransaction(org.id, transactionId, body, { actor: MCP_ACTOR, createdBy: MCP_ACTOR })));
       } catch (e) {
         return bankFailure(ctx, e);
       }
@@ -229,7 +230,7 @@ export function registerBankTools(server: McpServer, ctx: McpToolsContext): void
     async ({ transactionId }): Promise<Result> => {
       try {
         const org = await ctx.requireOrg();
-        return json(serializeBankView(await reopenBankTransaction(org.id, transactionId, { actor: "mcp", createdBy: "mcp" })));
+        return json(serializeBankView(await reopenBankTransaction(org.id, transactionId, { actor: MCP_ACTOR, createdBy: MCP_ACTOR })));
       } catch (e) {
         return bankFailure(ctx, e);
       }
@@ -246,7 +247,7 @@ export function registerBankTools(server: McpServer, ctx: McpToolsContext): void
     async ({ transactionId, ...body }): Promise<Result> => {
       try {
         const org = await ctx.requireOrg();
-        return json(serializeBankView(await undoBankMatch(org.id, transactionId, body, { actor: "mcp", createdBy: "mcp" })));
+        return json(serializeBankView(await undoBankMatch(org.id, transactionId, body, { actor: MCP_ACTOR, createdBy: MCP_ACTOR })));
       } catch (e) {
         return bankFailure(ctx, e);
       }
@@ -264,7 +265,7 @@ export function registerBankTools(server: McpServer, ctx: McpToolsContext): void
     async ({ transactionId, ...body }): Promise<Result> => {
       try {
         const org = await ctx.requireOrg();
-        return json(serializeBankReturnResult(await confirmBankReturn(org.id, transactionId, body, { actor: "mcp", createdBy: "mcp" })));
+        return json(serializeBankReturnResult(await confirmBankReturn(org.id, transactionId, body, { actor: MCP_ACTOR, createdBy: MCP_ACTOR })));
       } catch (e) {
         return bankFailure(ctx, e);
       }

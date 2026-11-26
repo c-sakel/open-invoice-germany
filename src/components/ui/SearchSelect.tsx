@@ -17,7 +17,11 @@ type Option = SearchSelectOption;
 
 export interface SearchSelectProps {
   value: string | null;
-  onChange: (id: string | null, option: Option | null) => void;
+  /**
+   * Auswahl uebernehmen. Liefert der Aufrufer `false` (auch asynchron, z. B. abgelehnte Auswahl) oder wirft er,
+   * gilt die Auswahl als nicht angenommen und kommt nicht unter „Zuletzt verwendet“.
+   */
+  onChange: (id: string | null, option: Option | null) => void | boolean | Promise<void | boolean>;
   label: string;
   placeholder?: string;
   disabled?: boolean;
@@ -206,8 +210,18 @@ export function SearchSelect({
       onChange(null, null);
     } else if (item.kind === "option") {
       setLoaded(item.option);
-      recent.push(item.option.id);
-      onChange(item.option.id, item.option);
+      const picked = item.option.id;
+      const accepted = (result: void | boolean) => {
+        if (result !== false) recent.push(picked);
+      };
+      try {
+        const result = onChange(picked, item.option);
+        if (result instanceof Promise) result.then(accepted, () => undefined);
+        else accepted(result);
+      } catch (e) {
+        close();
+        throw e;
+      }
     } else {
       onCreate?.run(q);
     }

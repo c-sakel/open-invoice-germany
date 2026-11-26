@@ -9,6 +9,7 @@ import { POST } from "@/app/api/settings/branding/upload/route";
 import { GET as iconGet } from "@/app/api/branding/icon/route";
 import { GET as logoGet } from "@/app/api/branding/appLogo/route";
 import { PUBLIC_PREFIXES } from "@/proxy";
+import { resetRateLimits } from "@/lib/rate-limit";
 
 let orgId: string;
 vi.mock("@/lib/org", () => ({ getActiveOrg: () => Promise.resolve({ id: orgId }) }));
@@ -59,11 +60,27 @@ describe("Oeffentliche Auslieferung", () => {
 
   it("GET /api/branding/appLogo ohne Upload -> 404 (Huelle zeigt dann das Kuerzel)", async () => {
     await dbInternal.brandingSettings.update({ where: { orgId }, data: { appLogoPath: null } });
-    expect((await logoGet()).status).toBe(404);
+    expect((await logoGet(new Request("http://x/api/branding/appLogo"))).status).toBe(404);
   });
 
   it("/api/branding ist proxy-oeffentlich", () => {
     expect(PUBLIC_PREFIXES).toContain("/api/branding");
+  });
+});
+
+describe("Bremse je Client-IP", () => {
+  const req = (path: string, ip: string) => new Request(`http://x${path}`, { headers: { "x-forwarded-for": ip } });
+
+  it("121. Abruf je IP -> 429 mit retry-after, andere IP bleibt frei (icon und appLogo teilen die Bremse)", async () => {
+    resetRateLimits();
+    let last = 0;
+    for (let i = 0; i < 120; i++) last = (await (i % 2 === 0 ? iconGet : logoGet)(req(`/api/branding/${i % 2 === 0 ? "icon" : "appLogo"}`, "203.0.113.7"))).status;
+    expect(last).not.toBe(429);
+    const blocked = await iconGet(req("/api/branding/icon", "203.0.113.7"));
+    expect(blocked.status).toBe(429);
+    expect(Number(blocked.headers.get("retry-after"))).toBeGreaterThanOrEqual(1);
+    expect((await iconGet(req("/api/branding/icon", "203.0.113.8"))).status).toBe(200);
+    resetRateLimits();
   });
 });
 
@@ -85,7 +102,7 @@ describe("Pfad-Containment (Fix-Welle Fix 1 — Verteidigung in der Tiefe)", () 
 
   it("appLogoPath mit Pfad-Traversal -> 404, KEIN Dateizugriff ausserhalb ATTACHMENTS_DIR", async () => {
     await dbInternal.brandingSettings.update({ where: { orgId }, data: { appLogoPath: TRAVERSAL } });
-    const res = await logoGet();
+    const res = await logoGet(new Request("http://x/api/branding/appLogo"));
     expect(res.status).toBe(404);
   });
 });

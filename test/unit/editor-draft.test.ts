@@ -16,6 +16,7 @@ import {
   dueDateFromDays,
   resolveDueDays,
   localDateOnly,
+  shouldSkipQuickSave,
 } from "@/lib/editor/draft";
 import { createInvoiceSchema, updateInvoiceSchema, createDocumentSchema, createDeliveryNoteSchema, updateDeliveryNoteSchema } from "@/schemas";
 
@@ -542,5 +543,13 @@ describe("draftLacksDeliveryInfo (Vorabwarnung Leistungszeitpunkt)", () => {
     expect(draftLacksDeliveryInfo({ ...base, deliveryStart: "2311-06-01", deliveryEnd: "2311-06-30" })).toBe(false);
     expect(draftLacksDeliveryInfo({ ...base, deliveryDateFollowsIssue: true })).toBe(false);
     expect(draftLacksDeliveryInfo({ ...base, notes: "Leistung im June 2311" })).toBe(false);
+  });
+});
+
+describe("shouldSkipQuickSave", () => {
+  it("speichert nicht, wenn ein gespeicherter Beleg unveraendert ist", () => {
+    expect(shouldSkipQuickSave({ id: "x", dirty: false })).toBe(true);
+    expect(shouldSkipQuickSave({ id: "x", dirty: true })).toBe(false);
+    expect(shouldSkipQuickSave({ id: null, dirty: false })).toBe(false);
   });
 });

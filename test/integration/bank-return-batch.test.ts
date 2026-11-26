@@ -15,6 +15,8 @@ const opts = { actor: "tester", createdBy: "user" as const, now: new Date("2271-
 let org: BankTestOrg;
 let other: BankTestOrg;
 const retIds: string[] = [];
+/** Erwartung je Rueckbuchung, unabhaengig vom Ergebnis aus der gebuchten Rechnung abgeleitet. */
+const expectedByTx = new Map<string, { invoiceId: string; number: string; amountCents: number; reason: "SAME_E2E" | "NUMBER" }>();
 
 beforeAll(async () => {
   process.env.AUTH_SECRET = process.env.AUTH_SECRET ?? "test-auth-secret-mindestens-16-zeichen";
@@ -26,12 +28,12 @@ beforeAll(async () => {
     const pay = await mkBankTx(org, { amountCents: inv.grossCents, bookingDate: BOOK, endToEndId: e2e, remittance: inv.number });
     await confirmBankMatch(org.orgId, pay, { allocations: [{ invoiceId: inv.id, amountCents: inv.grossCents }], expectedAllocatedCents: 0 }, opts);
     // gerade Index: Rueckbuchung ueber E2E, ungerade: ueber Rechnungsnummer im Verwendungszweck
-    retIds.push(
-      await mkBankTx(org, {
-        amountCents: inv.grossCents, bookingDate: BOOK, direction: "DBIT", status: "RETURN",
-        ...(i % 2 === 0 ? { endToEndId: e2e } : { remittance: `Rueckgabe ${inv.number}` }),
-      }),
-    );
+    const retId = await mkBankTx(org, {
+      amountCents: inv.grossCents, bookingDate: BOOK, direction: "DBIT", status: "RETURN",
+      ...(i % 2 === 0 ? { endToEndId: e2e } : { remittance: `Rueckgabe ${inv.number}` }),
+    });
+    retIds.push(retId);
+    expectedByTx.set(retId, { invoiceId: inv.id, number: inv.number, amountCents: inv.grossCents, reason: i % 2 === 0 ? "SAME_E2E" : "NUMBER" });
   }
 }, 600_000);
 
@@ -39,13 +41,13 @@ describe("returnSuggestionsForRows", () => {
   it("liefert je Umsatz dasselbe wie die Einzelfunktion", async () => {
     const batch = await returnSuggestionsForRows(org.orgId, retIds);
     expect(batch.size).toBe(19);
-    let nonEmpty = 0;
     for (const id of retIds) {
+      const expected = expectedByTx.get(id)!;
       const single = await returnSuggestions(org.orgId, id);
+      expect(single).toHaveLength(1);
+      expect(single[0]).toMatchObject(expected);
       expect(batch.get(id)).toEqual(single);
-      if (single.length > 0) nonEmpty += 1;
     }
-    expect(nonEmpty).toBe(19);
   });
 
   it("feste Zahl von Rechnungs-Abfragen unabhaengig von der Zeilenzahl", async () => {

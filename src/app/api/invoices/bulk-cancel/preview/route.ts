@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getCancelPreviews } from "@/domain/invoice/bulk-cancel";
 import { getActiveOrg } from "@/lib/org";
 import { rateLimit, RateLimitError } from "@/lib/rate-limit";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 
@@ -29,7 +30,7 @@ export async function POST(req: Request) {
         { status: 429, headers: { ...NO_STORE, "retry-after": String(Math.ceil(e.retryAfterMs / 1000)) } },
       );
     }
-    console.error("[bulk-cancel] Vorschau", e);
+    console.error("[bulk-cancel] Vorschau", describeError(e));
     return NextResponse.json({ error: "Vorschau fehlgeschlagen." }, { status: 500, headers: NO_STORE });
   }
 }

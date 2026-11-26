@@ -1,5 +1,6 @@
 // ── API-Schluessel (Phase 10, Task 1) ─────────────────────────────────────────
 import { z } from "zod";
+import { MCP_ACTOR } from "../actor";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { createApiKey } from "@/domain/api-key/create";
@@ -25,7 +26,7 @@ export function registerApiKeyTools(server: McpServer, ctx: McpToolsContext): vo
     async ({ name, scopes, expiresAt }): Promise<Result> => {
       try {
         const org = await ctx.requireOrg();
-        const key = await createApiKey(org.id, { name, scopes, expiresAt: expiresAt ?? null }, "mcp");
+        const key = await createApiKey(org.id, { name, scopes, expiresAt: expiresAt ?? null }, MCP_ACTOR);
         return ctx.ok(
           `API-Schluessel "${key.name}" erzeugt (Scopes: ${key.scopes.join(", ")}). Token (nur jetzt sichtbar): ${key.token}`,
         );
@@ -46,7 +47,7 @@ export function registerApiKeyTools(server: McpServer, ctx: McpToolsContext): vo
     async ({ id }): Promise<Result> => {
       try {
         const org = await ctx.requireOrg();
-        await revokeApiKey(org.id, id, "mcp");
+        await revokeApiKey(org.id, id, MCP_ACTOR);
         return ctx.ok(`API-Schluessel "${id}" widerrufen.`);
       } catch (e) {
         if (e instanceof NotFoundError) return ctx.fail(e.message);

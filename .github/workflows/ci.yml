@@ -37,7 +37,14 @@ jobs:
       - run: npm test
       # Fachliche Daten laufen nach Berliner Kalender; die Unit-Tests muessen in beiden Zeitzonen gruen sein.
       - name: Unit-Tests in Europe/Berlin
-        run: TZ=Europe/Berlin npx vitest run test/unit
+        run: TZ=Europe/Berlin npx vitest run test/unit --coverage --coverage.reporter=text-summary --coverage.reporter=html
+      - name: Coverage-Bericht hochladen
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-unit
+          path: coverage/
+          if-no-files-found: ignore
       - run: npm run build
         env:
           DATABASE_URL: "file:./dev.db"

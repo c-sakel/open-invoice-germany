@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getActiveOrg } from "@/lib/org";
 import { listNotifications } from "@/domain/notifications/create";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,7 +17,7 @@ export async function GET(req: Request) {
     const notifications = await listNotifications(org.id, { unreadOnly, limit });
     return NextResponse.json({ notifications });
   } catch (e) {
-    console.error("GET /api/notifications:", e);
+    console.error("GET /api/notifications:", describeError(e));
     return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }
 }

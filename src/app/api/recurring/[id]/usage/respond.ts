@@ -6,6 +6,7 @@ import { PayloadTooLargeError } from "@/api/errors";
 import { readJsonLimited } from "@/api/read-json-limited";
 import { RateLimitError, rateLimit } from "@/lib/rate-limit";
 import { isSameOriginRequest } from "@/lib/http/same-origin";
+import { describeError } from "@/lib/safe-error";
 
 const NO_STORE = { "cache-control": "no-store" };
 
@@ -63,6 +64,6 @@ export function usageErrorResponse(e: unknown, label: string): NextResponse {
     return NextResponse.json({ error: Object.values(fields)[0] ?? "Ungültige Eingabe.", fields }, { status: 400, headers: NO_STORE });
   }
   if (e instanceof SyntaxError) return NextResponse.json({ error: "Ungültiges JSON im Request-Body." }, { status: 400, headers: NO_STORE });
-  console.error(label, e);
+  console.error(label, describeError(e));
   return NextResponse.json({ error: "Verbrauch konnte nicht gespeichert werden." }, { status: 500, headers: NO_STORE });
 }

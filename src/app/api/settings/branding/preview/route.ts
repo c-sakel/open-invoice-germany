@@ -13,6 +13,7 @@ import {
   PREVIEW_DOC_TYPE_TO_LAYOUT_DOC_TYPE,
 } from "@/domain/settings/preview";
 import { layoutIdSchema } from "@/schemas/settings";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,7 +51,7 @@ export async function GET(req: Request) {
   try {
     org = await getActiveOrg();
   } catch (e) {
-    console.error("GET /api/settings/branding/preview:", e);
+    console.error("GET /api/settings/branding/preview:", describeError(e));
     return NextResponse.json({ error: "Kein Unternehmen eingerichtet." }, { status: 404 });
   }
 

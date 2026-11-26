@@ -6,6 +6,7 @@
  * Rechnungen zählen nicht (sie haben nichts abgerechnet). Immer auf die Organisation begrenzt.
  */
 import type { Prisma } from "@/generated/prisma/client";
+import { effectiveAnchorDay } from "./usage-period";
 
 /** Anzahl zuletzt erstellter Rechnungen, unter denen das spaeteste Ende gesucht wird. */
 const LAST_BILLED_WINDOW = 50;
@@ -79,4 +80,35 @@ export async function findLastBilled(
   }
   if (!best) return null;
   return { period: best.period, deliveryDate: best.deliveryDate };
+}
+
+export interface PreviewBasis {
+  /** Ende der letzten Abrechnung (nur wenn der Lauf daran anschliesst), sonst null. */
+  previousEnd: Date | null;
+  /** Wirksamer Ankertag wie im Lauf (Verbrauchsabos ohne Ankertag: Tag des Starts). */
+  anchorDay: number | null;
+}
+
+/**
+ * Grundlage der Vorschau, identisch zum Lauf (`buildRunLines`): wirksamer Ankertag ueber `effectiveAnchorDay`
+ * und Ende der letzten Abrechnung nur fuer nachtraeglich abgerechnete Abos ohne wirksamen Ankertag.
+ * Eine Abfrage je Abo, deshalb nur fuer Einzelansichten.
+ */
+export async function findPreviewBasis(
+  tx: Prisma.TransactionClient,
+  rec: { id: string; orgId: string; billingTiming: string; anchorDay: number | null; startDate: Date; status: string },
+): Promise<PreviewBasis> {
+  const hasUsageLines = rec.anchorDay === null ? (await tx.recurringInvoiceLine.count({ where: { recurringInvoiceId: rec.id, billing: "USAGE" } })) > 0 : false;
+  const anchorDay = effectiveAnchorDay(rec, hasUsageLines);
+  if (rec.status !== "ACTIVE" || rec.billingTiming !== "ARREARS" || anchorDay !== null) return { previousEnd: null, anchorDay };
+  const last = await findLastBilled(tx, rec.orgId, rec.id);
+  return { previousEnd: last?.period?.end ?? last?.deliveryDate ?? null, anchorDay };
+}
+
+/** Nur das Ende der letzten Abrechnung der Vorschau (siehe findPreviewBasis). */
+export async function findPreviewPreviousEnd(
+  tx: Prisma.TransactionClient,
+  rec: { id: string; orgId: string; billingTiming: string; anchorDay: number | null; startDate: Date; status: string },
+): Promise<Date | null> {
+  return (await findPreviewBasis(tx, rec)).previousEnd;
 }

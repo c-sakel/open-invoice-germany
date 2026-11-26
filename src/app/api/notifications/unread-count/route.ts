@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getActiveOrg } from "@/lib/org";
 import { unreadCount } from "@/domain/notifications/create";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,7 +14,7 @@ export async function GET() {
     const count = await unreadCount(org.id);
     return NextResponse.json({ count });
   } catch (e) {
-    console.error("GET /api/notifications/unread-count:", e);
+    console.error("GET /api/notifications/unread-count:", describeError(e));
     return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }
 }

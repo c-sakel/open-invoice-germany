@@ -6,6 +6,7 @@ import { requireActionOrg } from "@/lib/auth/require-session";
 import { loadDocumentSettings, saveDocumentSettings } from "@/domain/document/settings";
 import { parseKuExternalRows } from "@/lib/ku-external-input";
 import type { ActionResult } from "./result";
+import { describeError } from "@/lib/safe-error";
 
 function firstError(issues: { message: string; path: PropertyKey[] }[]): string {
   const i = issues[0];
@@ -52,7 +53,7 @@ export async function saveDocumentSettingsAction(_prev: ActionResult, fd: FormDa
   try {
     current = await loadDocumentSettings((await requireActionOrg()).id);
   } catch (e) {
-    console.error("saveDocumentSettingsAction:", e);
+    console.error("saveDocumentSettingsAction:", describeError(e));
     return { ok: false, error: "Speichern fehlgeschlagen." };
   }
   // Marker-Felder: fehlt der Abschnitt im Formular, bleiben die gespeicherten Werte erhalten.
@@ -112,7 +113,7 @@ export async function saveDocumentSettingsAction(_prev: ActionResult, fd: FormDa
     if (e instanceof z.ZodError) {
       return { ok: false, error: firstError(e.issues) };
     }
-    console.error("saveDocumentSettingsAction:", e);
+    console.error("saveDocumentSettingsAction:", describeError(e));
     return { ok: false, error: "Speichern fehlgeschlagen." };
   }
   revalidatePath("/einstellungen/belege");

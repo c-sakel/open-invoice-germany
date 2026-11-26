@@ -29,12 +29,11 @@ interface PaymentMethodOption {
 }
 
 /**
- * Zeilen-Schnellaktionen (Phase 8b, §41) — Drei-Punkte-Menue je Zeile in den Listen
- * (Rechnungen/Dokumente/Lieferscheine/Abos), Eintraege aus `availableActions` (Task 1).
- * Task-2-Facts-Ruling: nur bestehende Dialoge/Routen wiederverwenden, KEINE neuen
- * Backends. Reines HTML-`<details>`-Disclosure statt eigenem Open/Close-State — jede
- * Aktion, die einen Dialog braucht (SendEmailDialog/PaymentForm/ConvertMenu), rendert
- * ihren eigenen Trigger-Button innerhalb des Menues.
+ * Zeilen-Schnellaktionen: Drei-Punkte-Menue je Zeile in den Listen (Rechnungen, Dokumente,
+ * Lieferscheine, Abos). Die Eintraege kommen aus `availableActions`; es werden nur bestehende
+ * Dialoge und Routen verwendet. Das Menue ist ein reines HTML-`<details>`-Disclosure ohne
+ * eigenen Open/Close-State. Jede Aktion, die einen Dialog braucht (SendEmailDialog,
+ * PaymentForm, ConvertMenu), rendert ihren eigenen Trigger-Button innerhalb des Menues.
  */
 export function RowActionsMenu({
   kind,

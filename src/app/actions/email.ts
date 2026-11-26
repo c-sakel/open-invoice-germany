@@ -7,6 +7,7 @@ import { MailSendError } from "@/lib/mail/provider";
 import { SecretsUnavailableError } from "@/lib/crypto/secrets";
 import { mailSettingsInputSchema } from "@/schemas/email";
 import type { ActionResult } from "./result";
+import { describeError } from "@/lib/safe-error";
 
 function str(fd: FormData, key: string): string | undefined {
   const v = fd.get(key);
@@ -42,7 +43,7 @@ export async function saveMailSettingsAction(_prev: ActionResult, fd: FormData):
     await saveMailSettings(org.id, parsed.data);
   } catch (e) {
     if (e instanceof SecretsUnavailableError) return { ok: false, error: e.message };
-    console.error("saveMailSettingsAction:", e);
+    console.error("saveMailSettingsAction:", describeError(e));
     return { ok: false, error: "Speichern fehlgeschlagen." };
   }
   revalidatePath("/einstellungen/email");
@@ -58,7 +59,7 @@ export async function sendTestMailAction(_prev: ActionResult, _fd: FormData): Pr
   } catch (e) {
     if (e instanceof MailNotConfiguredError) return { ok: false, error: e.message };
     if (e instanceof MailSendError) return { ok: false, error: `Testversand fehlgeschlagen: ${e.message}` };
-    console.error("sendTestMailAction:", e);
+    console.error("sendTestMailAction:", describeError(e));
     return { ok: false, error: "Testversand fehlgeschlagen." };
   }
   revalidatePath("/einstellungen/email");

@@ -32,6 +32,7 @@ import { createInvoiceSchema, recordPaymentSchema } from "@/schemas";
 
 const NOW = new Date("2280-05-02T10:00:00.000Z");
 const IN_TIME = new Date("2280-05-06T10:00:00.000Z");
+const STAGE2_TIME = new Date("2280-05-14T10:00:00.000Z");
 const TOO_LATE = new Date("2280-06-20T10:00:00.000Z");
 
 let orgId: string;
@@ -58,14 +59,14 @@ beforeAll(async () => {
   customerId = c.id;
 });
 
-async function finalWithSkonto(): Promise<{ id: string; number: string }> {
+async function finalWithSkonto(opts: { currency?: string; stage2?: boolean } = {}): Promise<{ id: string; number: string }> {
   const quote = await createBusinessDocument(
     orgId,
     {
       kind: "ANGEBOT",
       customerId,
       taxScheme: "REGULAR",
-      currency: "EUR",
+      currency: opts.currency ?? "EUR",
       lines: [{ lineType: "ITEM", description: "Projekt", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 1_000_000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 }],
     },
     { now: NOW },
@@ -75,7 +76,7 @@ async function finalWithSkonto(): Promise<{ id: string; number: string }> {
     await finalizeInvoice(dp.id, { now: NOW });
   }
   const final = await createFinalInvoice(orgId, { sourceType: "QUOTE", sourceId: quote.id }, { now: NOW });
-  await dbInternal.invoice.update({ where: { id: final.id }, data: { skonto1Permille: 20, skonto1Days: 7 } });
+  await dbInternal.invoice.update({ where: { id: final.id }, data: { skonto1Permille: 20, skonto1Days: 7, ...(opts.stage2 ? { skonto2Permille: 10, skonto2Days: 14 } : {}) } });
   const fin = await finalizeInvoice(final.id, { now: NOW });
   return { id: fin.id, number: fin.number! };
 }
@@ -105,12 +106,12 @@ async function xmlOf(id: string): Promise<{ ubl: string; cii: string; human: str
   return { ubl: buildXRechnungUBL(loaded.data), cii: buildFacturXCII(loaded.data), human: loaded.data.paymentTermsHuman };
 }
 
-function bankTx(remittance: string, amountCents: number, bookingDate: Date): MatchTransaction {
+function bankTx(remittance: string, amountCents: number, bookingDate: Date, currency = "EUR"): MatchTransaction {
   return {
     bookingDate,
     amountCents,
     allocatedCents: 0,
-    currency: "EUR",
+    currency,
     direction: "CRDT",
     counterpartyName: null,
     counterpartyIbanHash: null,
@@ -119,9 +120,9 @@ function bankTx(remittance: string, amountCents: number, bookingDate: Date): Mat
   };
 }
 
-async function skontoSuggestion(number: string, amountCents: number, at: Date): Promise<boolean | null> {
+async function skontoSuggestion(number: string, amountCents: number, at: Date, currency = "EUR"): Promise<boolean | null> {
   const ctx = await loadMatchContext(orgId);
-  const s = suggestMatches(bankTx(number, amountCents, at), ctx).find((x) => x.allocations.some((a) => a.number === number));
+  const s = suggestMatches(bankTx(number, amountCents, at, currency), ctx).find((x) => x.allocations.some((a) => a.number === number));
   return s ? (s.allocations[0]?.applySkonto ?? false) : null;
 }
 
@@ -173,6 +174,35 @@ describe("Schlussrechnung mit Skonto", () => {
     const r = await recordPayment(f.id, recordPaymentSchema.parse({ amountCents: 571_200, method: "TRANSFER", paidAt: IN_TIME, applySkonto: true }));
     expect(r.payment.status).toBe("PAID");
     expect(r.skontoPayment?.amountCents).toBe(23_800);
+  });
+
+  it("Fremdwaehrung: Skonto-Basis, Zahlbetrag und Vorschlag auf dem Zahlbetrag in USD", async () => {
+    for (const [source, day] of [["MONTHLY", "2280-04-01"], ["MONTHLY", "2280-05-01"], ["ECB", "2280-05-01"]] as const) {
+      await dbInternal.exchangeRate.create({ data: { source, currency: "USD", rateDate: new Date(`${day}T00:00:00.000Z`), rateMicros: 1100000, origin: "COMPUTED" } });
+    }
+    const f = await finalWithSkonto({ currency: "USD" });
+    const row = await dbInternal.invoice.findUniqueOrThrow({ where: { id: f.id }, select: { currency: true, skontoBaseCents: true, payableCents: true } });
+    expect(row.currency).toBe("USD");
+    expect(row.payableCents).toBe(595_000);
+    expect(row.skontoBaseCents).toBe(595_000);
+    expect(await skontoSuggestion(f.number, 583_100, IN_TIME, "USD")).toBe(true);
+    expect(await skontoSuggestion(f.number, 571_200, IN_TIME, "USD")).not.toBe(true);
+    const r = await recordPayment(f.id, recordPaymentSchema.parse({ amountCents: 583_100, method: "TRANSFER", paidAt: IN_TIME, applySkonto: true }));
+    expect(r.payment.status).toBe("PAID");
+    expect(r.skontoPayment?.amountCents).toBe(11_900);
+  });
+
+  it("Skonto-Stufe 2 (1 % / 14 Tage) rechnet auf dem Zahlbetrag, Stufe 1 ist dann abgelaufen", async () => {
+    const f = await finalWithSkonto({ stage2: true });
+    // 12 Tage nach Ausstellung: nur Stufe 2 gilt, 1 % von 5.950,00 EUR = 59,50 EUR
+    const check = await skontoCheckGet(new Request(`http://localhost/x?amountCents=589050&paidAt=${STAGE2_TIME.toISOString()}`), { params: Promise.resolve({ id: f.id }) });
+    expect((await check.json()).suggestion.amountCents).toBe(5_950);
+    expect(await skontoSuggestion(f.number, 589_050, STAGE2_TIME)).toBe(true);
+    // der Stufe-1-Betrag (2 %) reicht nach Ablauf der 7 Tage nicht fuer Skonto
+    expect(await skontoSuggestion(f.number, 583_100, STAGE2_TIME)).not.toBe(true);
+    const r = await recordPayment(f.id, recordPaymentSchema.parse({ amountCents: 589_050, method: "TRANSFER", paidAt: STAGE2_TIME, applySkonto: true }));
+    expect(r.payment.status).toBe("PAID");
+    expect(r.skontoPayment?.amountCents).toBe(5_950);
   });
 
   it("REST-Serialisierung nennt skontoBaseCents", async () => {

@@ -8,6 +8,7 @@ import { MailNotConfiguredError } from "@/domain/email/settings";
 import { sendEmailInputSchema, type SendEmailRawInput } from "@/schemas/email";
 import type { Attachment } from "@/domain/email/attachments";
 import { MAX_ATTACHMENT_FILE_BYTES, MAX_EMAIL_EXTRA_ATTACHMENTS_TOTAL_BYTES } from "@/lib/attachments/mime";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 
@@ -109,7 +110,7 @@ export async function POST(req: Request) {
     if (e instanceof EmailAttachmentsTooLargeError) {
       return NextResponse.json({ error: e.message }, { status: 400 });
     }
-    console.error("POST /api/emails/send:", e);
+    console.error("POST /api/emails/send:", describeError(e));
     return NextResponse.json({ error: "Versand fehlgeschlagen." }, { status: 500 });
   }
 }

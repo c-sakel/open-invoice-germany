@@ -12,6 +12,7 @@ import {
   TemplateNameConflictError,
 } from "@/domain/text-template/manage";
 import type { ActionResult } from "./result";
+import { describeError } from "@/lib/safe-error";
 
 function str(fd: FormData, key: string): string | undefined {
   const v = fd.get(key);
@@ -42,7 +43,7 @@ export async function saveTextTemplateAction(_prev: ActionResult, fd: FormData):
     if (e instanceof TemplateNameConflictError) return { ok: false, error: e.message };
     if (e instanceof TemplateNotFoundError) return { ok: false, error: "Vorlage nicht gefunden." };
     if (e instanceof z.ZodError) return { ok: false, error: firstError(e.issues) };
-    console.error("saveTextTemplateAction:", e);
+    console.error("saveTextTemplateAction:", describeError(e));
     return { ok: false, error: "Speichern fehlgeschlagen." };
   }
   revalidatePath("/einstellungen/textvorlagen");
@@ -60,7 +61,7 @@ export async function deleteTextTemplateAction(_prev: ActionResult, fd: FormData
   } catch (e) {
     if (e instanceof TemplateNotFoundError) return { ok: false, error: "Vorlage nicht gefunden." };
     if (e instanceof SystemTemplateProtectedError) return { ok: false, error: e.message };
-    console.error("deleteTextTemplateAction:", e);
+    console.error("deleteTextTemplateAction:", describeError(e));
     return { ok: false, error: "Löschen fehlgeschlagen." };
   }
   revalidatePath("/einstellungen/textvorlagen");
@@ -77,7 +78,7 @@ export async function setDefaultTextTemplateAction(_prev: ActionResult, fd: Form
     await setDefaultTextTemplate(org.id, id);
   } catch (e) {
     if (e instanceof TemplateNotFoundError) return { ok: false, error: "Vorlage nicht gefunden." };
-    console.error("setDefaultTextTemplateAction:", e);
+    console.error("setDefaultTextTemplateAction:", describeError(e));
     return { ok: false, error: "Aktion fehlgeschlagen." };
   }
   revalidatePath("/einstellungen/textvorlagen");

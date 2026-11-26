@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getActiveOrg } from "@/lib/org";
 import { dbInternal } from "@/lib/db";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 
@@ -20,7 +21,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       warnings: JSON.parse(log.warningsJson) as string[],
     });
   } catch (e) {
-    console.error("GET /api/emails/[id]:", e);
+    console.error("GET /api/emails/[id]:", describeError(e));
     return NextResponse.json({ error: "Laden fehlgeschlagen." }, { status: 500 });
   }
 }

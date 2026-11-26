@@ -13,6 +13,7 @@ import { loadBaseRates } from "@/domain/dunning/base-rate";
 import { verzugStart, type Dispatch } from "@/domain/dunning/verzug";
 import { dunningScheduleFor, latestDunning, reachedStageIds, type StageLike } from "@/domain/dunning/schedule";
 import { loadDunningSettings } from "@/domain/dunning/settings";
+import { withChangeLogRetry } from "@/lib/chain-retry";
 import { appendChangeLog } from "@/domain/audit";
 import { logActivity } from "@/domain/activity/log";
 import { emitEvent } from "@/domain/webhook/emit";
@@ -76,12 +77,14 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
   // Basiszinssatz aus den org-weiten Mahnwesen-Einstellungen (Selbstheilung legt sie
   // bei Bedarf an) — AUSSERHALB der Transaktion, da hier nur gelesen wird und der Upsert
   // (Anlegen der Default-Zeile) keine GoBD-relevante Schreibaktion ist.
+  // Hinweis Kettenretry: Einstellungen/Branding werden vor der Transaktion gelesen und bei einem
+  // Wiederholungsversuch nicht neu geladen (ms-Fenster; die Layoutversion wird in der Tx aufgeloest).
   const settings = await loadDunningSettings(inv0.orgId);
   // Phase 16g: Design der Mahnung (Typ-Map DUNNING > Organisationsstandard); die Version wird in der Tx eingefroren.
   const brand = await loadBrandingSettings(inv0.orgId);
   const layoutRef = resolveLayoutId({ overrideLayoutId: null, layoutByType: brand.layoutByType, orgDefault: brand.layoutId, docType: "DUNNING" });
 
-  return dbInternal.$transaction(async (tx) => {
+  return withChangeLogRetry(() => dbInternal.$transaction(async (tx) => {
     const inv = await tx.invoice.findUnique({
       where: { id: invoiceId },
       include: {
@@ -329,5 +332,5 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
       // vor Phase 6 das Feld, ueber das die Stufe identifiziert wurde.
       level: stage.order,
     };
-  });
+  }));
 }

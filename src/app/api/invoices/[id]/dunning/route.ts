@@ -5,6 +5,7 @@ import { getActiveOrg } from "@/lib/org";
 import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/lib/auth/require-session";
 import { createDunning, DunningError } from "@/domain/dunning/create";
 import { NotFoundError } from "@/domain/errors";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -52,7 +53,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     if (e instanceof DunningError) {
       return NextResponse.json({ error: e.message }, { status: 409 });
     }
-    console.error("POST /api/invoices/[id]/dunning:", e);
+    console.error("POST /api/invoices/[id]/dunning:", describeError(e));
     return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }
 }

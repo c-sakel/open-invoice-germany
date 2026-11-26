@@ -2,6 +2,7 @@
 // Dieselben Zod-Schemas und Domain-Funktionen wie /api/v1/ExchangeRate (Kurswahl `rateFor`,
 // Pflege `upsertManualRate`, Abruf `refreshExchangeRates`) — keine zweite Validierung.
 import { z } from "zod";
+import { MCP_ACTOR } from "../actor";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { serializeExchangeRate, serializeExchangeRatePick } from "@/api/serializers/exchange-rate";
@@ -50,7 +51,7 @@ export function registerFxTools(server: McpServer, ctx: McpToolsContext): void {
         const org = await ctx.requireOrg();
         // `args` hat das SDK bereits mit exchangeRateUpsertSchema.shape geparst (rate -> Micros, Datum -> Date).
         const input: z.output<typeof exchangeRateUpsertSchema> = args;
-        const row = await upsertManualRate(input, "mcp", org.id);
+        const row = await upsertManualRate(input, MCP_ACTOR, org.id);
         return ctx.ok(`Kurs gespeichert: ${JSON.stringify(serializeExchangeRate(row))}`);
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);

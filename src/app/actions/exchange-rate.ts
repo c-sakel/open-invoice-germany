@@ -7,6 +7,7 @@ import { rateFor } from "@/domain/fx/rate-for";
 import { refreshExchangeRates, upsertManualRate } from "@/domain/fx/store";
 import { exchangeRateQuerySchema, exchangeRateUpsertSchema } from "@/schemas/fx";
 import type { ActionResult } from "./result";
+import { describeError } from "@/lib/safe-error";
 
 export interface FxPreviewResult {
   /** `true`, wenn fuer Waehrung und Stichtag ein Kurs vorliegt. */
@@ -58,7 +59,7 @@ export async function upsertExchangeRateAction(_prev: ActionResult, fd: FormData
   } catch (e) {
     if (e instanceof z.ZodError) return { ok: false, error: firstError(e.issues) };
     if (e instanceof RangeError) return { ok: false, error: e.message };
-    console.error("upsertExchangeRateAction:", e);
+    console.error("upsertExchangeRateAction:", describeError(e));
     return { ok: false, error: "Speichern fehlgeschlagen." };
   }
   revalidatePath("/einstellungen/kurse");
@@ -75,7 +76,7 @@ export async function refreshExchangeRatesAction(): Promise<ActionResult> {
     const parts = [`${r.inserted} neue Tageskurse`, r.months > 0 ? "Monatsmittel berechnet" : null, r.incompleteMonths.length > 0 ? `Monatsmittel unvollständig (${r.incompleteMonths.join(", ")}) — bitte manuell pflegen` : null];
     return { ok: true, message: parts.filter(Boolean).join(", ") + "." };
   } catch (e) {
-    console.error("refreshExchangeRatesAction:", e);
+    console.error("refreshExchangeRatesAction:", describeError(e));
     return { ok: false, error: `Kursabruf fehlgeschlagen: ${e instanceof Error ? e.message : "unbekannter Fehler"}`.slice(0, 300) };
   }
 }

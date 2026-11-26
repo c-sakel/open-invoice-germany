@@ -5,6 +5,7 @@ import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/
 import { getWebhookEndpoint, updateWebhookEndpoint } from "@/domain/webhook/endpoints";
 import { NotFoundError } from "@/domain/errors";
 import { SsrfBlockedError } from "@/domain/webhook/ssrf";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,7 +19,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   } catch (e) {
     if (e instanceof AuthRequiredError) return authRequiredResponse();
     if (e instanceof NotFoundError) return NextResponse.json({ error: e.message }, { status: 404 });
-    console.error("GET /api/webhooks/[id]:", e);
+    console.error("GET /api/webhooks/[id]:", describeError(e));
     return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }
 }
@@ -36,7 +37,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (e instanceof NotFoundError) return NextResponse.json({ error: e.message }, { status: 404 });
     if (e instanceof z.ZodError) return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });
     if (e instanceof SsrfBlockedError) return NextResponse.json({ error: e.message }, { status: 400 });
-    console.error("PATCH /api/webhooks/[id]:", e);
+    console.error("PATCH /api/webhooks/[id]:", describeError(e));
     return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }
 }

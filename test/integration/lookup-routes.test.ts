@@ -9,6 +9,9 @@ vi.mock("@/lib/org", () => ({
   },
 }));
 
+const sessionStore: { userId: string | null } = vi.hoisted(() => ({ userId: "tester" }));
+vi.mock("@/lib/auth/server", () => ({ getCurrentUserId: async () => sessionStore.userId }));
+
 import { dbInternal } from "@/lib/db";
 import { resetRateLimits } from "@/lib/rate-limit";
 import { GET as customersGet } from "@/app/api/lookup/customers/route";
@@ -46,6 +49,19 @@ describe("/api/lookup", () => {
     const miss = await customerGet(url("/x"), { params: Promise.resolve({ id: "unbekannt" }) });
     expect(miss.status).toBe(404);
     expect(miss.headers.get("cache-control")).toBe("no-store");
+  });
+  it("ohne Sitzung -> 401 mit festem Text und ohne Daten", async () => {
+    sessionStore.userId = null;
+    try {
+      for (const res of [await customersGet(url("/api/lookup/customers")), await productsGet(url("/api/lookup/products"))]) {
+        expect(res.status).toBe(401);
+        expect(await res.json()).toEqual({ error: "Nicht angemeldet." });
+      }
+      const one = await customerGet(url("/x"), { params: Promise.resolve({ id: customerId }) });
+      expect(one.status).toBe(401);
+    } finally {
+      sessionStore.userId = "tester";
+    }
   });
   it("ohne Organisation -> 500 mit festem Text", async () => {
     const keep = orgStore.id;

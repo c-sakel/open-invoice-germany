@@ -7,6 +7,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUserId } from "@/lib/auth/server";
 import { runScheduledJobs, type SchedulerJob } from "@/domain/scheduler/runner";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,7 +38,7 @@ export async function POST(req: Request) {
     const ok = results.every((r) => r.ok);
     return NextResponse.json({ ok, results }, { status: ok ? 200 : 207 });
   } catch (e) {
-    console.error("POST /api/scheduler/run:", e);
+    console.error("POST /api/scheduler/run:", describeError(e));
     return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }
 }

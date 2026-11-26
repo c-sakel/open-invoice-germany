@@ -20,7 +20,7 @@ export const dynamic = "force-dynamic";
 export const GET = withApi(async (req, ctx) => {
   const { searchParams } = new URL(req.url);
   const result = await listRecurring(ctx.orgId, Object.fromEntries(searchParams));
-  return apiList(result.rows.map(serializeRecurring), result);
+  return apiList(result.rows.map((r) => serializeRecurring(r)), result);
 }, { scope: "read" });
 
 export const POST = withApi(async (_req, ctx) => {

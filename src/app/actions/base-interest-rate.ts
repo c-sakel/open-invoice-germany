@@ -6,6 +6,7 @@ import { requireActionOrg } from "@/lib/auth/require-session";
 import { upsertBaseRate, deleteBaseRate } from "@/domain/dunning/base-rate";
 import { ValidationError, NotFoundError } from "@/domain/errors";
 import type { ActionResult } from "./result";
+import { describeError } from "@/lib/safe-error";
 
 function str(fd: FormData, key: string): string | undefined {
   const v = fd.get(key);
@@ -40,7 +41,7 @@ export async function upsertBaseRateAction(_prev: ActionResult, fd: FormData): P
   } catch (e) {
     if (e instanceof z.ZodError) return { ok: false, error: firstError(e.issues) };
     if (e instanceof ValidationError) return { ok: false, error: e.message };
-    console.error("upsertBaseRateAction:", e);
+    console.error("upsertBaseRateAction:", describeError(e));
     return { ok: false, error: "Speichern fehlgeschlagen." };
   }
   revalidatePath("/einstellungen/mahnwesen");
@@ -58,7 +59,7 @@ export async function deleteBaseRateAction(_prev: ActionResult, fd: FormData): P
   } catch (e) {
     if (e instanceof NotFoundError) return { ok: false, error: e.message };
     if (e instanceof ValidationError) return { ok: false, error: e.message };
-    console.error("deleteBaseRateAction:", e);
+    console.error("deleteBaseRateAction:", describeError(e));
     return { ok: false, error: "Löschen fehlgeschlagen." };
   }
   revalidatePath("/einstellungen/mahnwesen");

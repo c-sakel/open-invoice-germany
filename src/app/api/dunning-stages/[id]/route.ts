@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getActiveOrg } from "@/lib/org";
 import { updateDunningStage, deleteDunningStage, DunningStageError } from "@/domain/dunning/stages";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,7 +14,7 @@ function mapError(e: unknown, routeLabel: string) {
   if (e instanceof DunningStageError) {
     return NextResponse.json({ error: e.message }, { status: e.status });
   }
-  console.error(routeLabel, e);
+  console.error(routeLabel, describeError(e));
   return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
 }
 

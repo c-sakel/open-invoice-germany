@@ -6,6 +6,7 @@
  * (`importRequestSchema`); `dryRun` ist Standard `true`, die Vorschau enthaelt nie Beispielzeilen.
  */
 import { z } from "zod";
+import { MCP_ACTOR } from "../actor";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { exportFromApiFilter, ExportTooLargeError } from "@/domain/export";
@@ -68,7 +69,7 @@ export function registerCsvTools(server: McpServer, ctx: McpToolsContext): void 
         org.id,
         resource,
         { text: input.csv, fileName: input.fileName, dryRun: input.dryRun, expectedHash: input.expectedHash, allowRepeat: input.allowRepeat },
-        { actor: "mcp", source: "MCP" },
+        { actor: MCP_ACTOR, source: "MCP" },
       );
       return ctx.ok(JSON.stringify(result.status === "imported" ? { created: result.created, preview: result.preview } : { preview: result.preview }));
     } catch (e) {

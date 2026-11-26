@@ -68,6 +68,15 @@ export const PUBLIC_NO_NAV_HEADER = "x-oig-public";
 // server-seitig ueberschrieben (wie PUBLIC_NO_NAV_HEADER) — ein Client kann ihn nicht faelschen.
 export const PATHNAME_HEADER = "x-oig-pathname";
 
+function originHost(origin: string | null): string | null {
+  if (!origin) return null;
+  try {
+    return new URL(origin).host;
+  } catch {
+    return "ungueltig";
+  }
+}
+
 /** Setzt die CSP auf jede Antwort (Seiten, Redirects, Fehler) — Details in src/lib/http/csp.ts. */
 export async function proxy(req: NextRequest) {
   const res = await proxyInner(req);
@@ -87,6 +96,16 @@ async function proxyInner(req: NextRequest) {
   headers.set(PATHNAME_HEADER, pathname);
 
   if (requiresOriginCheck(req.method, pathname) && !isSameOriginHeaders(req.headers, req.nextUrl.host)) {
+    // Nur Pfad, Methode und Herkunftsmerkmale; keine Cookies, Header-Werte darueber hinaus, keine Bodies.
+    console.warn(
+      "Herkunft nicht erlaubt",
+      JSON.stringify({
+        path: pathname,
+        method: req.method,
+        secFetchSite: req.headers.get("sec-fetch-site"),
+        originHost: originHost(req.headers.get("origin")),
+      }),
+    );
     return NextResponse.json({ error: "Herkunft nicht erlaubt" }, { status: 403 });
   }
 

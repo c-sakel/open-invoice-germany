@@ -1073,3 +1073,8 @@ export function draftFromDeliveryNote(initial: DeliveryNoteInitialLike, taxRates
     dirty: false,
   };
 }
+
+/** Strg+S ohne Aenderung an einem bereits gespeicherten Beleg schreibt nichts (kein ChangeLog-Eintrag mit leerem Diff). */
+export function shouldSkipQuickSave(draft: { id?: string | null; dirty: boolean }): boolean {
+  return Boolean(draft.id) && !draft.dirty;
+}

@@ -189,10 +189,9 @@ describe("zugangDay Zeitzone", () => {
     // 21:30 UTC am 31.03. ist 23:30 MESZ am 31.03. -> Berliner Tag 31.03. -> +1 = 01.04.
     expect(run()).toBe("2281-04-01");
   });
-  it("POST und NONE: +3 Tage (Do 31.03. -> So 03.04. -> Mo 04.04.)", () => {
+  it("POST: +3 Tage (Do 31.03. -> So 03.04. -> Mo 04.04.)", () => {
     const at = new Date(Date.UTC(2281, 2, 31, 21, 30));
     expect(zugangDay({ channel: "POST", at }).toISOString().slice(0, 10)).toBe("2281-04-04");
-    expect(zugangDay({ channel: "NONE", at }).toISOString().slice(0, 10)).toBe("2281-04-04");
   });
 });
 

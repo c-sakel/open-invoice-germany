@@ -4,6 +4,7 @@ import { getActiveOrg } from "@/lib/org";
 import { listApiKeys } from "@/domain/api-key/list";
 import { createApiKey } from "@/domain/api-key/create";
 import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/lib/auth/require-session";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,7 +28,7 @@ export async function POST(req: Request) {
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });
     }
-    console.error("POST /api/api-keys:", e);
+    console.error("POST /api/api-keys:", describeError(e));
     return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }
 }

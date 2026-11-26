@@ -84,6 +84,18 @@ describe("CustomerPicker", () => {
     expect(ctx.addresses).toHaveLength(1);
   });
 
+  it("Leeren setzt den Kunden zurück (onChange(null))", async () => {
+    const onChange = vi.fn();
+    render(<CustomerPicker value="b" initialCustomer={customer({ id: "b", name: "Becker GmbH" })} onChange={onChange} />);
+    await advance(0);
+    fireEvent.focus(input());
+    await advance(200);
+    fireEvent.click(screen.getByText("— keiner —"));
+    await advance(0);
+    expect(onChange).toHaveBeenCalledWith(null);
+    expect(ctxCalls()).toHaveLength(0);
+  });
+
   it("zeigt einen vorbelegten (auch archivierten) Kunden ohne Abruf an", async () => {
     render(<CustomerPicker value="z" initialCustomer={customer({ id: "z", name: "Zeta Archiv", isArchived: true })} onChange={vi.fn()} />);
     await advance(0);

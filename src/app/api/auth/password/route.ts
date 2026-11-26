@@ -11,6 +11,7 @@ import { getCurrentUserId, setSession } from "@/lib/auth/server";
 import { changePassword } from "@/domain/auth/login";
 import { RateLimitError } from "@/lib/rate-limit";
 import { clientIpFromHeaders } from "@/lib/http/client-ip";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 
@@ -58,7 +59,7 @@ export async function POST(req: Request) {
         { status: 400 },
       );
     }
-    console.error("auth/password:", e);
+    console.error("auth/password:", describeError(e));
     return NextResponse.json({ error: "Passwort konnte nicht geändert werden." }, { status: 400 });
   }
 }

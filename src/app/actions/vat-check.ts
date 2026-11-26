@@ -10,6 +10,7 @@ import { requireActionOrg } from "@/lib/auth/require-session";
 import { checkVatId, VatCheckDisabledError, VatCheckRateLimitError } from "@/domain/customer/vat-check";
 import { CustomerValidationError } from "@/domain/customer/save";
 import { NotFoundError } from "@/domain/errors";
+import { describeError } from "@/lib/safe-error";
 
 export interface VatCheckActionResult {
   ok: boolean;
@@ -36,7 +37,7 @@ export async function checkVatIdAction(customerId: string): Promise<VatCheckActi
     ) {
       return { ok: false, error: e.message };
     }
-    console.error("checkVatIdAction:", e);
+    console.error("checkVatIdAction:", describeError(e));
     return { ok: false, error: "Prüfung fehlgeschlagen." };
   }
 }

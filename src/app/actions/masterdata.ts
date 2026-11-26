@@ -177,13 +177,15 @@ export interface CreateCustomerInlineInput {
   addressLine1: string;
   postalCode: string;
   city: string;
+  /** ISO-2; ohne Angabe das Land der Firma aus den Einstellungen. */
+  countryCode?: string;
   email?: string;
   vatId?: string;
 }
 export type CreateCustomerInlineResult =
   | {
       ok: true;
-      customer: { id: string; name: string; customerNumber: string | null; email: string | null; defaultPaymentMethodId?: string | null };
+      customer: { id: string; name: string; customerNumber: string | null; email: string | null; countryCode: string; defaultPaymentMethodId?: string | null };
     }
   | { ok: false; error: string };
 
@@ -194,7 +196,9 @@ export type CreateCustomerInlineResult =
  * der Aufrufer ihn sofort in den gerade bearbeiteten Beleg uebernehmen kann.
  */
 export async function createCustomerInline(input: CreateCustomerInlineInput): Promise<CreateCustomerInlineResult> {
+  const orgForDefaults = input.countryCode ? null : await requireActionOrg().catch(() => null);
   const parsed = customerSchema.safeParse({
+    countryCode: input.countryCode ?? orgForDefaults?.country ?? undefined,
     type: input.type ?? "BUSINESS",
     name: input.name,
     addressLine1: input.addressLine1,
@@ -217,6 +221,7 @@ export async function createCustomerInline(input: CreateCustomerInlineInput): Pr
         name: customer.name,
         customerNumber: customer.customerNumber,
         email: customer.email,
+        countryCode: customer.countryCode,
         defaultPaymentMethodId: customer.defaultPaymentMethodId,
       },
     };
@@ -281,7 +286,7 @@ export async function saveProduct(_prev: ActionResult, fd: FormData): Promise<Ac
     // verwertbare Meldung ("Steuersatz X % ist ... nicht freigegeben") — die ging vorher
     // im generischen "Speichern fehlgeschlagen." unter.
     if (e instanceof TaxRateNotAllowedError) return { ok: false, error: e.message };
-    console.error("saveProduct:", e);
+    console.error("saveProduct:", describeError(e));
     return { ok: false, error: "Speichern fehlgeschlagen." };
   }
   revalidatePath("/produkte");
@@ -334,7 +339,7 @@ export async function createProductInline(input: CreateProductInlineInput): Prom
     return { ok: true, product: { id: product.id, name: product.name, unit: product.unit, netPriceCents: product.netPriceCents, taxRate: product.taxRate } };
   } catch (e) {
     if (e instanceof TaxRateNotAllowedError) return { ok: false, error: e.message };
-    console.error("createProductInline:", e);
+    console.error("createProductInline:", describeError(e));
     return { ok: false, error: "Speichern fehlgeschlagen." };
   }
 }

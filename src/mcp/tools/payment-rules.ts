@@ -2,6 +2,7 @@
 // Dieselben Zod-Schemas und Domainfunktionen wie REST (/api/v1/PaymentRule, /PaymentRuleRun).
 // Actor "mcp". Der Trockenlauf ist rein lesend (keine Mail, kein Tag, keine Benachrichtigung).
 import { z } from "zod";
+import { MCP_ACTOR } from "../actor";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { serializePaymentRule, serializePaymentRuleRun } from "@/api/serializers/payment-rule";
@@ -56,7 +57,7 @@ export function registerPaymentRuleTools(server: McpServer, ctx: McpToolsContext
     async ({ id, ...fields }): Promise<Result> => {
       try {
         const org = await ctx.requireOrg();
-        const saved = id ? await updatePaymentRule(org.id, id, fields, "mcp") : await createPaymentRule(org.id, fields, "mcp");
+        const saved = id ? await updatePaymentRule(org.id, id, fields, MCP_ACTOR) : await createPaymentRule(org.id, fields, MCP_ACTOR);
         return ctx.ok(`Regel "${saved.name}" ${id ? "geaendert" : "angelegt"} (${saved.active ? "aktiv" : "inaktiv"}, ${saved.trigger}, Aktionen: ${saved.actions.map((a) => a.type).join(", ")}).\n\n${JSON.stringify(serializePaymentRule(saved), null, 2)}`);
       } catch (e) {
         return fail(ctx, e);
@@ -74,7 +75,7 @@ export function registerPaymentRuleTools(server: McpServer, ctx: McpToolsContext
     async ({ id }): Promise<Result> => {
       try {
         const org = await ctx.requireOrg();
-        const r = await archivePaymentRule(org.id, id, "mcp");
+        const r = await archivePaymentRule(org.id, id, MCP_ACTOR);
         return ctx.ok(`Regel "${r.name}" archiviert.`);
       } catch (e) {
         return fail(ctx, e);
@@ -135,7 +136,7 @@ export function registerPaymentRuleTools(server: McpServer, ctx: McpToolsContext
     async ({ id }): Promise<Result> => {
       try {
         const org = await ctx.requireOrg();
-        await retryPaymentRuleRun(org.id, id, "mcp");
+        await retryPaymentRuleRun(org.id, id, MCP_ACTOR);
         kickPaymentRules(org.id);
         const run = await getPaymentRuleRun(org.id, id);
         return ctx.ok(`Lauf ${run.id} (${run.ruleName}) wird wiederholt, Status ${run.status}.`);

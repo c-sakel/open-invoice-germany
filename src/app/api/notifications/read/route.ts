@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getActiveOrg } from "@/lib/org";
 import { markRead } from "@/domain/notifications/create";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 
@@ -19,7 +20,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ count });
   } catch (e) {
     if (e instanceof z.ZodError) return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });
-    console.error("POST /api/notifications/read:", e);
+    console.error("POST /api/notifications/read:", describeError(e));
     return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }
 }

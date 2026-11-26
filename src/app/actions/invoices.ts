@@ -7,7 +7,7 @@ import { collectFinalizeWarnings, warningCodesParam, type FinalizeWarning } from
 import { ZodError } from "zod";
 import { cancelInvoice, CancelError } from "@/domain/invoice/cancel";
 import { NotFoundError } from "@/domain/errors";
-import { requireActionOrg } from "@/lib/auth/require-session";
+import { requireActionOrg, requireSessionActor } from "@/lib/auth/require-session";
 import { parseCancelFormData } from "@/schemas";
 
 export async function finalizeAction(formData: FormData) {
@@ -15,9 +15,10 @@ export async function finalizeAction(formData: FormData) {
   let errorMessage = "";
   let warnings: FinalizeWarning[] = [];
   try {
+    const actor = await requireSessionActor();
     const org = await requireActionOrg();
     warnings = await collectFinalizeWarnings(org.id, id);
-    await finalizeInvoice(id);
+    await finalizeInvoice(id, { actor });
   } catch (e) {
     errorMessage = e instanceof FinalizeError ? e.message : "Festschreiben fehlgeschlagen.";
   }
@@ -38,8 +39,9 @@ export async function cancelAction(formData: FormData) {
     const input = parseCancelFormData(formData);
     id = input.id;
     sendAfter = input.sendAfter;
+    const actor = await requireSessionActor();
     const org = await requireActionOrg();
-    const res = await cancelInvoice(input.id, { orgId: org.id, reason: input.reason, fxOverrideRate: input.fxOverrideRate });
+    const res = await cancelInvoice(input.id, { actor, orgId: org.id, reason: input.reason, fxOverrideRate: input.fxOverrideRate });
     creditId = res.creditNote.id;
   } catch (e) {
     errorMessage =

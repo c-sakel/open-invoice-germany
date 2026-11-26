@@ -4,6 +4,7 @@ import { billingStateFor } from "@/domain/document/billing-state";
 import { billedLineDetails } from "@/domain/invoice/billed-quantities";
 import { NotFoundError } from "@/domain/errors";
 import { getActiveOrg } from "@/lib/org";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 
@@ -34,7 +35,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     if (e instanceof NotFoundError) {
       return NextResponse.json({ error: e.message }, { status: 404 });
     }
-    console.error("GET /api/documents/[id]/billing:", e);
+    console.error("GET /api/documents/[id]/billing:", describeError(e));
     return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }
 }

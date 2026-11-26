@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getActiveOrg } from "@/lib/org";
 import { NotFoundError } from "@/domain/errors";
+import { AuthRequiredError, requireSessionActor, authRequiredResponse } from "@/lib/auth/require-session";
 import { RateLimitError, rateLimit } from "@/lib/rate-limit";
 import { lookupQuerySchema } from "@/schemas/lookup";
 
@@ -13,8 +14,9 @@ export async function runLookup(
   name: string,
   req: Request | null,
   fn: (orgId: string, rawQuery: Record<string, string | undefined>) => Promise<unknown>,
-): Promise<NextResponse> {
+): Promise<Response> {
   try {
+    await requireSessionActor();
     const org = await getActiveOrg();
     rateLimit(`lookup:${org.id}`, { limit: LOOKUP_LIMIT, windowMs: LOOKUP_WINDOW_MS });
     let rawQuery: Record<string, string | undefined> = {};
@@ -27,6 +29,7 @@ export async function runLookup(
     }
     return NextResponse.json(await fn(org.id, rawQuery), { headers: NO_STORE });
   } catch (e) {
+    if (e instanceof AuthRequiredError) return authRequiredResponse();
     if (e instanceof RateLimitError) {
       return NextResponse.json(
         { error: "Zu viele Anfragen" },

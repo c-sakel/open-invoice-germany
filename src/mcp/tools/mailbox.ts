@@ -5,6 +5,7 @@
  * gibt es nur in der Oberfläche. Mails werden nie gelöscht oder verschoben.
  */
 import { z } from "zod";
+import { MCP_ACTOR } from "../actor";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { NotFoundError } from "@/domain/errors";
@@ -113,7 +114,7 @@ export function registerMailboxTools(server: McpServer, ctx: McpToolsContext): v
       try {
         const org = await ctx.requireOrg();
         // Die Grenze je Firma (gleich fuer REST und MCP) setzt die Annahme selbst.
-        const r = await acceptInboundAttachment(org.id, inboundMailId, "mcp");
+        const r = await acceptInboundAttachment(org.id, inboundMailId, MCP_ACTOR);
         return json({ incomingInvoiceId: r.incomingInvoiceId, incomingInvoice: serializeReceiveResult(r.result) });
       } catch (e) {
         return mailboxFailure(ctx, e);
@@ -131,7 +132,7 @@ export function registerMailboxTools(server: McpServer, ctx: McpToolsContext): v
     async ({ inboundMailId, reason }): Promise<Result> => {
       try {
         const org = await ctx.requireOrg();
-        return json(serializeInboundMail(await discardInboundAttachment(org.id, inboundMailId, reason === undefined ? {} : { reason }, "mcp")));
+        return json(serializeInboundMail(await discardInboundAttachment(org.id, inboundMailId, reason === undefined ? {} : { reason }, MCP_ACTOR)));
       } catch (e) {
         return mailboxFailure(ctx, e);
       }
@@ -148,7 +149,7 @@ export function registerMailboxTools(server: McpServer, ctx: McpToolsContext): v
     async ({ inboundMailId }): Promise<Result> => {
       try {
         const org = await ctx.requireOrg();
-        return json(serializeInboundMail(await restoreInboundAttachment(org.id, inboundMailId, "mcp")));
+        return json(serializeInboundMail(await restoreInboundAttachment(org.id, inboundMailId, MCP_ACTOR)));
       } catch (e) {
         return mailboxFailure(ctx, e);
       }

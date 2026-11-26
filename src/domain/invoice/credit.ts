@@ -8,6 +8,7 @@ import { lockRow } from "@/lib/db-lock";
 import { dbInternal } from "@/lib/db";
 import { roundHalfUp } from "@/lib/money";
 import { computeLineNet } from "@/lib/pricing/line";
+import { withChangeLogRetry } from "@/lib/chain-retry";
 import { appendChangeLog } from "@/domain/audit";
 import { logActivity } from "@/domain/activity/log";
 import { linkDocuments } from "@/domain/relations";
@@ -68,7 +69,7 @@ export async function createPartialCreditNote(
 
   if (input.lines.length === 0) throw new CreditError("Mindestens eine Position erforderlich.");
 
-  const created = await dbInternal.$transaction(async (tx) => {
+  const created = await withChangeLogRetry(() => dbInternal.$transaction(async (tx) => {
     // Zeilensperre (17b) schliesst das Fenster unter Postgres (SQLite: No-op).
     await lockRow(tx, "Invoice", invoiceId, opts.orgId);
     const original = await tx.invoice.findUnique({
@@ -240,7 +241,7 @@ export async function createPartialCreditNote(
     });
 
     return { originalId: original.id, originalNumber: original.number, creditNote: finalized, offsetCents, refundDueCents };
-  });
+  }));
   if (created.offsetCents > 0) cancelOpenAttemptsAfterCommit(opts.orgId, invoiceId);
   return created;
 }

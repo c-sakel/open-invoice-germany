@@ -123,7 +123,7 @@ export function IncomingSupplier({ id, editable, contact, suggestions }: Props) 
 
           <div className="space-y-2">
             <p className="font-medium text-ink-soft">Kontakt suchen</p>
-            <CustomerPicker label="Kontakt suchen" value={pick} onChange={(ctx) => setPick(ctx.customer.id)} disabled={busy} />
+            <CustomerPicker label="Kontakt suchen" value={pick} onChange={(ctx) => setPick(ctx?.customer.id ?? "")} disabled={busy} />
             <div className="flex flex-wrap gap-2">
               <Button variant="primary" disabled={busy || pick === ""} onClick={() => void assign(pick)}>
                 Gewählten Kontakt zuordnen

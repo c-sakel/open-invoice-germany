@@ -6,6 +6,7 @@
 import { JOB_ORDER } from "@/domain/scheduler/runner";
 import { archiveRoot } from "@/lib/archive/storage";
 import { attachmentsDir, diskSpace, lastOkByJob, readBackupStatus } from "@/domain/system/health";
+import { isSchedulerEnabled } from "@/domain/scheduler/enabled";
 import { onWatchdogFinding } from "@/domain/notifications/hooks";
 
 export const WATCHDOG_JOB_MAX_AGE_MS = 2 * 60 * 60 * 1000;
@@ -50,6 +51,11 @@ const PROCESS_STARTED_AT = new Date();
 
 export interface RunWatchdogOptions {
   startedAt?: Date;
+  /**
+   * Ist der In-App-Scheduler aktiv (Standard: SCHEDULER_ENABLED)? Ohne ihn werden nur Jobs ohne
+   * bisherigen OK-Lauf ausgenommen (sie laufen von aussen und wuerden sonst dauerhaft als "nie gelaufen" gemeldet).
+   */
+  schedulerEnabled?: boolean;
   /** Nur Jobs dieser Liste pruefen (Standard: alle). */
   jobs?: readonly string[];
   /** Freier Anteil je Volume statt statfs (Tests). */
@@ -59,7 +65,12 @@ export interface RunWatchdogOptions {
 export async function runWatchdog(now: Date, opts: RunWatchdogOptions = {}): Promise<WatchdogFinding[]> {
   const all = await lastOkByJob();
   const wanted = new Set<string>(opts.jobs ?? JOB_ORDER);
-  const okByJob = Object.fromEntries(Object.entries(all).filter(([job]) => wanted.has(job)));
+  const schedulerEnabled = opts.schedulerEnabled ?? isSchedulerEnabled();
+  // Cron-Betrieb: Jobs ohne bisherigen OK-Lauf laufen von aussen und gelten nicht als "nie gelaufen";
+  // Jobs mit frueherem OK-Lauf werden weiter gegen die Schwelle geprueft.
+  const okByJob = Object.fromEntries(
+    Object.entries(all).filter(([job, lastOkAt]) => wanted.has(job) && (schedulerEnabled || lastOkAt !== null)),
+  );
   const backupStatus = await readBackupStatus();
   const [archive, attachments] = await Promise.all([diskSpace(archiveRoot()), diskSpace(attachmentsDir())]);
   const findings = evaluateWatchdog({

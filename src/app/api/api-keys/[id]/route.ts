@@ -3,6 +3,7 @@ import { getActiveOrg } from "@/lib/org";
 import { revokeApiKey } from "@/domain/api-key/revoke";
 import { NotFoundError } from "@/domain/errors";
 import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/lib/auth/require-session";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,7 +20,7 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
     if (e instanceof NotFoundError) {
       return NextResponse.json({ error: e.message }, { status: 404 });
     }
-    console.error("DELETE /api/api-keys/[id]:", e);
+    console.error("DELETE /api/api-keys/[id]:", describeError(e));
     return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }
 }

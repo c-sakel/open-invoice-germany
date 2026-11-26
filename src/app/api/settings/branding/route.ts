@@ -3,6 +3,7 @@ import { z } from "zod";
 import { ValidationError } from "@/domain/errors";
 import { getActiveOrg } from "@/lib/org";
 import { loadBrandingSettings, saveBrandingSettings } from "@/domain/settings/branding";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,7 +45,7 @@ export async function PUT(req: Request) {
       return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });
     }
     if (e instanceof ValidationError) return NextResponse.json({ error: e.message }, { status: 400 });
-    console.error("PUT /api/settings/branding:", e);
+    console.error("PUT /api/settings/branding:", describeError(e));
     return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }
 }

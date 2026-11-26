@@ -61,6 +61,11 @@ describe("Listen-Markup: keine Doppelung je Breite", () => {
     expect(html).not.toContain("<form");
     expect(html).not.toContain("Stornieren");
     expect(html).not.toContain("Überweisung");
-    expect(html.length).toBeLessThan(1200);
+    // Grenze relativ zur Basisgroesse: das geschlossene Menue mit allen Aktionen bleibt in derselben
+    // Groessenordnung wie das mit nur einer Aktion (kein Dialog-Markup im geschlossenen Zustand).
+    const minimal = renderToStaticMarkup(
+      <RowActionsMenu kind="INVOICE" id="i1" actions={["OPEN"]} openHref="/rechnungen/i1" emailDocType="INVOICE" />,
+    );
+    expect(html.length).toBeLessThan(minimal.length * 4);
   });
 });

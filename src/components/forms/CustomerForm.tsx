@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { saveCustomer } from "@/app/actions/masterdata";
 import type { ActionResult } from "@/app/actions/result";
+import { CountryField } from "./CountryField";
 import { EasSchemeField } from "./EasSchemeField";
 import { TextField, SelectField, TextAreaField, SubmitButton, ErrorBanner } from "./fields";
 
@@ -87,7 +88,7 @@ export function CustomerForm({
         <TextField label="Adresszusatz" name="addressLine2" defaultValue={customer?.addressLine2} />
         <TextField label="PLZ" name="postalCode" defaultValue={customer?.postalCode} required />
         <TextField label="Ort" name="city" defaultValue={customer?.city} required />
-        <TextField label="Land (ISO-2)" name="countryCode" defaultValue={customer?.countryCode ?? "DE"} />
+        <CountryField label="Land" name="countryCode" defaultValue={customer?.countryCode ?? "DE"} />
         <TextField label="E-Mail" name="email" type="email" defaultValue={customer?.email} />
         <TextField label="Telefon" name="phone" defaultValue={customer?.phone} />
         <TextField label="Leitweg-ID (B2G)" name="leitwegId" defaultValue={customer?.leitwegId} hint="Nur für Rechnungen an öffentliche Auftraggeber." />

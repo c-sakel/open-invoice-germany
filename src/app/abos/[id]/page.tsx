@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { prisma } from "@/lib/db";
+import { prisma, dbInternal } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
 import { formatCents } from "@/lib/money";
 import { computeLineNet } from "@/lib/pricing/line";
@@ -11,6 +11,7 @@ import { RecurringActions } from "@/components/RecurringActions";
 import { berlinDateKey } from "@/lib/berlin-time";
 import { countMissedStichtage } from "@/domain/payment-rule/resume-plan";
 import { effectiveAnchorDay } from "@/domain/recurring/usage-period";
+import { findPreviewBasis } from "@/domain/recurring/last-billed";
 import { listUsage } from "@/domain/recurring/usage";
 import { listCollectivePartners, listRecurringInvoices } from "@/domain/recurring/list";
 import { CollectiveCard } from "./_parts/CollectiveCard";
@@ -66,13 +67,15 @@ export default async function AboDetail({ params }: { params: Promise<{ id: stri
   const usage = hasUsage ? await listUsage(org.id, rec.id, { limit: USAGE_PAGE_SIZE }) : null;
   const net = tableLines.reduce((sum, l) => sum + l.lineNetCents, 0);
   const timing: BillingTiming = rec.billingTiming === "ADVANCE" ? "ADVANCE" : "ARREARS";
+  const { previousEnd, anchorDay: previewAnchorDay } = await findPreviewBasis(dbInternal, rec);
   const periods = previewPeriods(
     {
+      previousEnd,
       billingTiming: timing,
       nextRunDate: rec.nextRunDate,
       interval: rec.interval as RecurInterval,
       intervalCount: rec.intervalCount,
-      anchorDay: rec.anchorDay,
+      anchorDay: previewAnchorDay,
       endDate: rec.endDate,
       status: rec.status,
       maxRuns: rec.maxRuns,

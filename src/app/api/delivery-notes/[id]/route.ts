@@ -6,6 +6,7 @@ import { OverDeliveryError } from "@/domain/delivery-note/quantities";
 import { NotFoundError } from "@/domain/errors";
 import { getActiveOrg } from "@/lib/org";
 import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/lib/auth/require-session";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 
@@ -32,7 +33,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     if (e instanceof DeliveryNoteError || e instanceof OverDeliveryError) {
       return NextResponse.json({ error: e.message }, { status: 409 });
     }
-    console.error("PATCH /api/delivery-notes/[id]:", e);
+    console.error("PATCH /api/delivery-notes/[id]:", describeError(e));
     return NextResponse.json({ error: "Aktualisieren fehlgeschlagen." }, { status: 500 });
   }
 }

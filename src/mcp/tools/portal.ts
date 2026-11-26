@@ -2,6 +2,7 @@
 // Dieselben Zod-Schemas und Domainfunktionen wie REST (/api/v1/Contact/{id}/portal-link, /portal-events,
 // /Settings/portal). Der Status enthaelt nie Token oder URL; die URL liefern `create_portal_link` und `reveal_portal_link`.
 import { z } from "zod";
+import { MCP_ACTOR } from "../actor";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { serializePortalEvent, serializePortalLink, serializePortalSettings } from "@/api/serializers/portal";
@@ -60,7 +61,7 @@ export function registerPortalTools(server: McpServer, ctx: McpToolsContext): vo
       try {
         const org = await ctx.requireOrg();
         const c = await ctx.resolveCustomer(org.id, customer);
-        const { link, url } = await createPortalLink(org.id, c.id, input, { actor: "mcp", baseUrl: requirePortalBaseUrl() });
+        const { link, url } = await createPortalLink(org.id, c.id, input, { actor: MCP_ACTOR, baseUrl: requirePortalBaseUrl() });
         return ctx.ok(JSON.stringify({ link: serializePortalLink(link), url }, null, 2));
       } catch (e) {
         return portalFail(ctx, e);
@@ -101,7 +102,7 @@ export function registerPortalTools(server: McpServer, ctx: McpToolsContext): vo
       try {
         const org = await ctx.requireOrg();
         const c = await ctx.resolveCustomer(org.id, customer);
-        const res = await sendPortalLinkEmail(org.id, c.id, { actor: "mcp", to, baseUrl: requirePortalBaseUrl() });
+        const res = await sendPortalLinkEmail(org.id, c.id, { actor: MCP_ACTOR, to, baseUrl: requirePortalBaseUrl() });
         const text = JSON.stringify({ emailLogId: res.logId, status: res.status, to: res.to }, null, 2);
         return res.status === "SENT" ? ctx.ok(text) : ctx.fail(`Versand fehlgeschlagen: ${res.error ?? "unbekannt"}\n${text}`);
       } catch (e) {
@@ -121,7 +122,7 @@ export function registerPortalTools(server: McpServer, ctx: McpToolsContext): vo
       try {
         const org = await ctx.requireOrg();
         const c = await ctx.resolveCustomer(org.id, customer);
-        const status = await revokePortalLink(org.id, c.id, { actor: "mcp" });
+        const status = await revokePortalLink(org.id, c.id, { actor: MCP_ACTOR });
         return ctx.ok(status ? JSON.stringify(serializePortalLink(status), null, 2) : `Für ${c.name} gibt es keinen aktiven Portal-Link.`);
       } catch (e) {
         return portalFail(ctx, e);
@@ -180,7 +181,7 @@ export function registerPortalTools(server: McpServer, ctx: McpToolsContext): vo
       try {
         const org = await ctx.requireOrg();
         if (Object.keys(args).length === 0) throw new ToolError("Mindestens ein Feld angeben.");
-        return ctx.ok(JSON.stringify(serializePortalSettings(await savePortalSettings(org.id, args, "mcp")), null, 2));
+        return ctx.ok(JSON.stringify(serializePortalSettings(await savePortalSettings(org.id, args, MCP_ACTOR)), null, 2));
       } catch (e) {
         return portalFail(ctx, e);
       }

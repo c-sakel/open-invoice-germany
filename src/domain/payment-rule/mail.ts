@@ -13,7 +13,6 @@ import { createHash } from "node:crypto";
 import { dbInternal } from "@/lib/db";
 import { describeError } from "@/lib/safe-error";
 import { lockRow } from "@/lib/db-lock";
-import { withChangeLogRetry } from "@/lib/chain-retry";
 import { logActivity } from "@/domain/activity/log";
 import { buildTemplateContext, DocumentNotFoundError } from "@/domain/email/context";
 import { loadMailSettings } from "@/domain/email/settings";
@@ -252,12 +251,11 @@ export async function sendPaymentConfirmation(
     }
 
     const actor = `payment-rule:${run.ruleId}`;
-    await withChangeLogRetry(() =>
-      finishEmailLog({
-        orgId: run.orgId, logId: claimed.logId, status, providerId, error, actor, docType: PAYMENT_CONFIRMATION_DOC_TYPE, docId: run.paymentId,
-        docNumber: invoiceNumber, to: [to], cc: [], bcc: [], subject, attachmentsMeta: [], at: now, ...(htmlSha256 ? { htmlSha256 } : {}),
-      }),
-    );
+    // finishEmailLog wiederholt bei Kettenkonflikt selbst; kein aeusserer Wrapper (sonst verschachtelte Versuche).
+    await finishEmailLog({
+      orgId: run.orgId, logId: claimed.logId, status, providerId, error, actor, docType: PAYMENT_CONFIRMATION_DOC_TYPE, docId: run.paymentId,
+      docNumber: invoiceNumber, to: [to], cc: [], bcc: [], subject, attachmentsMeta: [], at: now, ...(htmlSha256 ? { htmlSha256 } : {}),
+    });
     if (status === "FAILED") return { kind: "FAILED", error: reachedSend ? SEND_UNCLEAR_NOTE : (error ?? "Versand fehlgeschlagen"), retryable: !reachedSend, notSent: !reachedSend };
     // Die Mail ist raus und im E-Mail-Protokoll verbucht: ein Fehler im Aktivitaetsprotokoll darf den Versand nicht als unklar melden.
     try {

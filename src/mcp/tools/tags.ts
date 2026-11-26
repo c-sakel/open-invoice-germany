@@ -8,6 +8,7 @@
  * erlaubt.
  */
 import { z } from "zod";
+import { MCP_ACTOR } from "../actor";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { dbInternal } from "@/lib/db";
@@ -83,7 +84,7 @@ export function registerTagTools(server: McpServer, ctx: McpToolsContext): void 
       try {
         const org = await ctx.requireOrg();
         const found = await resolveTag(org.id, args.tag);
-        const result = await deleteTag(org.id, found.id, "mcp");
+        const result = await deleteTag(org.id, found.id, MCP_ACTOR);
         return ctx.ok(`Tag "${found.name}" gelöscht (${result.removedAssignments} Zuordnung(en) entfernt).`);
       } catch (e) {
         if (e instanceof TagNotFoundError) return ctx.fail(e.message);
@@ -111,7 +112,7 @@ export function registerTagTools(server: McpServer, ctx: McpToolsContext): void 
         const org = await ctx.requireOrg();
         const found = await resolveTag(org.id, args.tag);
         const doc = await ctx.resolveDocForAttachment(org.id, args.docType, args.docId);
-        const result = await tagDocument(org.id, found.id, { docType: args.docType, docId: doc.id }, "mcp");
+        const result = await tagDocument(org.id, found.id, { docType: args.docType, docId: doc.id }, MCP_ACTOR);
         return ctx.ok(result.created ? `Tag "${found.name}" zugeordnet.` : `Tag "${found.name}" war bereits zugeordnet.`);
       } catch (e) {
         if (e instanceof NotFoundError) return ctx.fail(e.message);
@@ -138,7 +139,7 @@ export function registerTagTools(server: McpServer, ctx: McpToolsContext): void 
         const org = await ctx.requireOrg();
         const found = await resolveTag(org.id, args.tag);
         const doc = await ctx.resolveDocForAttachment(org.id, args.docType, args.docId);
-        const result = await untagDocument(org.id, found.id, { docType: args.docType, docId: doc.id }, "mcp");
+        const result = await untagDocument(org.id, found.id, { docType: args.docType, docId: doc.id }, MCP_ACTOR);
         return ctx.ok(result.removed ? `Tag "${found.name}" entfernt.` : `Tag "${found.name}" war nicht zugeordnet.`);
       } catch (e) {
         if (e instanceof NotFoundError) return ctx.fail(e.message);

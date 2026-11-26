@@ -8,6 +8,7 @@
  */
 import { lockRow } from "@/lib/db-lock";
 import { dbInternal } from "@/lib/db";
+import { withChangeLogRetry } from "@/lib/chain-retry";
 import { appendChangeLog } from "@/domain/audit";
 import { linkDocuments, listRelations } from "@/domain/relations";
 import { createDraftInvoiceWithinTx } from "@/domain/invoice/create";
@@ -37,7 +38,7 @@ export async function createFinalInvoice(orgId: string, rawInput: unknown, opts:
   const now = opts.now ?? new Date();
   const actor = opts.actor ?? "system";
 
-  return dbInternal.$transaction(async (tx) => {
+  return withChangeLogRetry(() => dbInternal.$transaction(async (tx) => {
     // Zeilensperre (17b) schliesst das Fenster unter Postgres (SQLite: No-op).
     await lockRow(tx, "Quote", input.sourceId, orgId);
     const quote = await tx.quote.findFirst({ where: { id: input.sourceId, orgId }, include: { lines: { orderBy: { position: "asc" } } } });
@@ -140,5 +141,5 @@ export async function createFinalInvoice(orgId: string, rawInput: unknown, opts:
     });
 
     return tx.invoice.findUniqueOrThrow({ where: { id: invoice.id }, include: { lines: { orderBy: { position: "asc" } } } });
-  });
+  }));
 }

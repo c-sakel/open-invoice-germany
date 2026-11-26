@@ -256,6 +256,21 @@ describe("Herkunftspruefung fuer Cookie-API-Routen", () => {
     }
   });
 
+  it("403 wird mit Pfad, Methode, Sec-Fetch-Site und Origin-Host protokolliert, ohne Cookies", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await proxy(post("/api/invoices/x/finalize", { ...cookie, "sec-fetch-site": "cross-site", origin: "https://fremd.example" }));
+      const line = warn.mock.calls.map((c) => c.join(" ")).find((l) => l.startsWith("Herkunft nicht erlaubt"));
+      expect(line).toBeDefined();
+      expect(JSON.parse((line ?? "").slice("Herkunft nicht erlaubt ".length))).toEqual({
+        path: "/api/invoices/x/finalize", method: "POST", secFetchSite: "cross-site", originHost: "fremd.example",
+      });
+      expect(line).not.toContain("valid-token");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("same-origin mit Sitzung -> weiter", async () => {
     const res = await proxy(post("/api/invoices/x/finalize", { ...cookie, "sec-fetch-site": "same-origin" }));
     expect(res.status).toBe(200);

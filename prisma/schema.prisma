@@ -173,6 +173,7 @@ model Customer {
   @@index([orgId])
   @@index([orgId, updatedAt]) // Phase 18d: Abgleich updatedSince
   @@index([orgId, customerNumber])
+  @@index([orgId, name]) // Kundenliste sortiert nach Name
 }
 
 /// Frei definierbare Kundenzusatzfelder je Organisation (§31). Werte liegen in
@@ -457,6 +458,7 @@ model Invoice {
   @@index([orgId])
   @@index([orgId, updatedAt]) // Phase 18d: Abgleich updatedSince
   @@index([orgId, finalizedAt])
+  @@index([orgId, issueDate]) // Rechnungsliste sortiert nach Datum
   @@index([customerId])
   @@index([recurringInvoiceId])
   @@index([paymentMethodId])

@@ -10,6 +10,7 @@ import { z } from "zod";
 import { requireActionOrg } from "@/lib/auth/require-session";
 import { InvalidOperationError, NotFoundError, ValidationError } from "@/domain/errors";
 import { archiveLayoutDesign, saveLayoutDesign } from "@/domain/layout-design/save";
+import { describeError } from "@/lib/safe-error";
 
 export interface LayoutDesignActionIssue {
   path: string;
@@ -28,7 +29,7 @@ function failure(e: unknown, label: string): LayoutDesignActionResult {
   if (e instanceof ValidationError || e instanceof InvalidOperationError || e instanceof NotFoundError) {
     return { ok: false, error: e.message };
   }
-  console.error(`${label}:`, e);
+  console.error(`${label}:`, describeError(e));
   return { ok: false, error: "Speichern fehlgeschlagen." };
 }
 

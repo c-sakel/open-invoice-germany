@@ -20,7 +20,7 @@ Bei jedem Lauf der Benachrichtigungen prüft das Programm und meldet als Pflicht
 `SCHEDULER_STALE` (Aufgabe seit über 2 Stunden ohne erfolgreichen Lauf), `BACKUP_STALE` (letzte Sicherung älter als 36 Stunden, nur wenn
 `BACKUP_STATUS_FILE` gesetzt ist) und `DISK_LOW` (weniger als 15 % Platz auf Belegarchiv oder Anhängen). Die Statusdatei enthält zeilenweise
 `OK <ISO-Zeitstempel>`; die letzte passende Zeile zählt. Frisch gestartete Installationen melden nie gelaufene Aufgaben erst 2 Stunden nach dem Start.
-Die Schwelle von 2 Stunden ist fest und gilt für alle Aufgaben; mit `SCHEDULER_INTERVAL_MINUTES` über 120 meldet der Wächter dauerhaft.
+Mit `SCHEDULER_ENABLED=false` (reiner Cron-Betrieb, Aufgaben laufen von außen) meldet `SCHEDULER_STALE` nur Aufgaben, die schon einmal erfolgreich liefen und seit über 2 Stunden stehen; nie gelaufene Aufgaben werden nicht gemeldet. `BACKUP_STALE` und `DISK_LOW` bleiben unverändert. Die Schwelle von 2 Stunden ist fest und gilt für alle Aufgaben; mit `SCHEDULER_INTERVAL_MINUTES` über 120 meldet der Wächter dauerhaft.
 Fällt der Prozess oder die Datenbank länger als 2 Stunden aus, werden die Meldungen je Aufgabe und Tag gebündelt in einer Alarm-Mail zusammengefasst
 (Mail-Takt höchstens stündlich); neue Befunde erscheinen spätestens im nächsten Lauf (15 Minuten). Fehlt die Statusdatei trotz gesetzter
 `BACKUP_STATUS_FILE`, meldet der Wächter erst nach 36 Stunden Laufzeit. Ist der freie Platz nicht ermittelbar, bleibt der Wächter stumm; die Oberfläche zeigt „nicht ermittelbar“.

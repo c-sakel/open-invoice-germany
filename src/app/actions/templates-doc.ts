@@ -19,6 +19,7 @@ import { applyTemplate, TemplateCustomerRequiredError } from "@/domain/template/
 import { NotFoundError } from "@/domain/errors";
 import { TaxRateNotAllowedError } from "@/domain/settings/tax-rates";
 import type { TagDocType } from "@/schemas/tag";
+import { describeError } from "@/lib/safe-error";
 
 export interface TemplateActionResult {
   ok: boolean;
@@ -40,7 +41,7 @@ export async function saveTemplateFromDocumentAction(input: { docType: TagDocTyp
   } catch (e) {
     if (e instanceof NotFoundError) return { ok: false, error: "Beleg nicht gefunden." };
     if (e instanceof TemplateNameConflictError) return { ok: false, error: e.message };
-    console.error("saveTemplateFromDocumentAction:", e);
+    console.error("saveTemplateFromDocumentAction:", describeError(e));
     return { ok: false, error: "Vorlage konnte nicht gespeichert werden." };
   }
   revalidatePath("/vorlagen");
@@ -56,7 +57,7 @@ export async function renameTemplateAction(input: { id: string; name: string }):
     if (e instanceof NotFoundError) return { ok: false, error: "Vorlage nicht gefunden." };
     if (e instanceof TemplateNameConflictError) return { ok: false, error: e.message };
     if (e instanceof z.ZodError) return { ok: false, error: e.issues[0]?.message ?? "Ungültiger Name." };
-    console.error("renameTemplateAction:", e);
+    console.error("renameTemplateAction:", describeError(e));
     return { ok: false, error: "Umbenennen fehlgeschlagen." };
   }
   revalidatePath("/vorlagen");
@@ -70,7 +71,7 @@ export async function deleteTemplateAction(input: { id: string }): Promise<Templ
     await deleteTemplate(org.id, input.id);
   } catch (e) {
     if (e instanceof NotFoundError) return { ok: false, error: "Vorlage nicht gefunden." };
-    console.error("deleteTemplateAction:", e);
+    console.error("deleteTemplateAction:", describeError(e));
     return { ok: false, error: "Löschen fehlgeschlagen." };
   }
   revalidatePath("/vorlagen");
@@ -89,7 +90,7 @@ export async function applyTemplateAction(input: { id: string }): Promise<ApplyT
     if (e instanceof NotFoundError) return { ok: false, error: "Vorlage nicht gefunden." };
     if (e instanceof TemplateCustomerRequiredError) return { ok: false, error: e.message };
     if (e instanceof TaxRateNotAllowedError) return { ok: false, error: e.message };
-    console.error("applyTemplateAction:", e);
+    console.error("applyTemplateAction:", describeError(e));
     return { ok: false, error: "Beleg konnte nicht erzeugt werden." };
   }
 }

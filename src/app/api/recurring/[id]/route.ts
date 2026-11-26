@@ -8,6 +8,7 @@ import { RecurringError } from "@/domain/recurring/create";
 import { RecurringMissedPeriodsError, RecurringTimingChangeError } from "@/domain/recurring/errors";
 import { NotFoundError, InvalidOperationError } from "@/domain/errors";
 import { TaxRateNotAllowedError } from "@/domain/settings/tax-rates";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 
@@ -51,7 +52,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       return NextResponse.json({ error: e.message, reason: e.code, details: { missedCount: e.missedCount } }, { status: 409 });
     }
     if (e instanceof RecurringError) return NextResponse.json({ error: e.message }, { status: 400 });
-    console.error("PATCH /api/recurring/[id]:", e);
+    console.error("PATCH /api/recurring/[id]:", describeError(e));
     return NextResponse.json({ error: "Abo konnte nicht geändert werden." }, { status: 400 });
   }
 }

@@ -7,6 +7,7 @@
 // Pause/Fortsetzen/Beenden-Aktion (analog set_dunning_state). Kein zweites "update_recurring"
 // Tool — waere reine Dopplung von update_recurring_invoice (Projektregeln "Nichts doppelt bauen").
 import { z } from "zod";
+import { MCP_ACTOR } from "../actor";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { dbInternal } from "@/lib/db";
@@ -19,6 +20,7 @@ import { intervalLabel } from "@/lib/recurring";
 import { NotFoundError, InvalidOperationError } from "@/domain/errors";
 import { TaxRateNotAllowedError } from "@/domain/settings/tax-rates";
 import { MissedPeriodsChoice, BillingTiming, RecurInterval, TaxScheme, currencyCodeSchema, DocLanguageSchema, createRecurringSchema, updateRecurringSchema } from "@/schemas";
+import { findPreviewBasis, type PreviewBasis } from "@/domain/recurring/last-billed";
 import { serializeNextPeriods } from "@/api/serializers/recurring";
 import { editorLineSchema, ToolError, type McpToolsContext, type Result } from "./context";
 
@@ -159,6 +161,9 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
         include: { customer: { select: { name: true } } },
         orderBy: { nextRunDate: "asc" },
       });
+      // Vorschau wie der Lauf: nur aktive, nachtraeglich abgerechnete Bestandsabos ohne Ankertag brauchen eine Abfrage.
+      const previews = new Map<string, PreviewBasis>();
+      for (const r of recs) previews.set(r.id, await findPreviewBasis(dbInternal, r));
       return ctx.ok(
         JSON.stringify(
           recs.map((r) => ({
@@ -169,7 +174,7 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
             status: r.status,
             billingTiming: r.billingTiming,
             nextRunDate: r.status === "ENDED" ? null : r.nextRunDate.toISOString().slice(0, 10),
-            nextPeriods: serializeNextPeriods(r),
+            nextPeriods: serializeNextPeriods(r, previews.get(r.id)?.previousEnd ?? null, previews.get(r.id)?.anchorDay ?? r.anchorDay),
             issued: r.issuedCount,
             autoFinalize: r.autoFinalize,
             collectiveBilling: r.collectiveBilling,
@@ -257,7 +262,7 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
       try {
         const org = await ctx.requireOrg();
         const { recurring, ...patch } = args;
-        const updated = await updateRecurringInvoice(org.id, recurring, patch, "mcp");
+        const updated = await updateRecurringInvoice(org.id, recurring, patch, MCP_ACTOR);
         const cust = updated.autoSend ? await dbInternal.customer.findFirst({ where: { id: updated.customerId, orgId: org.id }, select: { email: true, invoiceEmail: true } }) : null;
         return ctx.ok(`Abo aktualisiert: ${updated.title} (${updated.status}).` + (updated.autoSend && cust && !(cust.invoiceEmail ?? cust.email ?? "").trim() ? NO_MAIL_HINT : ""));
       } catch (e) {
@@ -294,7 +299,7 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
       try {
         const org = await ctx.requireOrg();
         const match = await ctx.resolveRecurring(org.id, recurring);
-        const updated = await updateRecurringInvoice(org.id, match.id, { status: state, ...(missedPeriods ? { missedPeriods } : {}) }, "mcp");
+        const updated = await updateRecurringInvoice(org.id, match.id, { status: state, ...(missedPeriods ? { missedPeriods } : {}) }, MCP_ACTOR);
         return ctx.ok(`Abo-Status gesetzt: "${updated.title}" ist jetzt ${updated.status}.`);
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
@@ -348,7 +353,7 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
           org.id,
           rec.id,
           { recurringLineId: args.recurringLineId, quantityMilli, usageDate, note: args.note, externalId: args.externalId },
-          { source: "MCP", actor: "mcp" },
+          { source: "MCP", actor: MCP_ACTOR },
         );
         return ctx.ok(
           `${replayed ? "Verbrauch bereits erfasst (gleiche externalId)" : "Verbrauch erfasst"}: ${fmtMilli(usage.quantityMilli)} am ${fmtDay(usage.usageDate)}, ` +
@@ -407,7 +412,7 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
       try {
         const org = await ctx.requireOrg();
         const rec = await ctx.resolveRecurring(org.id, args.recurringId);
-        const view = await voidUsage(org.id, rec.id, args.usageId, { reason: args.reason }, { actor: "mcp" });
+        const view = await voidUsage(org.id, rec.id, args.usageId, { reason: args.reason }, { actor: MCP_ACTOR });
         return ctx.ok(`Verbrauch storniert: ${fmtMilli(view.quantityMilli)} vom ${fmtDay(view.usageDate)} (${view.voidReason ?? ""}).`);
       } catch (e) {
         return usageFail(e);

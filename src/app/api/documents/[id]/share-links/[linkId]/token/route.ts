@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { revealShareLinkToken } from "@/domain/quote-share/link";
 import { getActiveOrg } from "@/lib/org";
 import { resolveBaseUrl } from "@/lib/http/base-url";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 
@@ -23,7 +24,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string; li
     const baseUrl = resolveBaseUrl(await headers());
     return NextResponse.json({ url: `${baseUrl}/angebot/${token}` });
   } catch (e) {
-    console.error("GET /api/documents/[id]/share-links/[linkId]/token:", e);
+    console.error("GET /api/documents/[id]/share-links/[linkId]/token:", describeError(e));
     return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }
 }

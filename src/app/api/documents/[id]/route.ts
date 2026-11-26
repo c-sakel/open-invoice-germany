@@ -5,6 +5,7 @@ import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/
 import { updateDraftDocument } from "@/domain/document/update";
 import { StatusTransitionError } from "@/domain/document/status";
 import { NotFoundError } from "@/domain/errors";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 
@@ -27,7 +28,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     if (e instanceof NotFoundError) {
       return NextResponse.json({ error: e.message }, { status: 404 });
     }
-    console.error("PATCH /api/documents/[id]:", e);
+    console.error("PATCH /api/documents/[id]:", describeError(e));
     return NextResponse.json({ error: "Aktualisieren fehlgeschlagen." }, { status: 500 });
   }
 }

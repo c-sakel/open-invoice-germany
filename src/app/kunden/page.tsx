@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { CsvLink } from "@/components/ui/CsvLink";
+import { StatusBadge } from "@/components/StatusBadge";
 import { getActiveOrg } from "@/lib/org";
+import { dbInternal } from "@/lib/db";
 import { ensureCustomerNumbers } from "@/domain/numbering/ranges";
 import { ArchiveCustomerButton } from "./ArchiveCustomerButton";
 import { Pagination } from "@/components/list/Pagination";
@@ -28,7 +30,9 @@ export default async function KundenPage({ searchParams }: { searchParams: Promi
   if (org) {
     // Selbstheilung (Phase 7, §34): Bestandskunden ohne Kundennummer bekommen beim ersten
     // Laden der Liste eine — idempotent, kein Effekt bei bereits vergebenen Nummern.
-    await ensureCustomerNumbers(org.id);
+    // Die Abfrage nach fehlenden Nummern ist billiger als der Heilungslauf: nur bei Bedarf aufrufen.
+    const withoutNumber = await dbInternal.customer.findFirst({ where: { orgId: org.id, customerNumber: null }, select: { id: true } });
+    if (withoutNumber) await ensureCustomerNumbers(org.id);
     page = await listCustomersPage(org.id, input);
   }
   const customers = page.rows;
@@ -77,9 +81,12 @@ export default async function KundenPage({ searchParams }: { searchParams: Promi
               header: "Name",
               mobile: "title",
               cell: (c) => (
-                <Link prefetch={false} href={`/kunden/${c.id}`} className="break-words font-medium text-pen hover:underline">
-                  {c.name}
-                </Link>
+                <span className="inline-flex flex-wrap items-center gap-2">
+                  <Link prefetch={false} href={`/kunden/${c.id}`} className="break-words font-medium text-pen hover:underline">
+                    {c.name}
+                  </Link>
+                  {c.isArchived && <StatusBadge status="ARCHIVED" />}
+                </span>
               ),
             },
             { key: "city", header: "Ort", mobile: "meta", cell: (c) => <span className="text-ink-soft">{c.city}</span> },
@@ -96,9 +103,8 @@ export default async function KundenPage({ searchParams }: { searchParams: Promi
               header: "Aktion",
               align: "right",
               mobile: "meta",
-              cell: (c) => (
-                <ArchiveCustomerButton id={c.id} name={c.name} />
-              ),
+              // Einen Weg zurueck aus dem Archiv gibt es nicht: archivierte Kunden zeigen nur das Kennzeichen am Namen.
+              cell: (c) => (c.isArchived ? <span className="text-xs text-ink-muted">—</span> : <ArchiveCustomerButton id={c.id} name={c.name} />),
             },
           ]}
         />

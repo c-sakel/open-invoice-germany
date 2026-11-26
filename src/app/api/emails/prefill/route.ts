@@ -6,6 +6,7 @@ import { PortalError } from "@/domain/portal/errors";
 import { DocumentNotFoundError } from "@/domain/email/context";
 import { MailNotConfiguredError } from "@/domain/email/settings";
 import { EmailDocType } from "@/schemas/email";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 
@@ -43,7 +44,7 @@ export async function GET(req: Request) {
     if (e instanceof MailNotConfiguredError) {
       return NextResponse.json({ error: "MAIL_NOT_CONFIGURED" }, { status: 409 });
     }
-    console.error("GET /api/emails/prefill:", e);
+    console.error("GET /api/emails/prefill:", describeError(e));
     return NextResponse.json({ error: "Vorbelegung fehlgeschlagen." }, { status: 500 });
   }
 }
