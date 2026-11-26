@@ -100,8 +100,8 @@ async function proxyInner(req: NextRequest) {
       // — CDN/Browser duerfen sie nicht zwischenspeichern.
       res.headers.set("cache-control", "private, no-store");
       // Kundenportal: zusaetzlich kein Referer (Token in der URL) und keine Indexierung.
-      // Bezahlseite (Token in der URL): dieselben Header.
-      if (pathname.startsWith("/portal/") || pathname.startsWith("/api/public/portal/") || pathname.startsWith("/zahlen/") || pathname.startsWith("/api/public/payments/")) {
+      // Bezahlseite und Angebotsseite (ebenfalls Token in der URL): dieselben Header.
+      if (pathname.startsWith("/portal/") || pathname.startsWith("/api/public/portal/") || pathname.startsWith("/zahlen/") || pathname.startsWith("/api/public/payments/") || pathname.startsWith("/angebot/")) {
         for (const [k, v] of Object.entries(portalSecurityHeaders())) res.headers.set(k, v);
       }
       return res;

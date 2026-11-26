@@ -198,6 +198,14 @@ describe("proxy", () => {
     }
   });
 
+  it("Angebotsseite: /angebot/x ohne Sitzung durchgelassen, ohne Referer und ohne Indexierung (Token in der URL)", async () => {
+    const res = await proxy(new NextRequest("http://localhost/angebot/abc"));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(res.headers.get("x-robots-tag")).toBe("noindex, nofollow");
+    expect(res.headers.get("cache-control")).toBe("private, no-store");
+  });
+
   it("Bezahlseite: /zahlen/x und /api/public/payments/x ohne Sitzung durchgelassen, mit Sicherheitsheadern", async () => {
     for (const path of ["/zahlen/abc", "/zahlen/abc/bezahlen", "/api/public/payments/mollie/abc"]) {
       const res = await proxy(new NextRequest(`http://localhost${path}`));
