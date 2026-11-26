@@ -202,6 +202,17 @@ describe("Freitext als Leistungszeitpunkt (nur mit Datum)", () => {
     for (const n of ["Leistungszeitraum: März 2311", "Lieferung am 03.04.2311", "Leistungsdatum entspricht dem Rechnungsdatum", "Q2/2311", "2311-04-03", "Service date equals invoice date"])
       expect(ohne(n)).toEqual([]);
   });
+  it("englische Monatsnamen, Quartal/Halbjahr ausgeschrieben, Lieferdatum-Bezug", () => {
+    for (const n of ["Service period: March 2311", "June 2311", "December 2311", "January 2311", "2. Quartal 2311", "1. Halbjahr 2311", "2nd quarter 2311", "Lieferdatum entspricht dem Rechnungsdatum", "Leistungszeitpunkt ist identisch mit dem Rechnungsdatum", "Supply date is the same as invoice date", "Lieferung 3.4.11"])
+      expect(ohne(n), n).toEqual([]);
+  });
+  it("unplausible Daten und Monate zaehlen nicht", () => {
+    for (const n of ["99.99.2311", "13/2311", "0/2311", "2311-13-45", "Danke 2311", "Pflichthinweis ohne Datum", "Quartal ohne Jahr"])
+      expect(ohne(n).join(" "), n).toMatch(/Leistungs-\/Lieferzeitpunkt/);
+  });
+  it("nur Leistungsbeginn ohne Ende genuegt nicht", () => {
+    expect(validateMandatoryFields(inv({ deliveryDate: null, deliveryStart: new Date("2026-06-01"), deliveryEnd: null, notes: "Danke" })).join(" ")).toMatch(/Leistungs-\/Lieferzeitpunkt/);
+  });
   it("deliveryDate/Zeitraum gesetzt: notes egal", () => {
     expect(validateMandatoryFields(inv({ notes: "Danke" }))).toEqual([]);
     expect(validateMandatoryFields(inv({ deliveryDate: null, deliveryStart: new Date("2026-06-01"), deliveryEnd: new Date("2026-06-30"), notes: "Danke" }))).toEqual([]);
