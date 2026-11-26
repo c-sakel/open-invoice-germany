@@ -133,7 +133,7 @@ function fiscalYearStart(month: string, startMonth: number): Date {
  * (8400 wird bei Laenge 6 zu 840000). Bei Laenge 4 bleibt jedes Konto unveraendert. Konten unter 4 Stellen werden
  * bereits beim Speichern abgelehnt, damit nie still ein anderes Konto entsteht (85 wuerde sonst zu 8500).
  */
-function padAccount(account: number, length: number): number {
+export function padAccount(account: number, length: number): number {
   const digits = String(account).length;
   if (digits > length) throw new DatevExportError("ACCOUNT_TOO_LONG", `Konto ${account} ist laenger als die Sachkontenlaenge ${length}.`);
   return length > 4 ? account * 10 ** (length - digits) : account;
@@ -145,7 +145,7 @@ function paddedCells(line: BookingLine, length: number): ReadonlyMap<number, Cel
   return cells;
 }
 
-function mergeIssues(issues: readonly DatevIssue[]): DatevIssue[] {
+export function mergeIssues(issues: readonly DatevIssue[]): DatevIssue[] {
   const groups = new Map<string, DatevIssue>();
   for (const i of issues) {
     const id = `${i.code}|${i.key ?? i.message}`;
