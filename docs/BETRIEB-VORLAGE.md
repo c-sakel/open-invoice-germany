@@ -198,3 +198,7 @@ Der Abruf von Bankumsätzen ist ab Werk **aus** (Einstellungen → Kontoabruf). 
 3. **Ein Prozess:** Die Freigabe-Sitzung lebt im Arbeitsspeicher; der Container läuft als einzelne Instanz. Ein Neustart während einer Freigabe bricht sie ab.
 4. **Scheduler:** Der Job `bank-fetch` läuft im Takt des Schedulers nach `mailbox`.
 5. **PIN:** Sie liegt, wenn gespeichert, nur verschlüsselt in der Datenbank (Schlüssel aus `AUTH_SECRET`); wird `AUTH_SECRET` geändert, muss sie neu eingegeben werden. Die Sicherung bleibt unverändert (Datenbank).
+
+## Zeitzone
+
+Die Zeitzone des Prozesses ist für die Fachlogik ohne Bedeutung: Stichtage, Nummernkreise, Fristen und Auswertungen laufen nach dem Berliner Kalender. Der Container darf `TZ=Europe/Berlin` setzen (etwa für lesbare Logzeiten); Ergebnisse ändern sich dadurch nicht. Die Unit-Tests laufen in der CI in UTC und in Europe/Berlin.

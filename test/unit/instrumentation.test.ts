@@ -11,6 +11,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 const startSchedulerMock = vi.hoisted(() => vi.fn());
 vi.mock("@/domain/scheduler/loop", () => ({
   startScheduler: startSchedulerMock,
+  stopScheduler: vi.fn(),
 }));
 
 const ORIGINAL_ENV = { ...process.env };
