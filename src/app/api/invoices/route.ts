@@ -5,6 +5,7 @@ import { createDraftInvoice } from "@/domain/invoice/create";
 import { listInvoices } from "@/domain/invoice/list";
 import { getActiveOrg } from "@/lib/org";
 import { parseListQuery } from "@/lib/list-query";
+import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/lib/auth/require-session";
 
 export const runtime = "nodejs";
 
@@ -33,11 +34,13 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const org = await getActiveOrg();
+    const actor = await requireSessionActor();
     const body = await req.json();
     const input = createInvoiceSchema.parse(body);
-    const invoice = await createDraftInvoice(org.id, input);
+    const invoice = await createDraftInvoice(org.id, input, { actor });
     return NextResponse.json({ id: invoice.id, status: invoice.status }, { status: 201 });
   } catch (e) {
+    if (e instanceof AuthRequiredError) return authRequiredResponse();
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });
     }

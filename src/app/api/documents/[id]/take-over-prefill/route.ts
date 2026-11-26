@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getActiveOrg } from "@/lib/org";
 import { buildTakeOverPrefill } from "@/domain/document/take-over";
+import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/lib/auth/require-session";
 import { NotFoundError, InvalidOperationError } from "@/domain/errors";
 
 export const runtime = "nodejs";
@@ -15,6 +16,7 @@ const optsSchema = z.object({
 });
 
 function mapError(e: unknown, routeLabel: string) {
+  if (e instanceof AuthRequiredError) return authRequiredResponse();
   if (e instanceof z.ZodError) {
     return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });
   }
@@ -32,9 +34,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
   try {
     const org = await getActiveOrg();
+    const actor = await requireSessionActor();
     const body = await req.json().catch(() => ({}));
     const opts = optsSchema.parse(body);
-    const prefill = await buildTakeOverPrefill(org.id, id, opts);
+    const prefill = await buildTakeOverPrefill(org.id, id, opts, actor);
     return NextResponse.json({ prefill });
   } catch (e) {
     return mapError(e, "POST /api/documents/[id]/take-over-prefill:");

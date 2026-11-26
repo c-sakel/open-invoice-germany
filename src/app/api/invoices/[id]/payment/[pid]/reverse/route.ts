@@ -6,6 +6,7 @@ import { reversePayment } from "@/domain/invoice/payment-reversal";
 import { PaymentError } from "@/domain/invoice/payment";
 import { NotFoundError } from "@/domain/errors";
 import { reversePaymentInputSchema } from "@/schemas/payment-correction";
+import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/lib/auth/require-session";
 
 export const runtime = "nodejs";
 
@@ -15,6 +16,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string; pi
   const { id, pid } = await ctx.params;
   try {
     const org = await getActiveOrg();
+    const actor = await requireSessionActor();
     const owned = await dbInternal.payment.findFirst({
       where: { id: pid, invoiceId: id, invoice: { orgId: org.id } },
       select: { id: true },
@@ -23,13 +25,14 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string; pi
 
     const raw = await req.text();
     const input = reversePaymentInputSchema.parse(raw ? JSON.parse(raw) : {});
-    const result = await reversePayment(pid, input, { actor: "user", orgId: org.id });
+    const result = await reversePayment(pid, input, { actor, orgId: org.id });
     return NextResponse.json({
       reversalId: result.reversal.id,
       status: result.invoiceStatus,
       paidAmountCents: result.paidAmountCents,
     });
   } catch (e) {
+    if (e instanceof AuthRequiredError) return authRequiredResponse();
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });
     }

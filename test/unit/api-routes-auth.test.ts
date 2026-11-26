@@ -25,4 +25,25 @@ describe("API-Routen ohne Platzhalter-Akteur", () => {
     const src = fs.readFileSync(path.join(ROOT, rel), "utf8");
     expect(src).not.toMatch(/\?\?\s*["']system["']/);
   });
+
+  // Routen, deren Domain-Funktionen sonst auf den Akteur "system" zurueckfielen.
+  const ACTOR_ROUTES = [
+    "api-keys/route.ts",
+    "api-keys/[id]/route.ts",
+    "documents/route.ts",
+    "documents/[id]/take-over-prefill/route.ts",
+    "invoices/route.ts",
+    "invoices/[id]/cancel/route.ts",
+    "invoices/[id]/credit/route.ts",
+    "invoices/[id]/finalize/route.ts",
+    "invoices/[id]/payment/route.ts",
+    "invoices/[id]/payment/[pid]/reverse/route.ts",
+    "recurring/[id]/run/route.ts",
+  ];
+  it.each(ACTOR_ROUTES)("%s verlangt eine Sitzung und reicht den Akteur weiter", (rel) => {
+    const src = fs.readFileSync(path.join(ROOT, rel), "utf8");
+    expect(src).toMatch(/await requireSessionActor\(\)/);
+    expect(src).toMatch(/AuthRequiredError/);
+    expect(src).not.toMatch(/actor:\s*["'](user|session|system)["']/);
+  });
 });

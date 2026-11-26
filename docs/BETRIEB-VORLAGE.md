@@ -48,8 +48,15 @@ Der Docker-`HEALTHCHECK` im Image bleibt bei `/api/health`.
 ## Herunterfahren
 
 Bei SIGTERM (Neustart, Node-Drain, `docker compose stop`) startet die Anwendung keine neue Hintergrundaufgabe mehr
-und wartet bis zu 45 s, bis eine begonnene Aufgabe (z. B. ein automatischer Versand) zu Ende ist. Danach gibt sie
-ihre Sperre frei und beendet sich mit Exitcode 0. Das Image setzt dafür `NEXT_MANUAL_SIG_HANDLE=true`.
+und wartet bis zu 45 s, bis alle begonnenen Aufgaben dieses Prozesses (z. B. ein automatischer Versand, auch manuell
+oder per Cron angestoßen) zu Ende sind. Enden sie rechtzeitig, sind ihre Sperren freigegeben. Läuft eine Aufgabe nach
+45 s noch, wird sie mit dem Prozess abgebrochen; ihre Sperre bleibt dann bis zum Ablauf der Lebenszeichen-Frist
+bestehen und die Aufgabe wird danach erneut aufgenommen. Anschließend beendet sich die Anwendung mit Exitcode 0.
+Das Image setzt dafür `NEXT_MANUAL_SIG_HANDLE=true`.
+
+Laufende HTTP-Anfragen werden nicht abgewartet: Der Prozess schließt den HTTP-Server beim Beenden nicht geordnet.
+Kubernetes nimmt den Pod vor dem SIGTERM aus den Endpoints (neue Anfragen kommen nicht mehr an); bei Docker Compose
+ohne vorgeschalteten Proxy kann eine gerade laufende Anfrage abbrechen.
 
 - Kubernetes: `terminationGracePeriodSeconds: 60` (mindestens) im Pod setzen.
 - Docker Compose: `stop_grace_period: 60s` (in der mitgelieferten `docker-compose.yml` gesetzt).

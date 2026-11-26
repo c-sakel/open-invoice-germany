@@ -13,6 +13,7 @@ vi.mock("@/domain/scheduler/runner", () => ({
 }));
 
 import { startScheduler, stopScheduler, isSchedulerStopping } from "@/domain/scheduler/loop";
+import { inflightJobs } from "@/domain/scheduler/inflight";
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -133,5 +134,36 @@ describe("stopScheduler (geordnetes Herunterfahren)", () => {
     await vi.advanceTimersByTimeAsync(1_000);
     await stopping;
     expect(result).toBe("timeout");
+  });
+
+  it("wartet auf Jobs der Inflight-Liste (manueller Lauf), ohne eigenen Tick", async () => {
+    let resolveJob!: () => void;
+    const job = new Promise<void>((resolve) => { resolveJob = resolve; });
+    inflightJobs().set("test-job", job);
+    try {
+      startScheduler(1);
+      let result: string | undefined;
+      const stopping = stopScheduler(45_000).then((r) => { result = r; });
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(result).toBeUndefined();
+      resolveJob();
+      await stopping;
+      expect(result).toBe("finished");
+    } finally {
+      inflightJobs().delete("test-job");
+    }
+  });
+
+  it("haengender Inflight-Job -> timeout", async () => {
+    inflightJobs().set("test-job-2", new Promise<void>(() => {}));
+    try {
+      let result: string | undefined;
+      const stopping = stopScheduler(5_000).then((r) => { result = r; });
+      await vi.advanceTimersByTimeAsync(5_000);
+      await stopping;
+      expect(result).toBe("timeout");
+    } finally {
+      inflightJobs().delete("test-job-2");
+    }
   });
 });

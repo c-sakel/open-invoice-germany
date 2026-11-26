@@ -6,6 +6,7 @@ import { NotFoundError } from "@/domain/errors";
 import { cancelInvoiceSchema } from "@/schemas";
 import { getActiveOrg } from "@/lib/org";
 import { describeError, INTERNAL_ERROR_TEXT } from "@/lib/safe-error";
+import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/lib/auth/require-session";
 
 export const runtime = "nodejs";
 
@@ -13,10 +14,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
   try {
     const org = await getActiveOrg();
+    const actor = await requireSessionActor();
     // Body ist optional (nur `reason`); leerer/fehlender Body = kein Grund.
     const raw = await req.text();
     const input = cancelInvoiceSchema.parse(raw ? JSON.parse(raw) : {});
-    const result = await cancelInvoice(id, { orgId: org.id, reason: input.reason, fxOverrideRate: input.fxOverrideRate });
+    const result = await cancelInvoice(id, { actor, orgId: org.id, reason: input.reason, fxOverrideRate: input.fxOverrideRate });
     return NextResponse.json({
       originalNumber: result.originalNumber,
       creditNoteId: result.creditNote.id,
@@ -24,6 +26,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       refundDueCents: result.refundDueCents,
     });
   } catch (e) {
+    if (e instanceof AuthRequiredError) return authRequiredResponse();
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });
     }
