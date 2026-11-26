@@ -3,6 +3,7 @@ import { SESSION_COOKIE } from "@/lib/auth/session";
 import { userIdFromToken } from "@/lib/auth/server";
 import { portalSecurityHeaders } from "@/domain/portal/http";
 import { isSameOriginHeaders } from "@/lib/http/same-origin";
+import { applyCsp } from "@/lib/http/csp";
 
 // Herkunftspruefung: Jede aendernde Anfrage (nicht GET/HEAD/OPTIONS) an eine interne
 // Cookie-API-Route (/api/*) muss same-origin sein. SameSite=Lax allein genuegt nicht: Es
@@ -66,7 +67,14 @@ export const PUBLIC_NO_NAV_HEADER = "x-oig-public";
 // server-seitig ueberschrieben (wie PUBLIC_NO_NAV_HEADER) — ein Client kann ihn nicht faelschen.
 export const PATHNAME_HEADER = "x-oig-pathname";
 
+/** Setzt die CSP auf jede Antwort (Seiten, Redirects, Fehler) — Details in src/lib/http/csp.ts. */
 export async function proxy(req: NextRequest) {
+  const res = await proxyInner(req);
+  applyCsp(res, req.nextUrl.pathname);
+  return res;
+}
+
+async function proxyInner(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // G1: der Client-Header wird bei JEDER Anfrage zuerst entfernt — ohne diesen Schritt

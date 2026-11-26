@@ -32,6 +32,21 @@ const nextConfig: NextConfig = {
       "./node_modules/xml-naming/**/*",
     ],
   },
+  // Sicherheitsheader fuer alle Antworten; die CSP setzt src/proxy.ts (zur Laufzeit per SECURITY_CSP schaltbar).
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "X-Frame-Options", value: "SAMEORIGIN" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+          { key: "Strict-Transport-Security", value: "max-age=31536000" },
+        ],
+      },
+    ];
+  },
   // Eindeutige Workspace-Wurzel (verhindert Fehl-Inferenz bei mehreren Lockfiles).
   turbopack: { root: import.meta.dirname },
 };

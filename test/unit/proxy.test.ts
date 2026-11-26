@@ -285,4 +285,24 @@ describe("Herkunftspruefung fuer Cookie-API-Routen", () => {
     expect((await proxy(post("/api/auth/login", { "sec-fetch-site": "cross-site" }))).status).toBe(403);
     expect((await proxy(post("/api/auth/login", { "sec-fetch-site": "same-origin" }))).status).not.toBe(403);
   });
+
+  describe("Content-Security-Policy", () => {
+    const csp = (r: Response) => r.headers.get("content-security-policy");
+
+    it("angemeldete Seite, /login, Redirect und /api/docs tragen die CSP", async () => {
+      const { SESSION_COOKIE } = await import("@/lib/auth/session");
+      const res = await proxy(new NextRequest("http://localhost/rechnungen", { headers: { cookie: `${SESSION_COOKIE}=valid-token` } }));
+      expect(csp(res)).toContain("frame-ancestors 'self'");
+      expect(csp(await proxy(new NextRequest("http://localhost/login")))).toContain("default-src 'self'");
+      expect(csp(await proxy(new NextRequest("http://localhost/rechnungen")))).toContain("default-src 'self'"); // Redirect
+      expect(csp(await proxy(new NextRequest("http://localhost/api/docs")))).toContain("default-src 'self'");
+    });
+
+    it("Portal: CSP und no-referrer; /api/invoices ohne CSP", async () => {
+      const portal = await proxy(new NextRequest("http://localhost/portal/abc"));
+      expect(csp(portal)).toContain("default-src 'self'");
+      expect(portal.headers.get("referrer-policy")).toBe("no-referrer");
+      expect(csp(await proxy(new NextRequest("http://localhost/api/invoices")))).toBeNull();
+    });
+  });
 });

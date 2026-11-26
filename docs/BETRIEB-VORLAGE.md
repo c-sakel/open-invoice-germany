@@ -14,6 +14,19 @@ Serverkonfiguration (Volume, Cron, Offsite-Ziel, Passphrase) liegt nicht im Repo
   Scheduler-Job, freier Platz und Anzahl nicht archivierter Belege im Belegarchiv, letzte Hash-Ketten-Prüfung,
   letzte erfolgreiche Sicherung (aus `BACKUP_STATUS_FILE`).
 
+## Sicherheitsheader und Content-Security-Policy
+
+- Alle Antworten tragen `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`,
+  `X-Frame-Options: SAMEORIGIN`, `Permissions-Policy` (Kamera, Mikrofon, Standort aus) und
+  `Strict-Transport-Security: max-age=31536000` (ohne `includeSubDomains`, ohne `preload`).
+- Seiten und `/api/docs` tragen zusätzlich eine Content-Security-Policy (der Proxy setzt sie bei jeder Antwort;
+  Downloads unter `/api/...` behalten ihre eigene, strengere Policy). Die PDF-Vorschau (eigene Seite als Rahmen,
+  `blob:`) und die Weiterleitung der Bezahlseite zum Zahlungsanbieter (`form-action 'self' https:`) sind erlaubt.
+- `SECURITY_CSP` schaltet die Policy zur Laufzeit um, ohne neuen Build: `enforce` (Standard), `report-only`
+  (Verstöße nur in der Browser-Konsole, nichts wird blockiert) oder `off`. Ein ungültiger Wert gilt als `enforce`
+  und wird einmal im Log gemeldet. Notschalter bei unerwarteten Blockaden: `SECURITY_CSP=report-only` setzen und den
+  Container neu starten.
+
 ## Was auf dem Server anzupassen ist
 
 1. **Belegarchiv-Volume**: `docker-compose.yml` bindet `oig-archive:/app/data/archive` ein und setzt
