@@ -15,6 +15,7 @@ import { dbInternal } from "@/lib/db";
 import { computeTaxBreakdown, type TaxBreakdownEntry } from "@/lib/tax";
 import { assignDocumentNumber } from "@/domain/numbering/ranges";
 import { appendChangeLog } from "@/domain/audit";
+import { withChangeLogRetry } from "@/lib/chain-retry";
 import { notifyOnlinePaymentWithinTx, onInvoiceFinalizedKu, onInvoiceFinalizedOss } from "@/domain/notifications/hooks";
 import { logActivity } from "@/domain/activity/log";
 import { emitEvent } from "@/domain/webhook/emit";
@@ -525,8 +526,21 @@ export async function finalizeWithinTx(
   return result!;
 }
 
+/** Fertiger Erfolgssatz (wie das Ergebnis von `finalizeWithinTx`), falls die Rechnung bereits festgeschrieben ist; sonst `undefined`. */
+export async function loadFinalizedInvoice(invoiceId: string) {
+  const inv = await dbInternal.invoice.findUnique({
+    where: { id: invoiceId },
+    include: { lines: { orderBy: { position: "asc" } }, org: true, customer: true },
+  });
+  return inv && inv.status !== "DRAFT" && inv.number ? inv : undefined;
+}
+
 export async function finalizeInvoice(invoiceId: string, opts: FinalizeOptions = {}) {
-  const result = await dbInternal.$transaction((tx) => finalizeWithinTx(tx, invoiceId, opts));
+  // Kettenkonflikt mit einem parallelen ChangeLog-Schreiber: die ganze Transaktion (inkl. Nummernvergabe) rollt
+  // zurueck und wird wiederholt; ist die Rechnung zwischenzeitlich festgeschrieben, wird dieser Satz geliefert.
+  const result = await withChangeLogRetry(() => dbInternal.$transaction((tx) => finalizeWithinTx(tx, invoiceId, opts)), {
+    alreadyDone: () => loadFinalizedInvoice(invoiceId),
+  });
   // Phase 16e: OSS-Schwelle erst nach dem Commit pruefen (der Hook wirft nie, Fehler werden dort geloggt).
   await onInvoiceFinalizedOss(result.orgId, invoiceId, opts.now);
   await onInvoiceFinalizedKu(result.orgId, opts.now);

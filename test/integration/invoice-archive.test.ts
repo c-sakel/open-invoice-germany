@@ -243,7 +243,7 @@ describe("Belegarchiv", () => {
     }
   });
 
-  it("Fehler in der Transaktion: ARCHIVE_FAILED, keine Zeilen, Dateien bleiben liegen (kein Loeschen ohne Gewinner)", async () => {
+  it("Fehler in der Transaktion: kein sofortiger Alarm (erst der Nachlauf nach 60 min), keine Zeilen, Dateien bleiben liegen (kein Loeschen ohne Gewinner)", async () => {
     const id = await finalized();
     const spy = vi.spyOn(dbInternal, "$transaction").mockRejectedValueOnce(new Error("Transaktion kaputt"));
     try {
@@ -252,7 +252,7 @@ describe("Belegarchiv", () => {
       spy.mockRestore();
     }
     expect(await rows(id)).toHaveLength(0);
-    expect(await dbInternal.notification.count({ where: { orgId, type: "ARCHIVE_FAILED", entityId: id } })).toBe(1);
+    expect(await dbInternal.notification.count({ where: { orgId, type: "ARCHIVE_FAILED", entityId: id } })).toBe(0);
     const number = (await dbInternal.invoice.findUniqueOrThrow({ where: { id }, select: { number: true } })).number ?? "";
     const dir = path.join(tmpDir, orgId, "2099");
     const leftovers = (await fs.readdir(dir)).filter((f) => f.startsWith(`${number.replace(/[^A-Za-z0-9._-]/g, "_")}-`));

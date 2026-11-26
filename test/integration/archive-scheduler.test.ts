@@ -126,6 +126,30 @@ describe("runArchiveJob", { timeout: 120_000 }, () => {
     expect(await dbInternal.notification.count({ where: { orgId, type: "ARCHIVE_FAILED", entityId: bad } })).toBe(1);
   });
 
+  it("ARCHIVE_FAILED erst, wenn der Beleg mehr als 60 min festgeschrieben ist; juengere Belege und Erfolge melden nichts", async () => {
+    await drain();
+    const min = 60_000;
+    const young = await finalized(new Date(NOW.getTime() - 30 * min));
+    const old = await finalized(new Date(NOW.getTime() - 61 * min));
+    const fine = await finalized(new Date(NOW.getTime() - 90 * min));
+    failingIds.add(young);
+    failingIds.add(old);
+    const alerts = (id: string) => dbInternal.notification.count({ where: { orgId, type: "ARCHIVE_FAILED", entityId: id } });
+    try {
+      const r = await runArchiveJob(NOW);
+      expect(r).toEqual({ archived: 1, failed: 2 });
+      expect(await alerts(young)).toBe(0);
+      expect(await alerts(old)).toBe(1);
+      expect(await alerts(fine)).toBe(0);
+      // derselbe Tag: weiterhin genau eine Meldung (Dedupe)
+      await runArchiveJob(NOW);
+      expect(await alerts(old)).toBe(1);
+    } finally {
+      failingIds.delete(young);
+      failingIds.delete(old);
+    }
+  });
+
   it("laeuft als Scheduler-Job 'archive' im Runner", async () => {
     const results = await runScheduledJobs({ jobs: ["archive"], trigger: "MANUAL", now: NOW });
     expect(results).toHaveLength(1);

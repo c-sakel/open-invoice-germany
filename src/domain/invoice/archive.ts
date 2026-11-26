@@ -22,7 +22,8 @@ import { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { appendChangeLog } from "@/domain/audit";
 import { ArchiveTamperedError, InvalidOperationError, NotFoundError } from "@/domain/errors";
-import { onArchiveFailed, onArchiveTampered } from "@/domain/notifications/hooks";
+import { onArchiveTampered } from "@/domain/notifications/hooks";
+import { describeError } from "@/lib/safe-error";
 import { loadPdfTheme } from "@/domain/settings/theme";
 import { invoiceTypeToLayoutDocType } from "@/domain/settings/layout";
 import { loadEInvoiceData } from "@/lib/einvoice/load";
@@ -120,21 +121,23 @@ async function removeUnreferenced(files: RenderedFile[], keep: ArchivedSet): Pro
 }
 
 /**
- * Fehlerpfad ohne committeten Gewinner-Satz: Benachrichtigung `ARCHIVE_FAILED`, Fehler
- * weiterreichen. Bewusst KEIN Loeschen (Koordinator-Ruling): ein paralleler Aufruf koennte
- * denselben deterministischen Pfad gerade committen — eine verwaiste Datei ist harmlos,
- * eine geloeschte referenzierte waere ein GoBD-Verlust.
+ * Fehlerpfad ohne committeten Gewinner-Satz: nur protokollieren (ohne rohen Fehlertext) und den
+ * Fehler weiterreichen. Die Benachrichtigung `ARCHIVE_FAILED` kommt erst vom Nachlauf, wenn
+ * der Beleg nach 60 Minuten noch nicht archiviert ist (`archive-job`): der Anfragepfad und
+ * der erste Nachlauf heilen die meisten Fehler selbst. Bewusst KEIN Loeschen (Koordinator-Ruling):
+ * ein paralleler Aufruf koennte denselben deterministischen Pfad gerade committen — eine
+ * verwaiste Datei ist harmlos, eine geloeschte referenzierte waere ein GoBD-Verlust.
  */
-async function failArchive(orgId: string, invoiceId: string, e: unknown, now: Date): Promise<never> {
-  await onArchiveFailed(orgId, { invoiceId, message: e instanceof Error ? e.message : String(e), at: now });
+async function failArchive(invoiceId: string, e: unknown): Promise<never> {
+  console.error("archive: Archivierung fehlgeschlagen", invoiceId, describeError(e));
   throw e;
 }
 
 /**
  * Stellt sicher, dass die festgeschriebene Rechnung der Organisation archiviert ist, und
  * liefert den Satz. Wirft `NotFoundError` (unbekannte ID oder fremde Organisation),
- * `InvalidOperationError` (Entwurf); Render-, Ablage- und Transaktionsfehler benachrichtigen
- * (`ARCHIVE_FAILED`) und werden weitergereicht; dabei bleiben geschriebene Dateien liegen.
+ * `InvalidOperationError` (Entwurf); Render-, Ablage- und Transaktionsfehler werden protokolliert
+ * und weitergereicht (Alarm `ARCHIVE_FAILED` erst im Nachlauf nach 60 min); dabei bleiben geschriebene Dateien liegen.
  */
 export async function ensureInvoiceArchive(orgId: string, invoiceId: string, source: ArchiveSource, now: Date = new Date()): Promise<ArchivedSet> {
   const ref = await dbInternal.invoice.findUnique({ where: { id: invoiceId }, select: { orgId: true, status: true, number: true } });
@@ -182,7 +185,7 @@ export async function ensureInvoiceArchive(orgId: string, invoiceId: string, sou
       file.created = await writeArchiveFile(file.path, bytes);
     }
   } catch (e) {
-    return failArchive(orgId, invoiceId, e, now);
+    return failArchive(invoiceId, e);
   }
 
   const effectiveSource = await resolveSource(invoice.finalizedAt, invoice.issueDate, source);
@@ -215,21 +218,21 @@ export async function ensureInvoiceArchive(orgId: string, invoiceId: string, sou
         UBL: { path: byKind.UBL.path, sha256: byKind.UBL.sha256, source: effectiveSource, createdAt: now },
       };
     } catch (e) {
-      if (!isUniqueConflict(e)) return failArchive(orgId, invoiceId, e, now);
+      if (!isUniqueConflict(e)) return failArchive(invoiceId, e);
       // Gewinner-Satz nicht sicher lesbar (z. B. unvollstaendig) -> nichts loeschen, Fehler melden.
       let winner: ArchivedSet | null;
       try {
         winner = await loadArchivedSet(orgId, invoiceId);
       } catch (readErr) {
         if (readErr instanceof ArchiveTamperedError) throw readErr;
-        return failArchive(orgId, invoiceId, readErr, now);
+        return failArchive(invoiceId, readErr);
       }
       if (winner) {
         await removeUnreferenced(files, winner);
         return winner;
       }
       // Kettenkonflikt mit einem anderen ChangeLog-Schreiber, noch kein Satz: begrenzt mit Wartezeit wiederholen (Satz wird je Runde neu geprueft).
-      if (attempt >= 5 || !isChangeLogChainConflict(e)) return failArchive(orgId, invoiceId, e, now);
+      if (attempt >= 5 || !isChangeLogChainConflict(e)) return failArchive(invoiceId, e);
       await new Promise((r) => setTimeout(r, 5 + Math.random() * 35 * (attempt + 1)));
     }
   }
