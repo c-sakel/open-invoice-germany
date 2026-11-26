@@ -2,6 +2,7 @@ import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { CsvLink } from "@/components/ui/CsvLink";
 import { getActiveOrg } from "@/lib/org";
+import { dbInternal } from "@/lib/db";
 import { ensureCustomerNumbers } from "@/domain/numbering/ranges";
 import { ArchiveCustomerButton } from "./ArchiveCustomerButton";
 import { Pagination } from "@/components/list/Pagination";
@@ -28,7 +29,9 @@ export default async function KundenPage({ searchParams }: { searchParams: Promi
   if (org) {
     // Selbstheilung (Phase 7, §34): Bestandskunden ohne Kundennummer bekommen beim ersten
     // Laden der Liste eine — idempotent, kein Effekt bei bereits vergebenen Nummern.
-    await ensureCustomerNumbers(org.id);
+    // Die Abfrage nach fehlenden Nummern ist billiger als der Heilungslauf: nur bei Bedarf aufrufen.
+    const withoutNumber = await dbInternal.customer.findFirst({ where: { orgId: org.id, customerNumber: null }, select: { id: true } });
+    if (withoutNumber) await ensureCustomerNumbers(org.id);
     page = await listCustomersPage(org.id, input);
   }
   const customers = page.rows;

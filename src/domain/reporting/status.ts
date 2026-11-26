@@ -20,6 +20,9 @@ export interface StatusCount {
 /** Status, fuer die ein offener Betrag ausgewiesen wird — PAID/CANCELLED/DRAFT bleiben bei 0. */
 const OPEN_STATUSES = new Set<EffectiveInvoiceStatus>(["OPEN", "DUE", "OVERDUE", "PARTIALLY_PAID"]);
 
+/** Rohstatus ohne zeitabhaengige Ableitung (effectiveInvoiceStatus reicht sie unveraendert durch). */
+const CLOSED_STATUSES = ["DRAFT", "PAID", "CANCELLED"] as const;
+
 /**
  * Zaehlt Rechnungen je effektivem Status (inkl. faellig/ueberfaellig-Ableitung) und
  * summiert den offenen Betrag je Status. Reihenfolge folgt `INVOICE_STATUS_LABEL`
@@ -27,13 +30,22 @@ const OPEN_STATUSES = new Set<EffectiveInvoiceStatus>(["OPEN", "DUE", "OVERDUE",
  * Diagrammsegmente).
  */
 export async function statusCounts(orgId: string, now: Date = new Date()): Promise<StatusCount[]> {
-  const invoices = await dbInternal.invoice.findMany({
-    where: { orgId },
-    select: { status: true, type: true, dueDate: true, issueDate: true, grossTotalCents: true, paidAmountCents: true, payableCents: true },
-  });
+  // Geschlossene Status (DRAFT/PAID/CANCELLED) haengen weder von dueDate noch von `now` ab:
+  // reine Zaehlung in der Datenbank. Nur alle uebrigen (offenen) Rechnungen werden geladen,
+  // weil ihr effektiver Status (offen/faellig/ueberfaellig) vom Stichtag abhaengt.
+  const [closed, open] = await Promise.all([
+    dbInternal.invoice.groupBy({ by: ["status"], where: { orgId, status: { in: [...CLOSED_STATUSES] } }, _count: { _all: true } }),
+    dbInternal.invoice.findMany({
+      where: { orgId, status: { notIn: [...CLOSED_STATUSES] } },
+      select: { status: true, type: true, dueDate: true, issueDate: true, grossTotalCents: true, paidAmountCents: true, payableCents: true },
+    }),
+  ]);
 
   const byStatus = new Map<EffectiveInvoiceStatus, { count: number; openCents: number }>();
-  for (const inv of invoices) {
+  for (const row of closed) {
+    byStatus.set(row.status as EffectiveInvoiceStatus, { count: row._count._all, openCents: 0 });
+  }
+  for (const inv of open) {
     const status = effectiveInvoiceStatus(inv, now);
     const entry = byStatus.get(status) ?? { count: 0, openCents: 0 };
     entry.count += 1;
