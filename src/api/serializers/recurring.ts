@@ -37,7 +37,7 @@ export function serializeRecurringLine(l: RecurringInvoiceLine) {
 const isoDay = (d: Date): string => berlinDateKey(d);
 
 /** Die naechsten drei Leistungszeitraeume (leer bei PAUSED/ENDED); Tage als YYYY-MM-DD (Berliner Kalendertag). */
-export function serializeNextPeriods(r: RecurringInvoice): { runDate: string; start: string; end: string; clippedByEndDate: boolean }[] {
+export function serializeNextPeriods(r: RecurringInvoice, previousEnd: Date | null = null): { runDate: string; start: string; end: string; clippedByEndDate: boolean }[] {
   return previewPeriods(
     {
       billingTiming: r.billingTiming as BillingTiming,
@@ -49,12 +49,14 @@ export function serializeNextPeriods(r: RecurringInvoice): { runDate: string; st
       status: r.status,
       maxRuns: r.maxRuns,
       issuedCount: r.issuedCount,
+      previousEnd,
     },
     3,
   ).map((p) => ({ runDate: isoDay(p.runDate), start: isoDay(p.start), end: isoDay(p.end), clippedByEndDate: p.clippedByEndDate }));
 }
 
-export function serializeRecurring(r: RecurringInvoice & { lines?: RecurringInvoiceLine[] }) {
+/** `previousEnd` nur im Einzelabruf (Ende der letzten Abrechnung, siehe findPreviewPreviousEnd); in Listen weggelassen. */
+export function serializeRecurring(r: RecurringInvoice & { lines?: RecurringInvoiceLine[] }, previousEnd: Date | null = null) {
   return {
     objectName: "Recurring" as const,
     id: r.id,
@@ -65,7 +67,7 @@ export function serializeRecurring(r: RecurringInvoice & { lines?: RecurringInvo
     intervalCount: r.intervalCount,
     anchorDay: r.anchorDay,
     billingTiming: r.billingTiming,
-    nextPeriods: serializeNextPeriods(r),
+    nextPeriods: serializeNextPeriods(r, previousEnd),
     startDate: iso(r.startDate),
     nextRunDate: r.status === "ENDED" ? null : iso(r.nextRunDate),
     endDate: iso(r.endDate),

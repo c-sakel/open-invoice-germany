@@ -80,3 +80,16 @@ export async function findLastBilled(
   if (!best) return null;
   return { period: best.period, deliveryDate: best.deliveryDate };
 }
+
+/**
+ * Ende des zuletzt abgerechneten Zeitraums fuer die Vorschau (wie der Lauf: nur nachtraeglich abgerechnete
+ * Bestandsabos ohne Ankertag). Sonst null. Eine Abfrage je Abo, deshalb nur fuer Einzelansichten.
+ */
+export async function findPreviewPreviousEnd(
+  tx: Prisma.TransactionClient,
+  rec: { id: string; orgId: string; billingTiming: string; anchorDay: number | null; status: string },
+): Promise<Date | null> {
+  if (rec.status !== "ACTIVE" || rec.billingTiming !== "ARREARS" || rec.anchorDay !== null) return null;
+  const last = await findLastBilled(tx, rec.orgId, rec.id);
+  return last?.period?.end ?? last?.deliveryDate ?? null;
+}
