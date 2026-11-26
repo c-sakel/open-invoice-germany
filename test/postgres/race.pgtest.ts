@@ -715,7 +715,9 @@ describe("Parallele Zugriffe unter PostgreSQL", () => {
       lines: [{ description: "Leistung", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 }],
     });
     const toCancel = await finalizeInvoice((await createDraftInvoice(s.orgId, input(), { now: s.now })).id, { now: s.now });
-    const drafts = await Promise.all(Array.from({ length: N }, () => createDraftInvoice(s.orgId, input(), { now: s.now })));
+    // Entwuerfe nacheinander anlegen (Anlegen ist nicht Gegenstand dieses Tests); parallel laufen Festschreiben und Storno.
+    const drafts: { id: string }[] = [];
+    for (let i = 0; i < N; i++) drafts.push(await createDraftInvoice(s.orgId, input(), { now: s.now }));
     const [fin, cancel] = await Promise.all([
       Promise.allSettled(drafts.map((d) => finalizeInvoice(d.id, { now: s.now }))),
       Promise.allSettled([cancelInvoice(toCancel.id, { orgId: s.orgId, now: s.now })]),
