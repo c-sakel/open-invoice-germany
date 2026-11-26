@@ -39,8 +39,8 @@ export function CustomerPicker({
   value: string;
   /** Vorbelegter Kunde der Seite (Name wird ohne Abruf angezeigt). */
   initialCustomer?: EditorCustomer | null;
-  /** Liefert den Kontext des gewaehlten Kunden (Vorgaben, Ansprechpartner, Adressen). */
-  onChange: (ctx: EditorCustomerContext) => void;
+  /** Liefert den Kontext des gewaehlten Kunden (Vorgaben, Ansprechpartner, Adressen); `null`, wenn die Auswahl geleert wurde. */
+  onChange: (ctx: EditorCustomerContext | null) => void;
   disabled?: boolean;
   label?: string;
 }) {
@@ -79,8 +79,16 @@ export function CustomerPicker({
     [initialCustomer],
   );
 
-  async function pick(id: string | null, option: SearchSelectOption | null) {
-    if (!id || id === value) return;
+  /** `true` = Auswahl uebernommen (nur dann „Zuletzt verwendet“); `false` = abgelehnt oder fehlgeschlagen. */
+  async function pick(id: string | null, option: SearchSelectOption | null): Promise<boolean> {
+    if (!id) {
+      pickSeq.current++;
+      pickAbort.current?.abort();
+      setError(null);
+      if (value !== "") onChange(null);
+      return true;
+    }
+    if (id === value) return true;
     setError(null);
     pickAbort.current?.abort();
     const controller = new AbortController();
@@ -88,16 +96,18 @@ export function CustomerPicker({
     const seq = ++pickSeq.current;
     try {
       const ctx = editorCustomerContextSchema.parse(await getJson(`/api/lookup/customers/${encodeURIComponent(id)}`, controller.signal));
-      if (seq !== pickSeq.current) return; // veraltete Antwort (schneller Wechsel A -> B)
+      if (seq !== pickSeq.current) return false; // veraltete Antwort (schneller Wechsel A -> B)
       if (ctx.customer.isArchived && ctx.customer.id !== valueRef.current) {
         setError("Archivierte Kunden können nicht ausgewählt werden.");
-        return;
+        return false;
       }
       known.current.set(id, option ?? toOption(ctx.customer));
       onChange(ctx);
+      return true;
     } catch {
-      if (seq !== pickSeq.current || controller.signal.aborted) return;
+      if (seq !== pickSeq.current || controller.signal.aborted) return false;
       setError("Der Kunde konnte nicht geladen werden. Bitte erneut wählen.");
+      return false;
     }
   }
 
@@ -114,7 +124,8 @@ export function CustomerPicker({
             loadSelected={loadSelected}
             loadByIds={loadByIds}
             recentKey="customer"
-            onChange={(id, option) => void pick(id, option)}
+            emptyOptionLabel="— keiner —"
+            onChange={(id, option) => pick(id, option)}
           />
         </div>
         {!disabled && (

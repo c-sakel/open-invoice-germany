@@ -53,7 +53,7 @@ describe("listCustomersPage", () => {
 
   it("Zeilen enthalten nur die Listenfelder und hoechstens einen Kontakt", async () => {
     const r = await listCustomersPage(orgA, {});
-    expect(Object.keys(r.rows[0]).sort()).toEqual(["city", "contacts", "id", "name", "type", "vatId", "customerNumber"].sort());
+    expect(Object.keys(r.rows[0]).sort()).toEqual(["city", "contacts", "id", "isArchived", "name", "type", "vatId", "customerNumber"].sort());
     for (const row of r.rows) expect(row.contacts.length).toBeLessThanOrEqual(1);
   });
 });

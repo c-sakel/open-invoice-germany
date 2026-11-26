@@ -7,8 +7,8 @@
  */
 import { describe, it, expect, beforeAll, vi } from "vitest";
 
-const orgStore: { id: string | null } = vi.hoisted(() => ({ id: null }));
-vi.mock("@/lib/org", () => ({ getActiveOrg: async () => ({ id: orgStore.id! }) }));
+const orgStore: { id: string | null; country: string } = vi.hoisted(() => ({ id: null, country: "DE" }));
+vi.mock("@/lib/org", () => ({ getActiveOrg: async () => ({ id: orgStore.id!, country: orgStore.country }) }));
 vi.mock("@/lib/auth/server", () => ({ getCurrentUserId: async () => "tester" }));
 // `createCustomerInline` revalidiert "/kunden" bei Erfolg (wie `createProductInline` das
 // Produktverzeichnis) — ausserhalb eines echten Next.js-Request-Kontexts wirft
@@ -42,6 +42,20 @@ describe("createCustomerInline", () => {
       expect(r.customer.customerNumber).toMatch(/\S/);
       const row = await dbInternal.customer.findUnique({ where: { id: r.customer.id } });
       expect(row?.orgId).toBe(orgStore.id);
+    }
+  });
+
+  it("übernimmt das Land der Firma, wenn keins gewählt ist, sonst die Auswahl", async () => {
+    orgStore.country = "AT";
+    try {
+      const a = await createCustomerInline({ name: "Land Firma", addressLine1: "Weg 1", postalCode: "1010", city: "Wien" });
+      expect(a.ok && a.customer.countryCode).toBe("AT");
+      const b = await createCustomerInline({ name: "Land Wahl", addressLine1: "Weg 1", postalCode: "8000", city: "Zürich", countryCode: "CH" });
+      expect(b.ok && b.customer.countryCode).toBe("CH");
+      const c = await createCustomerInline({ name: "Land Kaputt", addressLine1: "Weg 1", postalCode: "1", city: "X", countryCode: "xx1" });
+      expect(c.ok).toBe(false);
+    } finally {
+      orgStore.country = "DE";
     }
   });
 

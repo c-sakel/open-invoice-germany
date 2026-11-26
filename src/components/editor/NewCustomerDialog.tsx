@@ -9,6 +9,8 @@
 import { useRef, useState } from "react";
 import { createCustomerInline, type CreateCustomerInlineResult } from "@/app/actions/masterdata";
 import { inputCls } from "@/components/forms/fields";
+import { SearchSelect } from "@/components/ui/SearchSelect";
+import { countryOptions } from "@/lib/countries";
 import type { CustomerInput } from "@/schemas";
 import type { EditorCustomer } from "@/schemas/lookup";
 
@@ -22,6 +24,8 @@ export function NewCustomerDialog({ onCreated }: { onCreated: (c: InlineCustomer
   const [addressLine1, setAddressLine1] = useState("");
   const [postalCode, setPostalCode] = useState("");
   const [city, setCity] = useState("");
+  // null = Land der Firma aus den Einstellungen (wird serverseitig eingesetzt, wie im Kundenformular das Standardland).
+  const [countryCode, setCountryCode] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [vatId, setVatId] = useState("");
   const [busy, setBusy] = useState(false);
@@ -51,6 +55,7 @@ export function NewCustomerDialog({ onCreated }: { onCreated: (c: InlineCustomer
       addressLine1,
       postalCode,
       city,
+      countryCode: countryCode ?? undefined,
       email: email || undefined,
       vatId: vatId || undefined,
     });
@@ -73,7 +78,7 @@ export function NewCustomerDialog({ onCreated }: { onCreated: (c: InlineCustomer
       addressLine1: addressLine1.trim(),
       postalCode: postalCode.trim(),
       city: city.trim(),
-      countryCode: "DE",
+      countryCode: result.customer.countryCode,
       vatId: vatId.trim() || null,
       isArchived: false,
     });
@@ -81,6 +86,7 @@ export function NewCustomerDialog({ onCreated }: { onCreated: (c: InlineCustomer
     setAddressLine1("");
     setPostalCode("");
     setCity("");
+    setCountryCode(null);
     setEmail("");
     setVatId("");
     close();
@@ -106,7 +112,8 @@ export function NewCustomerDialog({ onCreated }: { onCreated: (c: InlineCustomer
           // auf „Abbrechen"/„✕" — `preventDefault()` unterdrueckte dort die native
           // Button-Aktivierung und loeste stattdessen `submit()` aus. Jetzt nur noch, wenn
           // der Fokus tatsaechlich in einem Eingabefeld liegt.
-          if (e.key !== "Enter" || busy || !(e.target instanceof HTMLInputElement)) return;
+          // Enter in der Laenderauswahl waehlt dort einen Eintrag (Combobox) und legt nichts an.
+          if (e.key !== "Enter" || e.defaultPrevented || busy || !(e.target instanceof HTMLInputElement) || e.target.getAttribute("role") === "combobox") return;
           e.preventDefault();
           void submit();
         }}
@@ -149,6 +156,17 @@ export function NewCustomerDialog({ onCreated }: { onCreated: (c: InlineCustomer
               <span className="font-medium text-ink-soft">Ort</span>
               <input className={inputCls} value={city} onChange={(e) => setCity(e.target.value)} required />
             </label>
+          </div>
+          <div className="flex flex-col gap-1 text-sm">
+            <span className="font-medium text-ink-soft">Land</span>
+            <SearchSelect
+              label="Land"
+              value={countryCode}
+              options={countryOptions()}
+              emptyOptionLabel="Standard der Firma"
+              placeholder="Standard der Firma"
+              onChange={(id) => setCountryCode(id)}
+            />
           </div>
           <label className="flex flex-col gap-1 text-sm">
             <span className="font-medium text-ink-soft">E-Mail (optional)</span>

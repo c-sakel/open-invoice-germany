@@ -115,7 +115,15 @@ export function RecipientBlock({
     draftRef.current = draft;
   }, [draft]);
 
-  function selectCustomer(ctx: EditorCustomerContext) {
+  function selectCustomer(ctx: EditorCustomerContext | null) {
+    if (ctx === null) {
+      // Auswahl geleert: Kunde und alles, was an ihm haengt, zuruecksetzen (Speichern und Festschreiben verlangen wieder einen Kunden, siehe validateDraft).
+      dispatch({ type: "set", field: "customerId", value: "" });
+      dispatch({ type: "set", field: "contactPersonId", value: "" });
+      dispatch({ type: "set", field: "billingAddressId", value: "" });
+      dispatch({ type: "set", field: "shippingAddressId", value: "" });
+      return;
+    }
     const draft = draftRef.current;
     const customer = ctx.customer;
     const id = customer.id;

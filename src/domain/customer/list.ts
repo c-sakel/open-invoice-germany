@@ -127,6 +127,7 @@ export async function listCustomersPage(orgId: string, raw: unknown) {
         type: true,
         vatId: true,
         customerNumber: true,
+        isArchived: true,
         contacts: { where: { isDefault: true }, select: { firstName: true, lastName: true }, take: 1 },
       },
     }),
