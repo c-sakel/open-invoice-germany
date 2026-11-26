@@ -288,7 +288,7 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
       try {
         const org = await ctx.requireOrg();
         const doc = await ctx.resolveDocument(org.id, document);
-        const result = await convertDocument(org.id, { fromType: "QUOTE", fromId: doc.id, toKind: "INVOICE" });
+        const result = await convertDocument(org.id, { fromType: "QUOTE", fromId: doc.id, toKind: "INVOICE" }, { actor: "mcp" });
         return ctx.ok(`Umgewandelt: ${doc.number} → Rechnungs-Entwurf ${result.id}. Mit finalize_invoice festschreiben.`);
       } catch (e) {
         if (e instanceof ConvertError) return ctx.fail(e.message);
@@ -328,7 +328,7 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
           toKind,
           quantities,
           deliveryDate: ctx.parseDateInput(deliveryDate),
-        });
+        }, { actor: "mcp" });
         return ctx.ok(`Umgewandelt zu ${toKind}: ${result.type} ${result.id}.`);
       } catch (e) {
         if (e instanceof ConvertError) return ctx.fail(e.message);
@@ -374,7 +374,7 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
             taxRate: l.taxRate,
           })),
         });
-        const note = await createDeliveryNote(org.id, input);
+        const note = await createDeliveryNote(org.id, input, { actor: "mcp" });
         if (note.status === "DRAFT") return ctx.ok(`Lieferschein-Entwurf angelegt (ID ${note.id}) für ${customer.name}.`);
         return ctx.ok(`Lieferschein angelegt: ${note.number} für ${customer.name}.`);
       } catch (e) {

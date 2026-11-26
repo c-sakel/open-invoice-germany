@@ -264,7 +264,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
           });
           return ctx.ok(text);
         }
-        const invoice = await createDraftInvoice(org.id, input);
+        const invoice = await createDraftInvoice(org.id, input, { actor: "mcp" });
         return ctx.ok(
           `Entwurf angelegt für ${customer.name}.\n` +
             `ID: ${invoice.id}\nNetto: ${formatCents(invoice.netTotalCents)} · USt: ${formatCents(invoice.taxTotalCents)} · Brutto: ${formatCents(invoice.grossTotalCents)}\n` +
@@ -300,7 +300,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         const org = await ctx.requireOrg();
         const inv = await ctx.resolveInvoice(org.id, invoice);
         const warnings = (await collectFinalizeWarnings(org.id, inv.id)).map((w) => w.message);
-        const finalized = await finalizeInvoice(inv.id);
+        const finalized = await finalizeInvoice(inv.id, { actor: "mcp" });
         const hint = warnings.length > 0 ? `\n\nHinweise (nicht blockierend):\n${warnings.map((w) => `- ${w}`).join("\n")}` : "";
         return ctx.ok(`Festgeschrieben: ${finalized.number} · Brutto ${formatCents(finalized.grossTotalCents)}. Unveränderbar. Export mit export_invoice.${hint}`);
       } catch (e) {
@@ -331,7 +331,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         const org = await ctx.requireOrg();
         const inv = await ctx.resolveInvoice(org.id, invoice);
         const input = cancelInvoiceSchema.parse({ reason, fxOverrideRate });
-        const res = await cancelInvoice(inv.id, { orgId: org.id, reason: input.reason, fxOverrideRate: input.fxOverrideRate });
+        const res = await cancelInvoice(inv.id, { actor: "mcp", orgId: org.id, reason: input.reason, fxOverrideRate: input.fxOverrideRate });
         const refund = res.refundDueCents > 0 ? ` Erstattung fällig: ${(res.refundDueCents / 100).toFixed(2).replace(".", ",")} ${res.creditNote.currency}.` : "";
         return ctx.ok(`Storniert. Storno-Gutschrift ${res.creditNote.number} zu ${res.originalNumber} angelegt.${refund}`);
       } catch (e) {
@@ -664,7 +664,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
           lineIds,
           quantities,
         });
-        const invoice = await createPartialInvoice(org.id, input);
+        const invoice = await createPartialInvoice(org.id, input, { actor: "mcp" });
         return ctx.ok(`Teilrechnung angelegt: Entwurf ${invoice.id} (${formatCents(invoice.grossTotalCents)} brutto). Mit finalize_invoice festschreiben.`);
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
@@ -701,7 +701,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
           amountCents: amountEuro != null ? ctx.euroToCents(amountEuro) : undefined,
           amountIsGross,
         });
-        const invoice = await createDownpaymentInvoice(org.id, input);
+        const invoice = await createDownpaymentInvoice(org.id, input, { actor: "mcp" });
         return ctx.ok(`Abschlagsrechnung angelegt: Entwurf ${invoice.id} (${formatCents(invoice.grossTotalCents)} brutto). Mit finalize_invoice festschreiben.`);
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
@@ -725,7 +725,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         const org = await ctx.requireOrg();
         const quote = await ctx.resolveDocument(org.id, source);
         const input = createFinalInvoiceSchema.parse({ sourceType: "QUOTE", sourceId: quote.id });
-        const invoice = await createFinalInvoice(org.id, input);
+        const invoice = await createFinalInvoice(org.id, input, { actor: "mcp" });
         return ctx.ok(`Schlussrechnung angelegt: Entwurf ${invoice.id}. Mit finalize_invoice festschreiben (Abzugs-Snapshot/Restbetrag werden dabei berechnet).`);
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
@@ -805,7 +805,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
           taxCategory: l.taxCategory,
         }));
         const fx = partialCreditSchema.shape.fxOverrideRate.parse(args.fxOverrideRate);
-        const res = await createPartialCreditNote(inv.id, { lines, notes: args.notes, fxOverrideRate: fx }, { orgId: org.id });
+        const res = await createPartialCreditNote(inv.id, { lines, notes: args.notes, fxOverrideRate: fx }, { actor: "mcp", orgId: org.id });
         return ctx.ok(`Teilgutschrift ${res.creditNote.number} zu ${res.originalNumber} erstellt · Brutto ${formatCents(res.creditNote.grossTotalCents)}${res.offsetCents > 0 ? ` · ${formatCents(res.offsetCents)} mit offenem Rest verrechnet` : ""}${res.refundDueCents > 0 ? ` · Erstattung fällig: ${formatCents(res.refundDueCents)}` : ""}.`);
       } catch (e) {
         // Fix 2 (Re-Review Phase 12c): sonst unter failUnknown ("Unerwarteter Fehler")

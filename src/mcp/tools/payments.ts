@@ -46,7 +46,7 @@ export function registerPaymentTools(server: McpServer, ctx: McpToolsContext): v
             note: args.note,
             applySkonto: args.applySkonto,
           }),
-          { orgId: org.id, createdBy: "mcp" },
+          { actor: "mcp", orgId: org.id, createdBy: "mcp" },
         );
         const updated = result.payment;
         const open = updated.grossTotalCents - updated.paidAmountCents;

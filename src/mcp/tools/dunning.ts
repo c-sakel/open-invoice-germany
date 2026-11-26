@@ -40,7 +40,7 @@ export function registerDunningTools(server: McpServer, ctx: McpToolsContext): v
       try {
         const org = await ctx.requireOrg();
         const inv = await ctx.resolveInvoice(org.id, invoice);
-        const res = await createDunning(inv.id, { force, createdBy: "mcp", orgId: org.id });
+        const res = await createDunning(inv.id, { actor: "mcp", force, createdBy: "mcp", orgId: org.id });
         const d = res.dunning;
         const zins = res.stage.calculateInterest ? dunningInterestNote(d, (x) => x.toISOString().slice(0, 10)) : "";
         return ctx.ok(`${res.stage.name} ${d.number} erstellt · offen ${formatCents(res.openAmountCents)} · Gesamtforderung ${formatCents(res.totalCents)}${zins}.`);
