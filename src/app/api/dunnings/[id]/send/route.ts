@@ -7,7 +7,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getActiveOrg } from "@/lib/org";
-import { getCurrentUserId } from "@/lib/auth/server";
+import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/lib/auth/require-session";
 import { sendDunning } from "@/domain/dunning/send";
 import { DunningError } from "@/domain/dunning/create";
 import { MailNotConfiguredError } from "@/domain/email/settings";
@@ -21,7 +21,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
   try {
     const org = await getActiveOrg();
-    const actor = (await getCurrentUserId()) ?? "system";
+    const actor = await requireSessionActor();
     const bodyText = await req.text();
     const input = bodySchema.parse(bodyText ? JSON.parse(bodyText) : {});
     const result = await sendDunning(org.id, id, { actor, to: input.to });
@@ -30,6 +30,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     }
     return NextResponse.json(result);
   } catch (e) {
+    if (e instanceof AuthRequiredError) return authRequiredResponse();
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });
     }

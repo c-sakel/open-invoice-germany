@@ -12,12 +12,13 @@ import { roundHalfUp } from "@/lib/money";
 import type { TaxBreakdownEntry } from "@/lib/tax";
 import { reconcileNetsForGross } from "@/lib/pricing/partial";
 import { appendChangeLog } from "@/domain/audit";
+import { withChangeLogRetry, CHAIN_RETRY_ATTEMPTS } from "@/lib/chain-retry";
 import { logActivity } from "@/domain/activity/log";
 import { linkDocuments } from "@/domain/relations";
 import { emitEvent } from "@/domain/webhook/emit";
 import { serializeInvoice } from "@/api/serializers/invoice";
 import { NotFoundError } from "@/domain/errors";
-import { finalizeWithinTx } from "./finalize";
+import { finalizeWithinTx, loadFinalizedInvoice } from "./finalize";
 import { disablePayLinkWithinTx } from "@/domain/online-payment/pay-link";
 import { cancelOpenAttemptsAfterCommit } from "@/domain/online-payment/cancel-open";
 import { correctionFxOverride } from "@/domain/fx/correction";
@@ -212,7 +213,9 @@ export async function cancelInvoice(invoiceId: string, opts: CancelOptions) {
   const now = opts.now ?? new Date();
   const actor = opts.actor ?? "system";
 
-  const cancelled = await dbInternal.$transaction(async (tx) => {
+  // Kettenkonflikt mit einem parallelen ChangeLog-Schreiber: die ganze Transaktion (Storno-Nummer inklusive)
+  // rollt zurueck und wird wiederholt; ist das Original zwischenzeitlich storniert, wird der Erfolgssatz geliefert.
+  const cancelled = await withChangeLogRetry(() => dbInternal.$transaction(async (tx) => {
     // Zeilensperre (17b): Doppel-Storno unter Postgres ausgeschlossen (SQLite: No-op).
     await lockRow(tx, "Invoice", invoiceId, opts.orgId);
     const original = await tx.invoice.findUnique({
@@ -389,6 +392,22 @@ export async function cancelInvoice(invoiceId: string, opts: CancelOptions) {
     const refundDueCents = refundablePaidCents(payments);
 
     return { originalId: original.id, originalNumber: original.number, creditNote: finalizedCredit, refundDueCents };
+  }), {
+    attempts: CHAIN_RETRY_ATTEMPTS,
+    alreadyDone: async () => {
+      const done = await dbInternal.invoice.findUnique({
+        where: { id: invoiceId },
+        select: { id: true, orgId: true, number: true, status: true, reversedByInvoiceId: true },
+      });
+      if (!done || done.orgId !== opts.orgId || done.status !== "CANCELLED" || !done.reversedByInvoiceId) return undefined;
+      const creditNote = await loadFinalizedInvoice(done.reversedByInvoiceId);
+      if (!creditNote) return undefined;
+      const payments = await dbInternal.payment.findMany({
+        where: { invoiceId: done.id },
+        select: { amountCents: true, method: true, isSkonto: true },
+      });
+      return { originalId: done.id, originalNumber: done.number, creditNote, refundDueCents: refundablePaidCents(payments) };
+    },
   });
   cancelOpenAttemptsAfterCommit(opts.orgId, invoiceId);
   return cancelled;

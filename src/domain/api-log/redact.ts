@@ -36,6 +36,9 @@ const SECRET_VALUE_PATTERN = /^((live|test)_[A-Za-z0-9]{20,}|(sk|rk|pk)_(live|te
 /** Zusaetzlich zu SECRET_KEY_PATTERN nur fuer Query-Parameter (I1): E-Mail-Adressen sind
  *  keine Geheimnisse, aber personenbezogene Daten (z. B. `/api/v1/Contact?email=...`). */
 const QUERY_ONLY_PATTERN = /email/i;
+/** Nur fuer JSON-Bodies: Schluessel mit Empfaengeradressen (O-08). Exakte Namen, Gross-/Kleinschreibung egal;
+ *  zusaetzlich jeder Schluessel, der "email" enthaelt (contactEmail, invoiceEmail ...). */
+const BODY_EMAIL_KEYS = new Set(["email", "to", "cc", "bcc", "replyto", "recipient", "recipients"]);
 /** Marker statt Rohtext, wenn der Eingabe-Deckel greift (kein `JSON.parse` versucht). */
 const TOO_LARGE_MARKER = JSON.stringify({ truncated: true, reason: "too-large" });
 /** Marker statt Rohtext, wenn Parsen/Schwaerzen scheitert (I2: nie auf den Rohtext zurueckfallen). */
@@ -55,7 +58,7 @@ export function redactJson(value: unknown): unknown {
   if (value === null || typeof value !== "object") return value;
   const out: Record<string, unknown> = {};
   for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
-    out[key] = isSecretKey(key) ? REDACTED : redactJson(v);
+    out[key] = isSecretKey(key) || BODY_EMAIL_KEYS.has(key.toLowerCase()) || QUERY_ONLY_PATTERN.test(key) ? REDACTED : redactJson(v);
   }
   return out;
 }

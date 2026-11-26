@@ -4,7 +4,7 @@ import { createFinalInvoiceSchema } from "@/schemas";
 import { createFinalInvoice, FinalInvoiceError } from "@/domain/invoice/final";
 import { NotFoundError } from "@/domain/errors";
 import { getActiveOrg } from "@/lib/org";
-import { getCurrentUserId } from "@/lib/auth/server";
+import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/lib/auth/require-session";
 
 export const runtime = "nodejs";
 
@@ -14,12 +14,13 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
   const { id } = await ctx.params;
   try {
     const org = await getActiveOrg();
-    const actor = (await getCurrentUserId()) ?? "system";
+    const actor = await requireSessionActor();
 
     const body = createFinalInvoiceSchema.parse({ sourceType: "QUOTE", sourceId: id });
     const invoice = await createFinalInvoice(org.id, body, { actor });
     return NextResponse.json({ id: invoice.id, status: invoice.status, type: invoice.type }, { status: 201 });
   } catch (e) {
+    if (e instanceof AuthRequiredError) return authRequiredResponse();
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });
     }

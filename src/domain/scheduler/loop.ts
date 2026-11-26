@@ -12,11 +12,18 @@
  * (`globalThis`), nicht am Modul, und ueberlebt HMR-Neuladungen.
  */
 import { runScheduledJobs } from "./runner";
+import { describeError } from "@/lib/safe-error";
+import { inflightJobs } from "./inflight";
 
 interface SchedulerLoopState {
   started: boolean;
   running: boolean;
+  stopping: boolean;
+  /** Laufender Tick (fuer das geordnete Herunterfahren), sonst null. */
+  current: Promise<void> | null;
   timer: ReturnType<typeof setInterval> | null;
+  /** Einmaliger Starttimer (erster Lauf nach 60 s). */
+  startTimer: ReturnType<typeof setTimeout> | null;
 }
 
 declare global {
@@ -27,7 +34,7 @@ declare global {
 export function startScheduler(minutes: number): void {
   if (globalThis.__oigSchedulerLoop?.started) return;
 
-  const state: SchedulerLoopState = { started: true, running: false, timer: null };
+  const state: SchedulerLoopState = { started: true, running: false, stopping: false, current: null, timer: null, startTimer: null };
   globalThis.__oigSchedulerLoop = state;
 
   // S4 (Fix-Welle): ein Tippfehler in SCHEDULER_INTERVAL_MINUTES (z. B. "abc") ergibt
@@ -38,19 +45,62 @@ export function startScheduler(minutes: number): void {
   const intervalMs = safeMinutes * 60 * 1000;
 
   const tick = async (): Promise<void> => {
+    if (state.stopping) return; // beim Herunterfahren kein neuer Lauf
     if (state.running) return; // nie zwei Laeufe gleichzeitig
     state.running = true;
-    try {
-      await runScheduledJobs({ trigger: "SCHEDULER" });
-    } catch (e) {
-      console.error("Scheduler-Loop fehlgeschlagen:", e);
-    } finally {
-      state.running = false;
-    }
+    const run = (async (): Promise<void> => {
+      try {
+        await runScheduledJobs({ trigger: "SCHEDULER" });
+      } catch (e) {
+        console.error("Scheduler-Loop fehlgeschlagen:", describeError(e));
+      } finally {
+        state.running = false;
+        state.current = null;
+      }
+    })();
+    state.current = run;
+    await run;
   };
 
-  setTimeout(() => {
+  state.startTimer = setTimeout(() => {
+    state.startTimer = null;
+    if (state.stopping) return;
     void tick();
     state.timer = setInterval(() => void tick(), intervalMs);
   }, 60_000);
+}
+
+/** true, sobald das geordnete Herunterfahren begonnen hat (der Runner startet dann keinen weiteren Job). */
+export function isSchedulerStopping(): boolean {
+  return globalThis.__oigSchedulerLoop?.stopping === true;
+}
+
+/**
+ * Geordnetes Herunterfahren: Timer loeschen, keine neuen Ticks/Jobs, auf den laufenden Tick UND auf alle
+ * noch laufenden Jobs des Prozesses warten (Inflight-Liste: auch manuelle/Cron-Laeufe und Einzelabrufe),
+ * hoechstens `timeoutMs`. "finished": alles ist zu Ende, die Sperren sind freigegeben. "timeout": ein Job
+ * laeuft noch, seine Sperre bleibt bis zum Lebenszeichen-Ablauf bzw. zur Stale-Grenze bestehen.
+ */
+export async function stopScheduler(timeoutMs = 45_000): Promise<"idle" | "finished" | "timeout"> {
+  const state = globalThis.__oigSchedulerLoop;
+  if (state) {
+    state.stopping = true;
+    if (state.startTimer) clearTimeout(state.startTimer);
+    if (state.timer) clearInterval(state.timer);
+    state.startTimer = null;
+    state.timer = null;
+  }
+  const pending: Promise<unknown>[] = [...inflightJobs().values()];
+  if (state?.current) pending.push(state.current);
+  if (pending.length === 0) return "idle";
+  const all = Promise.allSettled(pending);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<"timeout">((resolve) => {
+    timer = setTimeout(() => resolve("timeout"), timeoutMs);
+  });
+  try {
+    return await Promise.race([all.then(() => "finished" as const), timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }

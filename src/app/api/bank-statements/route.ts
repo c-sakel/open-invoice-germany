@@ -6,7 +6,7 @@
  */
 import { z } from "zod";
 import { getActiveOrg } from "@/lib/org";
-import { getCurrentUserId } from "@/lib/auth/server";
+import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/lib/auth/require-session";
 import { isSameOriginRequest } from "@/lib/http/same-origin";
 import { jsonNoStore } from "@/lib/http/account-route";
 import { RateLimitError, rateLimit } from "@/lib/rate-limit";
@@ -44,13 +44,14 @@ export async function POST(req: Request) {
     if (!parsedMode.success) return jsonNoStore({ error: "mode muss preview oder commit sein." }, { status: 400 });
     const mode = parsedMode.data;
     const result = await importBankStatement(org.id, new Uint8Array(await file.arrayBuffer()), {
-      actor: (await getCurrentUserId()) ?? "system",
+      actor: await requireSessionActor(),
       source: "UI",
       fileName: file.name,
       dryRun: mode === "preview",
     });
     return jsonNoStore({ result: serializeBankImportResult(result) }, { status: result.status === "imported" ? 201 : 200 });
   } catch (e) {
+    if (e instanceof AuthRequiredError) return authRequiredResponse();
     if (e instanceof CamtFormatError) return jsonNoStore({ error: e.message, code: e.code }, { status: 422 });
     if (e instanceof BankImportDuplicateError) {
       return jsonNoStore({ error: e.message, code: "ALREADY_IMPORTED", importId: e.importId }, { status: 409 });

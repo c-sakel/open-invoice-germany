@@ -121,9 +121,65 @@ describe("runArchiveJob", { timeout: 120_000 }, () => {
       failingIds.delete(bad);
     }
     // Alarm-Dedupe: derselbe Beleg am selben Tag erzeugt genau eine Benachrichtigung
-    await onArchiveFailed(orgId, { invoiceId: bad, message: "x", at: NOW });
-    await onArchiveFailed(orgId, { invoiceId: bad, message: "x", at: NOW });
+    await onArchiveFailed(orgId, { invoiceId: bad, at: NOW });
+    await onArchiveFailed(orgId, { invoiceId: bad, at: NOW });
     expect(await dbInternal.notification.count({ where: { orgId, type: "ARCHIVE_FAILED", entityId: bad } })).toBe(1);
+  });
+
+  it("ARCHIVE_FAILED erst, wenn der Beleg mehr als 60 min festgeschrieben ist; juengere Belege und Erfolge melden nichts", async () => {
+    await drain();
+    const min = 60_000;
+    const young = await finalized(new Date(NOW.getTime() - 30 * min));
+    const old = await finalized(new Date(NOW.getTime() - 61 * min));
+    const fine = await finalized(new Date(NOW.getTime() - 90 * min));
+    failingIds.add(young);
+    failingIds.add(old);
+    const alerts = (id: string) => dbInternal.notification.count({ where: { orgId, type: "ARCHIVE_FAILED", entityId: id } });
+    try {
+      const r = await runArchiveJob(NOW);
+      expect(r).toEqual({ archived: 1, failed: 2 });
+      expect(await alerts(young)).toBe(0);
+      expect(await alerts(old)).toBe(1);
+      expect(await alerts(fine)).toBe(0);
+      // derselbe Tag: weiterhin genau eine Meldung (Dedupe)
+      await runArchiveJob(NOW);
+      expect(await alerts(old)).toBe(1);
+    } finally {
+      failingIds.delete(young);
+      failingIds.delete(old);
+    }
+  });
+
+  it("dauerhaft defekte Altbelege verdraengen neuere nicht (Seitenweise, maxAttempts 2); Alarmtext ohne Interna", async () => {
+    await drain();
+    const bad1 = await finalized(new Date(NOW.getTime() - 300 * 60_000));
+    const bad2 = await finalized(new Date(NOW.getTime() - 299 * 60_000));
+    const bad3 = await finalized(new Date(NOW.getTime() - 298 * 60_000));
+    const good = await finalized(new Date(NOW.getTime() - 200 * 60_000));
+    for (const id of [bad1, bad2, bad3]) failingIds.add(id);
+    try {
+      const r = await runArchiveJob(NOW, { batch: 1, maxAttempts: 2 });
+      expect(r.archived).toBe(1);
+      expect(await archivedCount([good])).toBe(1);
+      const n = await dbInternal.notification.findFirstOrThrow({ where: { orgId, type: "ARCHIVE_FAILED", entityId: bad1 }, select: { body: true } });
+      expect(n.body).toBe("Der Beleg konnte nicht archiviert werden. Details stehen im Serverprotokoll.");
+    } finally {
+      for (const id of [bad1, bad2, bad3]) failingIds.delete(id);
+    }
+  });
+
+  it("finalizedAt null: Alarm ueber createdAt", async () => {
+    await drain();
+    const id = await finalized();
+    await dbInternal.invoice.update({ where: { id }, data: { finalizedAt: null }, select: { id: true } });
+    await dbInternal.invoice.update({ where: { id }, data: { createdAt: new Date(NOW.getTime() - 120 * 60_000) }, select: { id: true } });
+    failingIds.add(id);
+    try {
+      await runArchiveJob(NOW);
+      expect(await dbInternal.notification.count({ where: { orgId, type: "ARCHIVE_FAILED", entityId: id } })).toBe(1);
+    } finally {
+      failingIds.delete(id);
+    }
   });
 
   it("laeuft als Scheduler-Job 'archive' im Runner", async () => {

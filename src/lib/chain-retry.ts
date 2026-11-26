@@ -8,8 +8,11 @@ export function isChangeLogChainConflict(e: unknown): boolean {
   return text.includes("prevHash");
 }
 
+/** Versuche fuer Festschreiben/Storno: mehr parallele Schreiber als Versuche gaebe 500 unter Last (Bulk, Abo-Lauf). */
+export const CHAIN_RETRY_ATTEMPTS = 8;
+
 export interface ChangeLogRetryOptions<T> {
-  /** Gesamtzahl der Versuche (Standard 4). */
+  /** Gesamtzahl der Versuche (Standard 4; Festschreiben/Storno 8). */
   attempts?: number;
   /** Vor jeder Wiederholung: liefert ein Wert, ist die Arbeit bereits erledigt (idempotent) und wird zurueckgegeben. */
   alreadyDone?: () => Promise<T | undefined>;

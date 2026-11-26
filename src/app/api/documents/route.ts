@@ -5,6 +5,7 @@ import { createBusinessDocument } from "@/domain/document/create";
 import { listQuotes } from "@/domain/document/list";
 import { getActiveOrg } from "@/lib/org";
 import { parseListQuery } from "@/lib/list-query";
+import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/lib/auth/require-session";
 
 export const runtime = "nodejs";
 
@@ -32,10 +33,12 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const org = await getActiveOrg();
+    const actor = await requireSessionActor();
     const input = createDocumentSchema.parse(await req.json());
-    const doc = await createBusinessDocument(org.id, input);
+    const doc = await createBusinessDocument(org.id, input, { actor });
     return NextResponse.json({ id: doc.id, number: doc.number, kind: doc.kind }, { status: 201 });
   } catch (e) {
+    if (e instanceof AuthRequiredError) return authRequiredResponse();
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });
     }

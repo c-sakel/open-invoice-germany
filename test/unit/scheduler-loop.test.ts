@@ -12,7 +12,8 @@ vi.mock("@/domain/scheduler/runner", () => ({
   runScheduledJobs: runScheduledJobsMock,
 }));
 
-import { startScheduler } from "@/domain/scheduler/loop";
+import { startScheduler, stopScheduler, isSchedulerStopping } from "@/domain/scheduler/loop";
+import { inflightJobs } from "@/domain/scheduler/inflight";
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -84,5 +85,85 @@ describe("startScheduler (Phase 6, Task 3)", () => {
     resolveFirst();
     await Promise.resolve();
     await Promise.resolve();
+  });
+});
+
+describe("stopScheduler (geordnetes Herunterfahren)", () => {
+  it("ohne laufenden Tick -> idle, danach startet kein Tick mehr", async () => {
+    startScheduler(1);
+    expect(isSchedulerStopping()).toBe(false);
+    expect(await stopScheduler()).toBe("idle");
+    expect(isSchedulerStopping()).toBe(true);
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    expect(runScheduledJobsMock).not.toHaveBeenCalled();
+  });
+
+  it("ohne gestarteten Loop -> idle", async () => {
+    expect(await stopScheduler()).toBe("idle");
+  });
+
+  it("laufender Tick: wartet und meldet finished, wenn er endet; kein weiterer Tick", async () => {
+    let resolveRun!: () => void;
+    runScheduledJobsMock.mockReturnValueOnce(new Promise<void>((resolve) => { resolveRun = resolve; }));
+    startScheduler(1);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(runScheduledJobsMock).toHaveBeenCalledTimes(1);
+
+    let result: string | undefined;
+    const stopping = stopScheduler(45_000).then((r) => { result = r; });
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(result).toBeUndefined(); // wartet noch
+
+    resolveRun();
+    await stopping;
+    expect(result).toBe("finished");
+
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    expect(runScheduledJobsMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("haengender Tick: timeout nach der Frist", async () => {
+    runScheduledJobsMock.mockReturnValueOnce(new Promise<void>(() => {}));
+    startScheduler(1);
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    let result: string | undefined;
+    const stopping = stopScheduler(45_000).then((r) => { result = r; });
+    await vi.advanceTimersByTimeAsync(44_000);
+    expect(result).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await stopping;
+    expect(result).toBe("timeout");
+  });
+
+  it("wartet auf Jobs der Inflight-Liste (manueller Lauf), ohne eigenen Tick", async () => {
+    let resolveJob!: () => void;
+    const job = new Promise<void>((resolve) => { resolveJob = resolve; });
+    inflightJobs().set("test-job", job);
+    try {
+      startScheduler(1);
+      let result: string | undefined;
+      const stopping = stopScheduler(45_000).then((r) => { result = r; });
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(result).toBeUndefined();
+      resolveJob();
+      await stopping;
+      expect(result).toBe("finished");
+    } finally {
+      inflightJobs().delete("test-job");
+    }
+  });
+
+  it("haengender Inflight-Job -> timeout", async () => {
+    inflightJobs().set("test-job-2", new Promise<void>(() => {}));
+    try {
+      let result: string | undefined;
+      const stopping = stopScheduler(5_000).then((r) => { result = r; });
+      await vi.advanceTimersByTimeAsync(5_000);
+      await stopping;
+      expect(result).toBe("timeout");
+    } finally {
+      inflightJobs().delete("test-job-2");
+    }
   });
 });

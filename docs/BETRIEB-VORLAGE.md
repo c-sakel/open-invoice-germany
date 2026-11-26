@@ -12,7 +12,82 @@ Serverkonfiguration (Volume, Cron, Offsite-Ziel, Passphrase) liegt nicht im Repo
   `Cache-Control: no-store`. Die Datenbankabfrage hat ein Timeout von 2 s (dann 503). Geeignet für Monitoring und den Docker-Healthcheck.
 - `GET /api/v1/System/health` (API-Schlüssel mit Scope `admin`): Datenbank, letzter erfolgreicher Lauf je
   Scheduler-Job, freier Platz und Anzahl nicht archivierter Belege im Belegarchiv, letzte Hash-Ketten-Prüfung,
-  letzte erfolgreiche Sicherung (aus `BACKUP_STATUS_FILE`).
+  letzte erfolgreiche Sicherung (aus `BACKUP_STATUS_FILE`), freier Platz der Anhänge.
+
+### Wächter
+
+Bei jedem Lauf der Benachrichtigungen prüft das Programm und meldet als Pflicht-Benachrichtigung (auch per Alarm-Mail, je Typ und Tag einmal):
+`SCHEDULER_STALE` (Aufgabe seit über 2 Stunden ohne erfolgreichen Lauf), `BACKUP_STALE` (letzte Sicherung älter als 36 Stunden, nur wenn
+`BACKUP_STATUS_FILE` gesetzt ist) und `DISK_LOW` (weniger als 15 % Platz auf Belegarchiv oder Anhängen). Die Statusdatei enthält zeilenweise
+`OK <ISO-Zeitstempel>`; die letzte passende Zeile zählt. Frisch gestartete Installationen melden nie gelaufene Aufgaben erst 2 Stunden nach dem Start.
+Die Schwelle von 2 Stunden ist fest und gilt für alle Aufgaben; mit `SCHEDULER_INTERVAL_MINUTES` über 120 meldet der Wächter dauerhaft.
+Fällt der Prozess oder die Datenbank länger als 2 Stunden aus, werden die Meldungen je Aufgabe und Tag gebündelt in einer Alarm-Mail zusammengefasst
+(Mail-Takt höchstens stündlich); neue Befunde erscheinen spätestens im nächsten Lauf (15 Minuten). Fehlt die Statusdatei trotz gesetzter
+`BACKUP_STATUS_FILE`, meldet der Wächter erst nach 36 Stunden Laufzeit. Ist der freie Platz nicht ermittelbar, bleibt der Wächter stumm; die Oberfläche zeigt „nicht ermittelbar“.
+
+- `GET /api/live` (ohne Anmeldung): `200 {"status":"ok"}`, ohne Datenbankzugriff, `Cache-Control: no-store`.
+  Nur für die Liveness-Prüfung: Ein Datenbankausfall soll den Prozess nicht neu starten.
+
+### Kubernetes-Probes
+
+```yaml
+startupProbe:
+  httpGet: { path: /api/live, port: 3000 }
+  periodSeconds: 5
+  failureThreshold: 36   # bis zu 3 Minuten für Start und Migrationen
+livenessProbe:
+  httpGet: { path: /api/live, port: 3000 }
+  periodSeconds: 20
+  timeoutSeconds: 3
+  failureThreshold: 3
+readinessProbe:
+  httpGet: { path: /api/health, port: 3000 }
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+```
+
+Der Docker-`HEALTHCHECK` im Image bleibt bei `/api/health`.
+
+## Herunterfahren
+
+Bei SIGTERM (Neustart, Node-Drain, `docker compose stop`) startet die Anwendung keine neue Hintergrundaufgabe mehr
+und wartet bis zu 45 s, bis alle begonnenen Aufgaben dieses Prozesses (z. B. ein automatischer Versand, auch manuell
+oder per Cron angestoßen) zu Ende sind. Enden sie rechtzeitig, sind ihre Sperren freigegeben. Läuft eine Aufgabe nach
+45 s noch, wird sie mit dem Prozess abgebrochen; ihre Sperre bleibt dann bis zum Ablauf der Lebenszeichen-Frist
+bestehen und die Aufgabe wird danach erneut aufgenommen. Anschließend beendet sich die Anwendung mit Exitcode 0.
+Das Image setzt dafür `NEXT_MANUAL_SIG_HANDLE=true`.
+
+Laufende HTTP-Anfragen bekommen eine Mindestwartezeit von 10 s (`SHUTDOWN_DRAIN_MS`, 0–45000), auch wenn keine
+Hintergrundaufgabe läuft und auch bei abgeschaltetem Scheduler. Kubernetes nimmt den Pod vor dem SIGTERM aus den
+Endpoints (neue Anfragen kommen nicht mehr an); Anfragen, die länger als die Wartezeit dauern, können abbrechen.
+
+- Kubernetes: `terminationGracePeriodSeconds: 60` (mindestens) im Pod setzen.
+- Docker Compose: `stop_grace_period: 60s` (in der mitgelieferten `docker-compose.yml` gesetzt).
+
+## Herkunftsprüfung
+
+Ändernde Aufrufe (alles außer GET, HEAD, OPTIONS) auf `/api/*` mit Sitzungs-Cookie werden abgelehnt (403), wenn der Browser sie von einer
+fremden Herkunft schickt (`Sec-Fetch-Site` nicht `same-origin`, sonst `Origin` gegen den Host). Das schützt auch vor anderen Subdomains
+derselben Site, die `SameSite=Lax` nicht abwehrt. Hinter einem Proxy wird gegen `X-Forwarded-Host` geprüft; der Proxy muss ihn setzen.
+Ausgenommen sind `/api/v1/` (API-Schlüssel), `/api/public/` (Webhooks), `/api/cron/` (Geheimnis), `/api/health` und `/api/live`.
+Aufrufe ohne Herkunfts-Header (Skripte, curl) bleiben möglich, benötigen aber weiterhin eine gültige Sitzung.
+
+## Sicherheitsheader und Content-Security-Policy
+
+- Alle Antworten tragen `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`,
+  `X-Frame-Options: SAMEORIGIN`, `Permissions-Policy` (Kamera, Mikrofon, Standort aus) und
+  `Strict-Transport-Security: max-age=31536000` (ohne `includeSubDomains`, ohne `preload`).
+- Seiten und `/api/docs` tragen zusätzlich eine Content-Security-Policy (der Proxy setzt sie bei jeder Antwort;
+  Downloads unter `/api/...` behalten ihre eigene, strengere Policy). Die PDF-Vorschau (eigene Seite als Rahmen,
+  `blob:`) und die Weiterleitung der Bezahlseite zum Zahlungsanbieter (`form-action 'self' https:`) sind erlaubt.
+- `SECURITY_CSP` schaltet die Policy zur Laufzeit um, ohne neuen Build: `enforce` (Standard), `report-only`
+  (Verstöße nur in der Browser-Konsole, nichts wird blockiert) oder `off`. Ein ungültiger Wert gilt als `enforce`
+  und wird einmal im Log gemeldet. Notschalter bei unerwarteten Blockaden: `SECURITY_CSP=report-only` setzen und den
+  Container neu starten.
+- Die Policy erlaubt Inline-Skripte (`'unsafe-inline'`, ohne Nonce). Sie ist daher **kein Schutz gegen eingeschleustes Inline-Skript (XSS)**,
+  sondern begrenzt Rahmen, Formularziele, Objekte und `base`. Gegen XSS schützt weiterhin die Maskierung der Ausgaben.
+- `report-only` meldet nur in der Browser-Konsole; es gibt keinen Meldeendpunkt, der dem Betreiber Verstöße zuschickt.
 
 ## Was auf dem Server anzupassen ist
 
@@ -37,6 +112,8 @@ Serverkonfiguration (Volume, Cron, Offsite-Ziel, Passphrase) liegt nicht im Repo
        30 3 1 * * cd /opt/open-invoice-germany && BACKUP_PASSPHRASE_FILE=/etc/oig/backup.pass scripts/ops/restore-test.sh "$(ls -1t backups/oig-backup-*.tar.enc | head -n1)" >> /var/log/oig-restore-test.log 2>&1
 
    Nach dem ersten Lauf prüfen: letzte Log-Zeile `OK <datei>`, Statusdatei enthält `OK <ISO>`.
+   Externe Aufrufer der Cron-Endpunkte (`/api/cron/*`) übergeben `CRON_SECRET` ausschließlich als Header
+   `Authorization: Bearer <CRON_SECRET>`; ein Query-Parameter wird nicht akzeptiert (er stünde in Zugriffsprotokollen).
 7. **Erster Deploy mit Belegarchiv (Backfill)**: Bestandsrechnungen und -mahnungen werden vom Scheduler-Job
    `archive` nachträglich archiviert (Quelle `BACKFILL`), je Lauf höchstens `ARCHIVE_JOB_BATCH` Belege
    (Default 50, Lauf alle 15 min; bei ~1400 Belegen also rund 7 h). Gerendert wird im Web-Prozess; für weniger
@@ -136,3 +213,7 @@ Der Abruf von Bankumsätzen ist ab Werk **aus** (Einstellungen → Kontoabruf). 
 3. **Ein Prozess:** Die Freigabe-Sitzung lebt im Arbeitsspeicher; der Container läuft als einzelne Instanz. Ein Neustart während einer Freigabe bricht sie ab.
 4. **Scheduler:** Der Job `bank-fetch` läuft im Takt des Schedulers nach `mailbox`.
 5. **PIN:** Sie liegt, wenn gespeichert, nur verschlüsselt in der Datenbank (Schlüssel aus `AUTH_SECRET`); wird `AUTH_SECRET` geändert, muss sie neu eingegeben werden. Die Sicherung bleibt unverändert (Datenbank).
+
+## Zeitzone
+
+Die Zeitzone des Prozesses ist für die Fachlogik ohne Bedeutung: Stichtage, Nummernkreise, Fristen und Auswertungen laufen nach dem Berliner Kalender. Der Container darf `TZ=Europe/Berlin` setzen (etwa für lesbare Logzeiten); Ergebnisse ändern sich dadurch nicht. Die Unit-Tests laufen in der CI in UTC und in Europe/Berlin.

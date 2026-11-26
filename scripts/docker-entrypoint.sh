@@ -32,4 +32,6 @@ fi
 # END server-actions-key
 
 sh ./scripts/db-prepare.sh
+# Next.js ueberlaesst SIGTERM/SIGINT der Anwendung (src/instrumentation.ts: laufende Hintergrundaufgaben zu Ende fuehren).
+export NEXT_MANUAL_SIG_HANDLE=true
 exec node server.js

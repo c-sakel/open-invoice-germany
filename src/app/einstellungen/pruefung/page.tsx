@@ -8,6 +8,9 @@ import { AUDIT_EXPORT_MAX_PENDING } from "@/domain/audit/export";
 import { Card } from "@/components/ui/Card";
 import { DataTable } from "@/components/ui/DataTable";
 import { berlinDateKey } from "@/lib/berlin-time";
+import { archiveRoot } from "@/lib/archive/storage";
+import { attachmentsDir, diskSpace, readBackupStatus } from "@/domain/system/health";
+import { WATCHDOG_BACKUP_MAX_AGE_MS, WATCHDOG_MIN_FREE_RATIO } from "@/domain/system/watchdog";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +22,9 @@ export default async function PruefungSettingsPage() {
     dbInternal.invoice.count({ where: issued }),
     dbInternal.invoice.count({ where: { ...issued, archivedDocuments: { some: {} } } }),
   ]);
+  const [backup, archiveDisk, attachmentsDisk] = await Promise.all([readBackupStatus(), diskSpace(archiveRoot()), diskSpace(attachmentsDir())]);
+  const backupAgeMs = backup ? new Date().getTime() - Date.parse(backup.lastOkAt) : null;
+  const backupOk = backupAgeMs !== null && backupAgeMs <= WATCHDOG_BACKUP_MAX_AGE_MS;
   const today = berlinDateKey(new Date());
   const yearStart = `${new Date().getUTCFullYear()}-01-01`;
 
@@ -57,6 +63,35 @@ export default async function PruefungSettingsPage() {
             ]}
           />
         </div>
+        </div>
+      </Card>
+
+      <Card title="Sicherung und Speicherplatz">
+        <div className="space-y-2 text-sm" data-testid="betrieb-status">
+          <p data-testid="backup-status">
+            Letzte Sicherung:{" "}
+            {process.env.BACKUP_STATUS_FILE ? (
+              <span className={`font-medium ${backupOk ? "text-ledger" : "text-stamp"}`}>
+                {backup ? `${formatDateTimeDe(new Date(backup.lastOkAt))} (UTC)${backupOk ? "" : ", veraltet"}` : "nicht feststellbar"}
+              </span>
+            ) : (
+              <span className="text-ink-soft">nicht überwacht (BACKUP_STATUS_FILE nicht gesetzt)</span>
+            )}
+          </p>
+          {[
+            { label: "Belegarchiv", disk: archiveDisk },
+            { label: "Anhänge", disk: attachmentsDisk },
+          ].map(({ label, disk }) => {
+            const low = disk?.ratio != null && disk.ratio < WATCHDOG_MIN_FREE_RATIO;
+            return (
+              <p key={label}>
+                Freier Platz {label}:{" "}
+                <span className={`font-medium ${low ? "text-stamp" : "text-ledger"}`}>
+                  {disk ? `${(disk.freeBytes / 1024 ** 3).toFixed(1)} GB${disk.ratio != null ? ` (${Math.round(disk.ratio * 100)} %)` : ""}${low ? ", knapp" : ""}` : "nicht ermittelbar"}
+                </span>
+              </p>
+            );
+          })}
         </div>
       </Card>
 

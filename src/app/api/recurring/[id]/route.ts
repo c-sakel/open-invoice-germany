@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { updateRecurringStatusSchema } from "@/schemas";
 import { getActiveOrg } from "@/lib/org";
-import { getCurrentUserId } from "@/lib/auth/server";
+import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/lib/auth/require-session";
 import { updateRecurringInvoice } from "@/domain/recurring/update";
 import { RecurringError } from "@/domain/recurring/create";
 import { RecurringMissedPeriodsError, RecurringTimingChangeError } from "@/domain/recurring/errors";
@@ -27,7 +27,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const { id } = await ctx.params;
   try {
     const org = await getActiveOrg();
-    const actor = (await getCurrentUserId()) ?? "system";
+    const actor = await requireSessionActor();
     const body: unknown = await req.json();
 
     if (body && typeof body === "object" && "patch" in body) {
@@ -39,6 +39,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     const updated = await updateRecurringInvoice(org.id, id, { status, ...(missedPeriods ? { missedPeriods } : {}) }, actor);
     return NextResponse.json({ id: updated.id, status: updated.status });
   } catch (e) {
+    if (e instanceof AuthRequiredError) return authRequiredResponse();
     if (e instanceof z.ZodError) return NextResponse.json({ error: "Ungültige Eingabe." }, { status: 400 });
     if (e instanceof NotFoundError) return NextResponse.json({ error: e.message }, { status: 404 });
     if (e instanceof InvalidOperationError) return NextResponse.json({ error: e.message }, { status: 409 });

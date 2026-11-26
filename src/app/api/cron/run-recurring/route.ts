@@ -2,7 +2,7 @@
  * Cron-Endpunkt: erzeugt alle fälligen Abo-Rechnungen.
  *
  * Aufruf z. B. täglich. Schutz: ist CRON_SECRET gesetzt, muss der Header
- *   Authorization: Bearer <CRON_SECRET>   (oder ?secret=<CRON_SECRET>)
+ *   Authorization: Bearer <CRON_SECRET>
  * passen. Ohne gesetztes Secret ist der Endpunkt nur via Self-Hosting-Netz
  * erreichbar — für öffentliche Deployments unbedingt CRON_SECRET setzen.
  *
@@ -14,6 +14,7 @@ import { NextResponse } from "next/server";
 import { runScheduledJobs } from "@/domain/scheduler/runner";
 import type { RecurringRunSummary } from "@/domain/recurring/run";
 import { checkCronAuth } from "@/lib/cron-auth";
+import { describeError } from "@/lib/safe-error";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,7 +37,7 @@ async function handle(req: Request) {
     const generated = typeof result.summary.generated === "number" ? result.summary.generated : abos.reduce((n, s) => n + s.emitted.length, 0);
     return NextResponse.json({ ok: true, generated, abos, runId: result.runId });
   } catch (e) {
-    console.error("cron/run-recurring:", e);
+    console.error("cron/run-recurring:", describeError(e));
     return NextResponse.json({ error: "Lauf fehlgeschlagen." }, { status: 500 });
   }
 }

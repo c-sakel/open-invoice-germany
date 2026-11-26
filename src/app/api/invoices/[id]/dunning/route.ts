@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { dbInternal } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
-import { getCurrentUserId } from "@/lib/auth/server";
+import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/lib/auth/require-session";
 import { createDunning, DunningError } from "@/domain/dunning/create";
 import { NotFoundError } from "@/domain/errors";
 
@@ -27,7 +27,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const owned = await dbInternal.invoice.findFirst({ where: { id, orgId: org.id }, select: { id: true } });
     if (!owned) return NextResponse.json({ error: "Rechnung nicht gefunden" }, { status: 404 });
 
-    const actor = (await getCurrentUserId()) ?? "system";
+    const actor = await requireSessionActor();
     const bodyText = await req.text();
     const input = bodySchema.parse(bodyText ? JSON.parse(bodyText) : {});
 
@@ -38,6 +38,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     });
     return NextResponse.json({ dunningId: res.dunning.id, number: res.dunning.number, level: res.level, stage: res.stage });
   } catch (e) {
+    if (e instanceof AuthRequiredError) return authRequiredResponse();
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });
     }

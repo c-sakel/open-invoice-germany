@@ -19,6 +19,8 @@ import { createDownpaymentInvoice } from "@/domain/invoice/downpayment";
 import { createFinalInvoice } from "@/domain/invoice/final";
 import { createPartialInvoice } from "@/domain/invoice/partial";
 import { finalizeInvoice } from "@/domain/invoice/finalize";
+import { createDraftInvoice } from "@/domain/invoice/create";
+import { createInvoiceSchema } from "@/schemas";
 import { recordPayment } from "@/domain/invoice/payment";
 import { cancelInvoice } from "@/domain/invoice/cancel";
 import { cancelInvoicesBulk } from "@/domain/invoice/bulk-cancel";
@@ -702,6 +704,28 @@ describe("Parallele Zugriffe unter PostgreSQL", () => {
     expect(sum._sum.amountCents ?? 0).toBeLessThanOrEqual(inv.grossTotalCents);
     const after = await dbInternal.invoice.findFirstOrThrow({ where: { id: inv.id }, select: { paidAmountCents: true } });
     expect(after.paidAmountCents).toBe(sum._sum.amountCents);
+    expect((await verifyOrgChain(s.orgId, "UI")).valid).toBe(true);
+  });
+
+  it("5 Entwuerfe derselben Organisation parallel festschreiben, dazu ein Storno -> alle gelingen (Kettenkonflikt wird wiederholt), Nummern eindeutig, Kette gueltig", async () => {
+    const s = await newScenario();
+    const input = () => createInvoiceSchema.parse({
+      customerId: s.customerId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", deliveryDate: s.now,
+      paymentTerms: "Zahlbar innerhalb von 14 Tagen.",
+      lines: [{ description: "Leistung", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 }],
+    });
+    const toCancel = await finalizeInvoice((await createDraftInvoice(s.orgId, input(), { now: s.now })).id, { now: s.now });
+    // Entwuerfe nacheinander anlegen (Anlegen ist nicht Gegenstand dieses Tests); parallel laufen Festschreiben und Storno.
+    const drafts: { id: string }[] = [];
+    for (let i = 0; i < N; i++) drafts.push(await createDraftInvoice(s.orgId, input(), { now: s.now }));
+    const [fin, cancel] = await Promise.all([
+      Promise.allSettled(drafts.map((d) => finalizeInvoice(d.id, { now: s.now }))),
+      Promise.allSettled([cancelInvoice(toCancel.id, { orgId: s.orgId, now: s.now })]),
+    ]);
+    expect(rejected(fin), describeFailures(fin)).toHaveLength(0);
+    expect(rejected(cancel), describeFailures(cancel)).toHaveLength(0);
+    const numbers = fulfilled(fin).map((r) => r.value.number);
+    expect(new Set(numbers).size).toBe(N);
     expect((await verifyOrgChain(s.orgId, "UI")).valid).toBe(true);
   });
 });

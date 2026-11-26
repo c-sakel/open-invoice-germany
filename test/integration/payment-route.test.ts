@@ -14,6 +14,10 @@ vi.mock("@/lib/org", () => ({
   },
 }));
 
+vi.mock("@/lib/auth/server", () => ({
+  getCurrentUserId: async () => "tester",
+}));
+
 import { dbInternal } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { createDraftInvoice } from "@/domain/invoice/create";

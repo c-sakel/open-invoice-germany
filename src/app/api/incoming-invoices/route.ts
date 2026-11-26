@@ -5,7 +5,7 @@
  * dann `File.size`.
  */
 import { getActiveOrg } from "@/lib/org";
-import { getCurrentUserId } from "@/lib/auth/server";
+import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/lib/auth/require-session";
 import { isSameOriginRequest } from "@/lib/http/same-origin";
 import { jsonNoStore } from "@/lib/http/account-route";
 import { RateLimitError, rateLimit } from "@/lib/rate-limit";
@@ -41,10 +41,11 @@ export async function POST(req: Request) {
     const result = await receiveIncomingInvoice(org.id, new Uint8Array(await file.arrayBuffer()), {
       fileName: file.name,
       channel: "UPLOAD",
-      actor: (await getCurrentUserId()) ?? "system",
+      actor: await requireSessionActor(),
     });
     return jsonNoStore({ result: serializeReceiveResult(result) }, { status: 201 });
   } catch (e) {
+    if (e instanceof AuthRequiredError) return authRequiredResponse();
     if (e instanceof IncomingFormatError) return jsonNoStore({ error: e.message, code: e.code }, { status: e.code === "TOO_LARGE" ? 413 : 422 });
     if (e instanceof IncomingDuplicateError) {
       return jsonNoStore({ error: e.message, code: "ALREADY_RECEIVED", incomingInvoiceId: e.existingId }, { status: 409 });

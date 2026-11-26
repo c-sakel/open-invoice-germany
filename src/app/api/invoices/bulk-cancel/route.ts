@@ -3,7 +3,7 @@ import { z } from "zod";
 import { bulkCancelSchema } from "@/schemas";
 import { cancelInvoicesBulk } from "@/domain/invoice/bulk-cancel";
 import { getActiveOrg } from "@/lib/org";
-import { getCurrentUserId } from "@/lib/auth/server";
+import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/lib/auth/require-session";
 import { rateLimit, RateLimitError } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
@@ -22,10 +22,11 @@ export async function POST(req: Request) {
     const org = await getActiveOrg();
     rateLimit(`bulk-cancel:${org.id}`, { limit: 10, windowMs: 60_000 });
     const parsed = bulkCancelRequestSchema.parse(await req.json());
-    const actor = (await getCurrentUserId()) ?? "system";
+    const actor = await requireSessionActor();
     const result = await cancelInvoicesBulk(org.id, { ids: parsed.ids, reason: parsed.reason }, { actor });
     return NextResponse.json(result, { headers: NO_STORE });
   } catch (e) {
+    if (e instanceof AuthRequiredError) return authRequiredResponse();
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400, headers: NO_STORE });
     }

@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getActiveOrg } from "@/lib/org";
-import { getCurrentUserId } from "@/lib/auth/server";
 import { listApiKeys } from "@/domain/api-key/list";
 import { createApiKey } from "@/domain/api-key/create";
+import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/lib/auth/require-session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,12 +17,13 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const org = await getActiveOrg();
-    const userId = await getCurrentUserId();
+    const userId = await requireSessionActor();
     const body = await req.json();
     const key = await createApiKey(org.id, body, userId);
     // Token nur hier, einmalig — die Liste (GET) liefert es nie wieder.
     return NextResponse.json({ key }, { status: 201 });
   } catch (e) {
+    if (e instanceof AuthRequiredError) return authRequiredResponse();
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });
     }

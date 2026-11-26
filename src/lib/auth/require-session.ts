@@ -26,3 +26,8 @@ export async function requireActionOrg(): Promise<Awaited<ReturnType<typeof getA
   await requireSessionActor();
   return getActiveOrg();
 }
+
+/** Feste 401-Antwort fuer API-Routen, wenn der Proxy umgangen wurde und keine Sitzung vorliegt. */
+export function authRequiredResponse(): Response {
+  return Response.json({ error: "Nicht angemeldet." }, { status: 401, headers: { "Cache-Control": "no-store" } });
+}

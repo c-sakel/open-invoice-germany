@@ -2,11 +2,29 @@ import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE } from "@/lib/auth/session";
 import { userIdFromToken } from "@/lib/auth/server";
 import { portalSecurityHeaders } from "@/domain/portal/http";
+import { isSameOriginHeaders } from "@/lib/http/same-origin";
+import { applyCsp } from "@/lib/http/csp";
+
+// Herkunftspruefung: Jede aendernde Anfrage (nicht GET/HEAD/OPTIONS) an eine interne
+// Cookie-API-Route (/api/*) muss same-origin sein. SameSite=Lax allein genuegt nicht: Es
+// schuetzt nur vor anderen *Sites*, nicht vor anderen Subdomains derselben Site (same-site,
+// aber cross-origin) — eine fremde Subdomain koennte sonst mit `credentials: "include"`
+// Festschreibungen oder Stornos ausloesen. Ausgenommen sind Pfade mit eigener Authentifizierung
+// ohne Cookie (Bearer-API, Webhooks, Cron, Statuspfade).
+const ORIGIN_CHECK_EXEMPT = ["/api/v1/", "/api/public/", "/api/cron", "/api/health", "/api/live"];
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+export function requiresOriginCheck(method: string, pathname: string): boolean {
+  if (SAFE_METHODS.has(method.toUpperCase())) return false;
+  if (!pathname.startsWith("/api/")) return false;
+  return !ORIGIN_CHECK_EXEMPT.some((p) => matchesPublicPrefix(pathname, p));
+}
 
 // Öffentlich erreichbar (ohne Anmeldung):
 // "/api/health" (Phase 16a, Task 8): Erreichbarkeitspruefung fuer Monitoring/Docker, liefert nur
 // {"status"} ohne Daten; bewusst EXAKT (kein Praefix) — /api/health/x und /api/healthz bleiben geschuetzt.
-const PUBLIC_EXACT = new Set(["/", "/api/health"]);
+// "/api/live" (Liveness ohne Datenbank) ebenfalls exakt.
+const PUBLIC_EXACT = new Set(["/", "/api/health", "/api/live"]);
 // /api/cron ist nicht sessiongeschützt, sondern via CRON_SECRET in der Route.
 // /angebot/ (öffentliche Angebotsseite) und /api/public/ (öffentliche PDF-/Entscheidungs-
 // Aktionen, Phase 3b) sind bewusst die einzigen ohne-Login-Präfixe für Kundenzugriff —
@@ -50,7 +68,14 @@ export const PUBLIC_NO_NAV_HEADER = "x-oig-public";
 // server-seitig ueberschrieben (wie PUBLIC_NO_NAV_HEADER) — ein Client kann ihn nicht faelschen.
 export const PATHNAME_HEADER = "x-oig-pathname";
 
+/** Setzt die CSP auf jede Antwort (Seiten, Redirects, Fehler) — Details in src/lib/http/csp.ts. */
 export async function proxy(req: NextRequest) {
+  const res = await proxyInner(req);
+  applyCsp(res, req.nextUrl.pathname);
+  return res;
+}
+
+async function proxyInner(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // G1: der Client-Header wird bei JEDER Anfrage zuerst entfernt — ohne diesen Schritt
@@ -60,6 +85,10 @@ export async function proxy(req: NextRequest) {
   const headers = new Headers(req.headers);
   headers.delete(PUBLIC_NO_NAV_HEADER);
   headers.set(PATHNAME_HEADER, pathname);
+
+  if (requiresOriginCheck(req.method, pathname) && !isSameOriginHeaders(req.headers, req.nextUrl.host)) {
+    return NextResponse.json({ error: "Herkunft nicht erlaubt" }, { status: 403 });
+  }
 
   const isPublic = PUBLIC_EXACT.has(pathname) || PUBLIC_PREFIXES.some((p) => matchesPublicPrefix(pathname, p));
 
@@ -71,8 +100,8 @@ export async function proxy(req: NextRequest) {
       // — CDN/Browser duerfen sie nicht zwischenspeichern.
       res.headers.set("cache-control", "private, no-store");
       // Kundenportal: zusaetzlich kein Referer (Token in der URL) und keine Indexierung.
-      // Bezahlseite (Token in der URL): dieselben Header.
-      if (pathname.startsWith("/portal/") || pathname.startsWith("/api/public/portal/") || pathname.startsWith("/zahlen/") || pathname.startsWith("/api/public/payments/")) {
+      // Bezahlseite und Angebotsseite (ebenfalls Token in der URL): dieselben Header.
+      if (pathname.startsWith("/portal/") || pathname.startsWith("/api/public/portal/") || pathname.startsWith("/zahlen/") || pathname.startsWith("/api/public/payments/") || pathname.startsWith("/angebot/")) {
         for (const [k, v] of Object.entries(portalSecurityHeaders())) res.headers.set(k, v);
       }
       return res;
@@ -87,7 +116,7 @@ export async function proxy(req: NextRequest) {
     // /api/docs (Swagger UI, zeigt u. a. Beispieldaten) reichten bisher OHNE eigenen
     // cache-control-Header bis zu Cloudflare durch — Verteidigung in der Tiefe fuer eine
     // Produktivinstanz mit echten Kundendaten, analog /angebot//api/public/ oben (G3).
-    if (pathname === "/" || pathname === "/api/health" || matchesPublicPrefix(pathname, "/api/v1/") || matchesPublicPrefix(pathname, "/api/docs")) {
+    if (pathname === "/" || pathname === "/api/health" || pathname === "/api/live" || matchesPublicPrefix(pathname, "/api/v1/") || matchesPublicPrefix(pathname, "/api/docs")) {
       res.headers.set("cache-control", "private, no-store");
     }
     // Phase 17d: Anmelde-, Zweitfaktor- und Reset-Seiten nie zwischenspeichern; die Seite mit dem

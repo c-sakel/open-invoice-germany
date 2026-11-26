@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getActiveOrg } from "@/lib/org";
-import { getCurrentUserId } from "@/lib/auth/server";
+import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/lib/auth/require-session";
 import { addAttachment, type AttachmentDocType } from "@/domain/attachment/manage";
 import { AttachmentValidationError } from "@/lib/attachments/storage";
 import { RelationError } from "@/domain/relations";
@@ -80,8 +80,9 @@ export async function POST(req: Request) {
   let actor: string;
   try {
     org = await getActiveOrg();
-    actor = (await getCurrentUserId()) ?? "system";
+    actor = await requireSessionActor();
   } catch (e) {
+    if (e instanceof AuthRequiredError) return authRequiredResponse();
     console.error("POST /api/attachments:", e);
     return NextResponse.json({ error: "Anhang konnte nicht gespeichert werden." }, { status: 500 });
   }
@@ -103,6 +104,7 @@ export async function POST(req: Request) {
       const row = await addAttachment(org.id, docType, docId, { filename: f.name, mime: f.type || "application/octet-stream", buffer }, actor);
       saved.push({ id: row.id, filename: row.filename, mime: row.mime, sizeBytes: row.sizeBytes });
     } catch (e) {
+      if (e instanceof AuthRequiredError) return authRequiredResponse();
       firstError ??= e;
       const { message } = classifyError(e);
       failed.push({ filename: f.name, error: message });

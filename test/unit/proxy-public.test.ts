@@ -73,3 +73,17 @@ describe("/api/lookup (Phase 22a, Task 4)", () => {
     }
   });
 });
+
+describe("/api/live (Liveness ohne Datenbank)", () => {
+  it("ist exakt oeffentlich und no-store, /api/live/x bleibt geschuetzt", async () => {
+    expect(PUBLIC_PREFIXES).not.toContain("/api/live");
+    const ok = await proxy(new NextRequest("http://localhost/api/live"));
+    expect(ok.status).toBe(200);
+    expect(ok.headers.get("x-middleware-next")).toBe("1");
+    expect(ok.headers.get("cache-control")).toBe("private, no-store");
+    for (const p of ["/api/live/x", "/api/liveness"]) {
+      const res = await proxy(new NextRequest(`http://localhost${p}`));
+      expect(res.status, p).toBe(401);
+    }
+  });
+});

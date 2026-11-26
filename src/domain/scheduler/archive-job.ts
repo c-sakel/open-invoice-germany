@@ -4,15 +4,22 @@
  * hoechstens `batch` (Default Env `ARCHIVE_JOB_BATCH`, sonst `ARCHIVE_BATCH`) erfolgreiche Archivierungen bei hoechstens
  * `ARCHIVE_MAX_ATTEMPTS` Versuchen; fehlgeschlagene Belege werden im selben Lauf
  * uebersprungen (sie blockieren die uebrigen nicht). `ARCHIVE_FAILED` wird je Beleg und
- * Tag hoechstens einmal gemeldet (Dedupe-Schluessel in `onArchiveFailed`).
+ * Tag hoechstens einmal gemeldet (Dedupe-Schluessel in `onArchiveFailed`) und erst, wenn der
+ * Beleg seit mehr als 60 Minuten festgeschrieben ist; juengere Belege werden nur gezaehlt.
  */
 import { dbInternal } from "@/lib/db";
 import { ensureInvoiceArchive } from "@/domain/invoice/archive";
 import { ensureDunningArchive } from "@/domain/dunning/archive";
+import { onArchiveFailed } from "@/domain/notifications/hooks";
+import { describeError } from "@/lib/safe-error";
 import { runIncomingValidationBacklog } from "@/domain/incoming/validate";
 
 export const ARCHIVE_BATCH = 50;
 export const ARCHIVE_MAX_ATTEMPTS = 200;
+/** Hoechstens so viele Seiten je Lauf (Schutz gegen sehr viele dauerhaft defekte Belege). */
+const ARCHIVE_MAX_PAGES = 5;
+/** Ein Beleg, dessen Archivierung im Nachlauf scheitert, loest `ARCHIVE_FAILED` erst aus, wenn er so lange festgeschrieben ist. */
+export const ARCHIVE_ALERT_AFTER_MS = 60 * 60 * 1000;
 
 /**
  * Batchgroesse aus `ARCHIVE_JOB_BATCH` (Ganzzahl 1..ARCHIVE_MAX_ATTEMPTS), z. B. kleiner fuer
@@ -30,22 +37,34 @@ export async function runArchiveJob(now: Date, opts: { batch?: number; maxAttemp
   let archived = 0;
   let failed = 0;
 
-  const invoices = await dbInternal.invoice.findMany({
-    where: { status: { not: "DRAFT" }, number: { not: null }, archivedDocuments: { none: {} } },
-    orderBy: [{ finalizedAt: "asc" }, { id: "asc" }],
-    take: maxAttempts,
-    select: { id: true, orgId: true },
-  });
+  // Dauerhaft defekte Altbelege duerfen neuere nicht verdraengen: je Seite werden die in diesem Lauf
+  // gescheiterten uebersprungen (skip), bis `batch` Archivierungen gelungen sind oder die Liste endet.
   let ok = 0;
-  for (const inv of invoices) {
-    if (ok >= batch) break;
-    try {
-      await ensureInvoiceArchive(inv.orgId, inv.id, "SCHEDULER", now);
-      ok++;
-    } catch (e) {
-      failed++;
-      console.error("archive-job: Rechnung nicht archiviert", inv.id, e instanceof Error ? e.message : e);
+  let skip = 0;
+  for (let page = 0; page < ARCHIVE_MAX_PAGES && ok < batch; page++) {
+    const invoices = await dbInternal.invoice.findMany({
+      where: { status: { not: "DRAFT" }, number: { not: null }, archivedDocuments: { none: {} } },
+      orderBy: [{ finalizedAt: "asc" }, { id: "asc" }],
+      skip,
+      take: maxAttempts,
+      select: { id: true, orgId: true, finalizedAt: true, createdAt: true },
+    });
+    for (const inv of invoices) {
+      if (ok >= batch) break;
+      try {
+        await ensureInvoiceArchive(inv.orgId, inv.id, "SCHEDULER", now);
+        ok++;
+      } catch (e) {
+        failed++;
+        skip++;
+        console.error("archive-job: Rechnung nicht archiviert", inv.id, describeError(e));
+        const since = inv.finalizedAt ?? inv.createdAt;
+        if (since.getTime() < now.getTime() - ARCHIVE_ALERT_AFTER_MS) {
+          await onArchiveFailed(inv.orgId, { invoiceId: inv.id, at: now });
+        }
+      }
     }
+    if (invoices.length < maxAttempts) break;
   }
   archived += ok;
 

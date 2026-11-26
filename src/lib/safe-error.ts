@@ -27,3 +27,6 @@ export function describeError(e: unknown): DescribedError {
   out.message = looksSensitive(e.message) ? REDACTED : e.message;
   return out;
 }
+
+/** Fester Text fuer 500-Antworten: nie die Fehlermeldung nach aussen geben (Details nur im Log). */
+export const INTERNAL_ERROR_TEXT = "Interner Fehler";

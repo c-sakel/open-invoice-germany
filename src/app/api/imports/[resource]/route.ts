@@ -7,7 +7,7 @@
  */
 import { z } from "zod";
 import { getActiveOrg } from "@/lib/org";
-import { getCurrentUserId } from "@/lib/auth/server";
+import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/lib/auth/require-session";
 import { isSameOriginRequest } from "@/lib/http/same-origin";
 import { csvResponse } from "@/lib/http/csv-response";
 import { jsonNoStore } from "@/lib/http/account-route";
@@ -86,11 +86,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ resourc
       org.id,
       resource,
       { text, encoding, fileName: sanitizeFileName(file.name) ?? undefined, dryRun: mode === "preview", expectedHash, allowRepeat },
-      { actor: (await getCurrentUserId()) ?? "system", source: "UI", withSample: true },
+      { actor: await requireSessionActor(), source: "UI", withSample: true },
     );
     if (result.status === "imported") return jsonNoStore({ created: result.created, preview: result.preview }, { status: 201 });
     return jsonNoStore({ preview: result.preview });
   } catch (e) {
+    if (e instanceof AuthRequiredError) return authRequiredResponse();
     if (e instanceof ImportRejectedError) return jsonNoStore({ error: e.message, preview: e.preview }, { status: 422 });
     if (e instanceof CsvLimitError) return jsonNoStore({ error: e.message }, { status: 413 });
     if (e instanceof CsvFormatError) return jsonNoStore({ error: e.message, line: e.line ?? null }, { status: 400 });

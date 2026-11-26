@@ -11,7 +11,7 @@
  * gueltige, aber per Passwortwechsel entwertete Sitzung (pwc-Mismatch) — beide Faelle
  * unterscheidet erst `userIdFromToken`, nicht mehr `verifySessionToken` alleine.
  */
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { NextRequest } from "next/server";
 
 vi.mock("@/lib/auth/server", () => ({
@@ -198,6 +198,14 @@ describe("proxy", () => {
     }
   });
 
+  it("Angebotsseite: /angebot/x ohne Sitzung durchgelassen, ohne Referer und ohne Indexierung (Token in der URL)", async () => {
+    const res = await proxy(new NextRequest("http://localhost/angebot/abc"));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(res.headers.get("x-robots-tag")).toBe("noindex, nofollow");
+    expect(res.headers.get("cache-control")).toBe("private, no-store");
+  });
+
   it("Bezahlseite: /zahlen/x und /api/public/payments/x ohne Sitzung durchgelassen, mit Sicherheitsheadern", async () => {
     for (const path of ["/zahlen/abc", "/zahlen/abc/bezahlen", "/api/public/payments/mollie/abc"]) {
       const res = await proxy(new NextRequest(`http://localhost${path}`));
@@ -216,5 +224,137 @@ describe("proxy", () => {
     const api = await proxy(new NextRequest("http://localhost/api/public/portalx"));
     expect(api.headers.get("x-robots-tag")).toBeNull();
     expect(api.headers.get("referrer-policy")).toBeNull();
+  });
+});
+
+describe("Herkunftspruefung fuer Cookie-API-Routen", () => {
+  const cookie = { cookie: "oig_session=valid-token" };
+  function post(path: string, headers: Record<string, string> = {}, method = "POST"): NextRequest {
+    return new NextRequest(`http://localhost${path}`, { method, headers });
+  }
+
+  it("requiresOriginCheck: nur aendernde Methoden auf /api/*, ohne Bearer-/Webhook-/Cron-/Statuspfade", async () => {
+    const { requiresOriginCheck } = await import("@/proxy");
+    expect(requiresOriginCheck("POST", "/api/invoices/x/finalize")).toBe(true);
+    expect(requiresOriginCheck("DELETE", "/api/auth/logout")).toBe(true);
+    expect(requiresOriginCheck("GET", "/api/invoices")).toBe(false);
+    expect(requiresOriginCheck("HEAD", "/api/invoices")).toBe(false);
+    expect(requiresOriginCheck("OPTIONS", "/api/invoices")).toBe(false);
+    expect(requiresOriginCheck("POST", "/rechnungen")).toBe(false);
+    for (const p of ["/api/v1/Invoice", "/api/public/payments/mollie/abc", "/api/cron/run-recurring", "/api/health", "/api/live"]) {
+      expect(requiresOriginCheck("POST", p), p).toBe(false);
+    }
+    expect(requiresOriginCheck("POST", "/api/cronx")).toBe(true);
+    expect(requiresOriginCheck("POST", "/api/liveness")).toBe(true);
+  });
+
+  it("cross-site und same-site -> 403", async () => {
+    for (const site of ["cross-site", "same-site"]) {
+      const res = await proxy(post("/api/invoices/x/finalize", { ...cookie, "sec-fetch-site": site }));
+      expect(res.status, site).toBe(403);
+      expect((await res.json()).error).toBe("Herkunft nicht erlaubt");
+    }
+  });
+
+  it("same-origin mit Sitzung -> weiter", async () => {
+    const res = await proxy(post("/api/invoices/x/finalize", { ...cookie, "sec-fetch-site": "same-origin" }));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-middleware-next")).toBe("1");
+  });
+
+  it("ohne sec-fetch-site: fremde Origin -> 403, passende Origin -> weiter, ohne beide -> weiter", async () => {
+    expect((await proxy(post("/api/invoices/x/finalize", { ...cookie, origin: "https://andere.example" }))).status).toBe(403);
+    const ok = await proxy(post("/api/invoices/x/finalize", { ...cookie, origin: "http://localhost" }));
+    expect(ok.headers.get("x-middleware-next")).toBe("1");
+    const none = await proxy(post("/api/invoices/x/finalize", cookie));
+    expect(none.headers.get("x-middleware-next")).toBe("1");
+  });
+
+  it("hinter dem Proxy: x-forwarded-host entscheidet", async () => {
+    const ok = await proxy(post("/api/invoices/x/finalize", { ...cookie, origin: "https://rechnung.example", "x-forwarded-host": "rechnung.example" }));
+    expect(ok.headers.get("x-middleware-next")).toBe("1");
+    const bad = await proxy(post("/api/invoices/x/finalize", { ...cookie, origin: "https://andere.example", "x-forwarded-host": "rechnung.example" }));
+    expect(bad.status).toBe(403);
+  });
+
+  it("x-forwarded-host gesetzt, interner host abweichend: passende Origin -> weiter, sonst 403", async () => {
+    const h = { ...cookie, host: "app:3000", "x-forwarded-host": "rechnung.example" };
+    const ok = await proxy(post("/api/invoices/x/finalize", { ...h, origin: "https://rechnung.example" }));
+    expect(ok.headers.get("x-middleware-next")).toBe("1");
+    const internal = await proxy(post("/api/invoices/x/finalize", { ...h, origin: "http://app:3000" }));
+    expect(internal.status).toBe(403);
+  });
+
+  it("Bearer-API, Webhooks und Cron sind ausgenommen", async () => {
+    for (const p of ["/api/v1/Invoice", "/api/public/payments/mollie/abc", "/api/cron/run-recurring"]) {
+      const res = await proxy(post(p, { "sec-fetch-site": "cross-site" }));
+      expect(res.status, p).not.toBe(403);
+    }
+  });
+
+  it("GET cross-site wird nicht blockiert", async () => {
+    const res = await proxy(new NextRequest("http://localhost/api/invoices", { headers: { ...cookie, "sec-fetch-site": "cross-site" } }));
+    expect(res.status).not.toBe(403);
+  });
+
+  it("/api/auth/login cross-site -> 403 (auch oeffentliche Auth-Routen)", async () => {
+    expect((await proxy(post("/api/auth/login", { "sec-fetch-site": "cross-site" }))).status).toBe(403);
+    expect((await proxy(post("/api/auth/login", { "sec-fetch-site": "same-origin" }))).status).not.toBe(403);
+  });
+
+  describe("Content-Security-Policy", () => {
+    const csp = (r: Response) => r.headers.get("content-security-policy");
+
+    it("angemeldete Seite, /login, Redirect und /api/docs tragen die CSP", async () => {
+      const { SESSION_COOKIE } = await import("@/lib/auth/session");
+      const res = await proxy(new NextRequest("http://localhost/rechnungen", { headers: { cookie: `${SESSION_COOKIE}=valid-token` } }));
+      expect(csp(res)).toContain("frame-ancestors 'self'");
+      expect(csp(await proxy(new NextRequest("http://localhost/login")))).toContain("default-src 'self'");
+      expect(csp(await proxy(new NextRequest("http://localhost/rechnungen")))).toContain("default-src 'self'"); // Redirect
+      expect(csp(await proxy(new NextRequest("http://localhost/api/docs")))).toContain("default-src 'self'");
+    });
+
+    it("Portal: CSP und no-referrer; /api/invoices ohne CSP", async () => {
+      const portal = await proxy(new NextRequest("http://localhost/portal/abc"));
+      expect(csp(portal)).toContain("default-src 'self'");
+      expect(portal.headers.get("referrer-policy")).toBe("no-referrer");
+      expect(csp(await proxy(new NextRequest("http://localhost/api/invoices")))).toBeNull();
+    });
+  });
+});
+
+describe("proxy: CSP-Modus (SECURITY_CSP)", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("report-only: nur der Report-Only-Header", async () => {
+    vi.stubEnv("SECURITY_CSP", "report-only");
+    const res = await proxy(new NextRequest("http://localhost/login"));
+    expect(res.headers.get("content-security-policy-report-only")).toContain("default-src 'self'");
+    expect(res.headers.get("content-security-policy")).toBeNull();
+  });
+
+  it("off: kein CSP-Header", async () => {
+    vi.stubEnv("SECURITY_CSP", "off");
+    const res = await proxy(new NextRequest("http://localhost/login"));
+    expect(res.headers.get("content-security-policy")).toBeNull();
+    expect(res.headers.get("content-security-policy-report-only")).toBeNull();
+  });
+
+  it.each(["/angebot/abc", "/zahlen/abc"])("enforce: oeffentliche Seite %s traegt die CSP", async (path) => {
+    vi.stubEnv("SECURITY_CSP", "enforce");
+    const res = await proxy(new NextRequest(`http://localhost${path}`));
+    expect(res.headers.get("content-security-policy")).toContain("frame-ancestors 'self'");
+  });
+
+  it("geschuetzte Seite: auch die Weiterleitung auf /login traegt die CSP", async () => {
+    vi.stubEnv("SECURITY_CSP", "enforce");
+    const res = await proxy(new NextRequest("http://localhost/rechnungen"));
+    expect(res.status).toBe(307);
+    expect(res.headers.get("content-security-policy")).toContain("object-src 'none'");
+  });
+
+  it("interne API-Antworten tragen keine Seiten-CSP", async () => {
+    const res = await proxy(new NextRequest("http://localhost/api/x"));
+    expect(res.headers.get("content-security-policy")).toBeNull();
   });
 });

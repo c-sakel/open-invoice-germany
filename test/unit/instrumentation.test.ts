@@ -9,8 +9,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const startSchedulerMock = vi.hoisted(() => vi.fn());
+const stopSchedulerMock = vi.hoisted(() => vi.fn(async () => "idle"));
 vi.mock("@/domain/scheduler/loop", () => ({
   startScheduler: startSchedulerMock,
+  stopScheduler: stopSchedulerMock,
 }));
 
 const ORIGINAL_ENV = { ...process.env };
@@ -54,5 +56,46 @@ describe("register() (src/instrumentation.ts)", () => {
     const { register } = await import("@/instrumentation");
     await register();
     expect(startSchedulerMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Herunterfahren (NEXT_MANUAL_SIG_HANDLE=true)", () => {
+  async function registerAndSigterm(env: Record<string, string>): Promise<{ exit: ReturnType<typeof vi.spyOn>; handlers: (() => void)[] }> {
+    Object.assign(process.env, { NEXT_MANUAL_SIG_HANDLE: "true" }, env);
+    const handlers: (() => void)[] = [];
+    vi.spyOn(process, "once").mockImplementation(((ev: string, fn: () => void) => {
+      if (ev === "SIGTERM") handlers.push(fn);
+      return process;
+    }) as typeof process.once);
+    const exit = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never);
+    const { register } = await import("@/instrumentation");
+    await register();
+    return { exit, handlers };
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  it("registriert den Handler auch bei abgeschaltetem Scheduler (sonst endete der Prozess erst per SIGKILL)", async () => {
+    vi.useFakeTimers();
+    const { exit, handlers } = await registerAndSigterm({ SCHEDULER_ENABLED: "off", SHUTDOWN_DRAIN_MS: "0" });
+    expect(startSchedulerMock).not.toHaveBeenCalled();
+    expect(handlers).toHaveLength(1);
+    handlers[0]();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(exit).toHaveBeenCalledWith(0);
+  });
+
+  it("wartet die Mindestzeit ab, bevor der Prozess endet (laufende HTTP-Anfragen)", async () => {
+    vi.useFakeTimers();
+    const { exit, handlers } = await registerAndSigterm({ SHUTDOWN_DRAIN_MS: "10000" });
+    handlers[0]();
+    await vi.advanceTimersByTimeAsync(9_000);
+    expect(stopSchedulerMock).toHaveBeenCalled();
+    expect(exit).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1_500);
+    expect(exit).toHaveBeenCalledWith(0);
   });
 });

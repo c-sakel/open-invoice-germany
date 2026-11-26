@@ -55,7 +55,7 @@ describe("SCHEDULER_FAILED", () => {
     await runScheduledJobs({ jobs: ["dunning"], trigger: "MANUAL", now: min(0) });
     // haengender Lauf: RUNNING + alter Lock, jeweils nach dem ersten Fehler
     await dbInternal.schedulerRun.create({ data: { id: "stale-run-22c", job: "dunning", trigger: "MANUAL", status: "RUNNING", startedAt: min(10) } });
-    await dbInternal.schedulerLock.create({ data: { job: "dunning", runId: "stale-run-22c", lockedAt: min(10) } });
+    await dbInternal.schedulerLock.create({ data: { job: "dunning", runId: "stale-run-22c", lockedAt: new Date(Date.now() - 31 * 60_000) } });
     await runScheduledJobs({ jobs: ["dunning"], trigger: "MANUAL", now: min(60) });
     expect(await count(orgA)).toBe(1);
   });

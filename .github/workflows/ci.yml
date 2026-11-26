@@ -35,6 +35,9 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
+      # Fachliche Daten laufen nach Berliner Kalender; die Unit-Tests muessen in beiden Zeitzonen gruen sein.
+      - name: Unit-Tests in Europe/Berlin
+        run: TZ=Europe/Berlin npx vitest run test/unit
       - run: npm run build
         env:
           DATABASE_URL: "file:./dev.db"

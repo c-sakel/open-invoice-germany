@@ -6,6 +6,8 @@ import { FinalizeError } from "@/domain/invoice/finalize-error";
 import { NotFoundError } from "@/domain/errors";
 import { getActiveOrg } from "@/lib/org";
 import { TaxRateNotAllowedError } from "@/domain/settings/tax-rates";
+import { describeError, INTERNAL_ERROR_TEXT } from "@/lib/safe-error";
+import { AuthRequiredError, authRequiredResponse, requireSessionActor } from "@/lib/auth/require-session";
 
 export const runtime = "nodejs";
 
@@ -13,8 +15,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
   try {
     const org = await getActiveOrg();
+    const actor = await requireSessionActor();
     const input = partialCreditSchema.parse(await req.json());
-    const res = await createPartialCreditNote(id, input, { orgId: org.id });
+    const res = await createPartialCreditNote(id, input, { actor, orgId: org.id });
     return NextResponse.json({
       creditNoteId: res.creditNote.id,
       creditNoteNumber: res.creditNote.number,
@@ -22,6 +25,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       refundDueCents: res.refundDueCents,
     });
   } catch (e) {
+    if (e instanceof AuthRequiredError) return authRequiredResponse();
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });
     }
@@ -32,6 +36,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     if (e instanceof NotFoundError) return NextResponse.json({ error: e.message }, { status: 404 });
     if (e instanceof TaxRateNotAllowedError) return NextResponse.json({ error: e.message }, { status: 409 });
     const status = e instanceof CreditError || e instanceof FinalizeError ? 422 : 500;
+    if (status === 500) {
+      console.error("/api/invoices/[id]/credit:", describeError(e));
+      return NextResponse.json({ error: INTERNAL_ERROR_TEXT }, { status });
+    }
     return NextResponse.json({ error: (e as Error).message }, { status });
   }
 }

@@ -222,7 +222,7 @@ describe("Phase 6 — runScheduledJobs (scheduler/runner.ts)", () => {
   });
 
   it("Lock: alter (stale) SchedulerLock -> entfernt, SchedulerRun auf FAILED gesetzt, Job laeuft trotzdem", async () => {
-    const started = new Date("2051-06-09T09:00:00.000Z"); // 70 Min vor `now` -> stale (> 30 Min)
+    const started = new Date(Date.now() - 70 * 60_000); // 70 Min alt -> stale (> 30 Min, Wanduhr)
     const stale = await dbInternal.schedulerRun.create({ data: { job: "recurring", trigger: "SCHEDULER", status: "RUNNING", startedAt: started } });
     await dbInternal.schedulerLock.create({ data: { job: "recurring", runId: stale.id, lockedAt: started } });
 
@@ -256,7 +256,7 @@ describe("Phase 6 — runScheduledJobs (scheduler/runner.ts)", () => {
     const results = await runScheduledJobs({ trigger: "MANUAL", now });
     expect(results.map((r) => r.job)).toEqual(["fx", "recurring", "auto-send", "dunning", "postal", "archive", "mailbox", "bank-fetch", "online-payments", "payment-rules", "notifications", "webhooks", "audit", "cleanup"]);
     expect(results.every((r) => r.ok)).toBe(true);
-  });
+  }, 60_000); // voller Lauf über alle Organisationen der gemeinsamen Test-DB
 });
 
 // Phase 7, Task 2 (§33) — RecurringInvoice.autoSend: `runDueRecurring` versendet die
@@ -348,5 +348,26 @@ describe("Phase 7 — RecurringInvoice.autoSend (recurring/run.ts)", () => {
     expect(summary.emitted).toHaveLength(1);
     expect(summary.emitted[0]!.emailStatus).toBe("SKIPPED");
     expect(provider.sent).toHaveLength(0);
+  });
+});
+
+describe("Herunterfahren (Runner)", () => {
+  it("bei gesetztem stopping: alle Jobs skipped=shutdown, kein SchedulerRun, keine Sperre", async () => {
+    const before = await dbInternal.schedulerRun.count();
+    const prev = globalThis.__oigSchedulerLoop;
+    globalThis.__oigSchedulerLoop = { started: true, running: false, stopping: true, current: null, timer: null, startTimer: null };
+    try {
+      const results = await runScheduledJobs({ trigger: "MANUAL", now: new Date("2320-06-09T10:00:00.000Z") });
+      expect(results.length).toBeGreaterThan(0);
+      for (const r of results) {
+        expect(r.ok).toBe(true);
+        expect(r.summary).toEqual({ skipped: "shutdown" });
+        expect(r.runId).toBeUndefined();
+      }
+      expect(await dbInternal.schedulerRun.count()).toBe(before);
+      expect(await dbInternal.schedulerLock.count()).toBe(0);
+    } finally {
+      globalThis.__oigSchedulerLoop = prev;
+    }
   });
 });
