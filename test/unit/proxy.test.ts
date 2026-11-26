@@ -218,3 +218,71 @@ describe("proxy", () => {
     expect(api.headers.get("referrer-policy")).toBeNull();
   });
 });
+
+describe("Herkunftspruefung fuer Cookie-API-Routen", () => {
+  const cookie = { cookie: "oig_session=valid-token" };
+  function post(path: string, headers: Record<string, string> = {}, method = "POST"): NextRequest {
+    return new NextRequest(`http://localhost${path}`, { method, headers });
+  }
+
+  it("requiresOriginCheck: nur aendernde Methoden auf /api/*, ohne Bearer-/Webhook-/Cron-/Statuspfade", async () => {
+    const { requiresOriginCheck } = await import("@/proxy");
+    expect(requiresOriginCheck("POST", "/api/invoices/x/finalize")).toBe(true);
+    expect(requiresOriginCheck("DELETE", "/api/auth/logout")).toBe(true);
+    expect(requiresOriginCheck("GET", "/api/invoices")).toBe(false);
+    expect(requiresOriginCheck("HEAD", "/api/invoices")).toBe(false);
+    expect(requiresOriginCheck("OPTIONS", "/api/invoices")).toBe(false);
+    expect(requiresOriginCheck("POST", "/rechnungen")).toBe(false);
+    for (const p of ["/api/v1/Invoice", "/api/public/payments/mollie/abc", "/api/cron/run-recurring", "/api/health", "/api/live"]) {
+      expect(requiresOriginCheck("POST", p), p).toBe(false);
+    }
+    expect(requiresOriginCheck("POST", "/api/cronx")).toBe(true);
+    expect(requiresOriginCheck("POST", "/api/liveness")).toBe(true);
+  });
+
+  it("cross-site und same-site -> 403", async () => {
+    for (const site of ["cross-site", "same-site"]) {
+      const res = await proxy(post("/api/invoices/x/finalize", { ...cookie, "sec-fetch-site": site }));
+      expect(res.status, site).toBe(403);
+      expect((await res.json()).error).toBe("Herkunft nicht erlaubt");
+    }
+  });
+
+  it("same-origin mit Sitzung -> weiter", async () => {
+    const res = await proxy(post("/api/invoices/x/finalize", { ...cookie, "sec-fetch-site": "same-origin" }));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-middleware-next")).toBe("1");
+  });
+
+  it("ohne sec-fetch-site: fremde Origin -> 403, passende Origin -> weiter, ohne beide -> weiter", async () => {
+    expect((await proxy(post("/api/invoices/x/finalize", { ...cookie, origin: "https://andere.example" }))).status).toBe(403);
+    const ok = await proxy(post("/api/invoices/x/finalize", { ...cookie, origin: "http://localhost" }));
+    expect(ok.headers.get("x-middleware-next")).toBe("1");
+    const none = await proxy(post("/api/invoices/x/finalize", cookie));
+    expect(none.headers.get("x-middleware-next")).toBe("1");
+  });
+
+  it("hinter dem Proxy: x-forwarded-host entscheidet", async () => {
+    const ok = await proxy(post("/api/invoices/x/finalize", { ...cookie, origin: "https://rechnung.example", "x-forwarded-host": "rechnung.example" }));
+    expect(ok.headers.get("x-middleware-next")).toBe("1");
+    const bad = await proxy(post("/api/invoices/x/finalize", { ...cookie, origin: "https://andere.example", "x-forwarded-host": "rechnung.example" }));
+    expect(bad.status).toBe(403);
+  });
+
+  it("Bearer-API, Webhooks und Cron sind ausgenommen", async () => {
+    for (const p of ["/api/v1/Invoice", "/api/public/payments/mollie/abc", "/api/cron/run-recurring"]) {
+      const res = await proxy(post(p, { "sec-fetch-site": "cross-site" }));
+      expect(res.status, p).not.toBe(403);
+    }
+  });
+
+  it("GET cross-site wird nicht blockiert", async () => {
+    const res = await proxy(new NextRequest("http://localhost/api/invoices", { headers: { ...cookie, "sec-fetch-site": "cross-site" } }));
+    expect(res.status).not.toBe(403);
+  });
+
+  it("/api/auth/login cross-site -> 403 (auch oeffentliche Auth-Routen)", async () => {
+    expect((await proxy(post("/api/auth/login", { "sec-fetch-site": "cross-site" }))).status).toBe(403);
+    expect((await proxy(post("/api/auth/login", { "sec-fetch-site": "same-origin" }))).status).not.toBe(403);
+  });
+});

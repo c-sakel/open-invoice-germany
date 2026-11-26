@@ -2,6 +2,22 @@ import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE } from "@/lib/auth/session";
 import { userIdFromToken } from "@/lib/auth/server";
 import { portalSecurityHeaders } from "@/domain/portal/http";
+import { isSameOriginHeaders } from "@/lib/http/same-origin";
+
+// Herkunftspruefung: Jede aendernde Anfrage (nicht GET/HEAD/OPTIONS) an eine interne
+// Cookie-API-Route (/api/*) muss same-origin sein. SameSite=Lax allein genuegt nicht: Es
+// schuetzt nur vor anderen *Sites*, nicht vor anderen Subdomains derselben Site (same-site,
+// aber cross-origin) — eine fremde Subdomain koennte sonst mit `credentials: "include"`
+// Festschreibungen oder Stornos ausloesen. Ausgenommen sind Pfade mit eigener Authentifizierung
+// ohne Cookie (Bearer-API, Webhooks, Cron, Statuspfade).
+const ORIGIN_CHECK_EXEMPT = ["/api/v1/", "/api/public/", "/api/cron", "/api/health", "/api/live"];
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+export function requiresOriginCheck(method: string, pathname: string): boolean {
+  if (SAFE_METHODS.has(method.toUpperCase())) return false;
+  if (!pathname.startsWith("/api/")) return false;
+  return !ORIGIN_CHECK_EXEMPT.some((p) => matchesPublicPrefix(pathname, p));
+}
 
 // Öffentlich erreichbar (ohne Anmeldung):
 // "/api/health" (Phase 16a, Task 8): Erreichbarkeitspruefung fuer Monitoring/Docker, liefert nur
@@ -60,6 +76,10 @@ export async function proxy(req: NextRequest) {
   const headers = new Headers(req.headers);
   headers.delete(PUBLIC_NO_NAV_HEADER);
   headers.set(PATHNAME_HEADER, pathname);
+
+  if (requiresOriginCheck(req.method, pathname) && !isSameOriginHeaders(req.headers, req.nextUrl.host)) {
+    return NextResponse.json({ error: "Herkunft nicht erlaubt" }, { status: 403 });
+  }
 
   const isPublic = PUBLIC_EXACT.has(pathname) || PUBLIC_PREFIXES.some((p) => matchesPublicPrefix(pathname, p));
 
