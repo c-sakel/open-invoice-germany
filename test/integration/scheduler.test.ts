@@ -256,7 +256,7 @@ describe("Phase 6 — runScheduledJobs (scheduler/runner.ts)", () => {
     const results = await runScheduledJobs({ trigger: "MANUAL", now });
     expect(results.map((r) => r.job)).toEqual(["fx", "recurring", "auto-send", "dunning", "postal", "archive", "mailbox", "bank-fetch", "online-payments", "payment-rules", "notifications", "webhooks", "audit", "cleanup"]);
     expect(results.every((r) => r.ok)).toBe(true);
-  });
+  }, 60_000); // voller Lauf über alle Organisationen der gemeinsamen Test-DB
 });
 
 // Phase 7, Task 2 (§33) — RecurringInvoice.autoSend: `runDueRecurring` versendet die

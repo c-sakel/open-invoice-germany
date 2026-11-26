@@ -85,5 +85,5 @@ describe("runWatchdog", () => {
   it("runNotificationsJob ruft den Waechter einmal je Lauf auf (Befund auch ohne Organisationsfilter)", async () => {
     await runNotificationsJob(NOW);
     expect(await count("BACKUP_STALE")).toBe(1);
-  });
+  }, 60_000); // voller Lauf über alle Organisationen der gemeinsamen Test-DB
 });
