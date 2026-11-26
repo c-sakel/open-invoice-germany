@@ -20,7 +20,7 @@ import { intervalLabel } from "@/lib/recurring";
 import { NotFoundError, InvalidOperationError } from "@/domain/errors";
 import { TaxRateNotAllowedError } from "@/domain/settings/tax-rates";
 import { MissedPeriodsChoice, BillingTiming, RecurInterval, TaxScheme, currencyCodeSchema, DocLanguageSchema, createRecurringSchema, updateRecurringSchema } from "@/schemas";
-import { findPreviewPreviousEnd } from "@/domain/recurring/last-billed";
+import { findPreviewBasis, type PreviewBasis } from "@/domain/recurring/last-billed";
 import { serializeNextPeriods } from "@/api/serializers/recurring";
 import { editorLineSchema, ToolError, type McpToolsContext, type Result } from "./context";
 
@@ -162,8 +162,8 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
         orderBy: { nextRunDate: "asc" },
       });
       // Vorschau wie der Lauf: nur aktive, nachtraeglich abgerechnete Bestandsabos ohne Ankertag brauchen eine Abfrage.
-      const previousEnds = new Map<string, Date | null>();
-      for (const r of recs) previousEnds.set(r.id, await findPreviewPreviousEnd(dbInternal, r));
+      const previews = new Map<string, PreviewBasis>();
+      for (const r of recs) previews.set(r.id, await findPreviewBasis(dbInternal, r));
       return ctx.ok(
         JSON.stringify(
           recs.map((r) => ({
@@ -174,7 +174,7 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
             status: r.status,
             billingTiming: r.billingTiming,
             nextRunDate: r.status === "ENDED" ? null : r.nextRunDate.toISOString().slice(0, 10),
-            nextPeriods: serializeNextPeriods(r, previousEnds.get(r.id) ?? null),
+            nextPeriods: serializeNextPeriods(r, previews.get(r.id)?.previousEnd ?? null, previews.get(r.id)?.anchorDay ?? r.anchorDay),
             issued: r.issuedCount,
             autoFinalize: r.autoFinalize,
             collectiveBilling: r.collectiveBilling,

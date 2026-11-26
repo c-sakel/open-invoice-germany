@@ -52,8 +52,8 @@ const PROCESS_STARTED_AT = new Date();
 export interface RunWatchdogOptions {
   startedAt?: Date;
   /**
-   * Ist der In-App-Scheduler aktiv (Standard: SCHEDULER_ENABLED)? Nur dann gibt es SCHEDULER_STALE;
-   * im reinen Cron-Betrieb laufen Jobs von aussen und wuerden sonst dauerhaft als "nie gelaufen" gemeldet.
+   * Ist der In-App-Scheduler aktiv (Standard: SCHEDULER_ENABLED)? Ohne ihn werden nur Jobs ohne
+   * bisherigen OK-Lauf ausgenommen (sie laufen von aussen und wuerden sonst dauerhaft als "nie gelaufen" gemeldet).
    */
   schedulerEnabled?: boolean;
   /** Nur Jobs dieser Liste pruefen (Standard: alle). */
@@ -66,7 +66,11 @@ export async function runWatchdog(now: Date, opts: RunWatchdogOptions = {}): Pro
   const all = await lastOkByJob();
   const wanted = new Set<string>(opts.jobs ?? JOB_ORDER);
   const schedulerEnabled = opts.schedulerEnabled ?? isSchedulerEnabled();
-  const okByJob = schedulerEnabled ? Object.fromEntries(Object.entries(all).filter(([job]) => wanted.has(job))) : {};
+  // Cron-Betrieb: Jobs ohne bisherigen OK-Lauf laufen von aussen und gelten nicht als "nie gelaufen";
+  // Jobs mit frueherem OK-Lauf werden weiter gegen die Schwelle geprueft.
+  const okByJob = Object.fromEntries(
+    Object.entries(all).filter(([job, lastOkAt]) => wanted.has(job) && (schedulerEnabled || lastOkAt !== null)),
+  );
   const backupStatus = await readBackupStatus();
   const [archive, attachments] = await Promise.all([diskSpace(archiveRoot()), diskSpace(attachmentsDir())]);
   const findings = evaluateWatchdog({

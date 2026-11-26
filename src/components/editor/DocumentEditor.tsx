@@ -11,7 +11,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import { useRouter } from "next/navigation";
 import { finalizeAction } from "@/app/actions/invoices";
 import { ConfirmDialog, type ConfirmDialogHandle } from "@/components/ui/ConfirmDialog";
-import { draftReducer, emptyDraft, toInvoicePayload, toDocumentPayload, toDeliveryNotePayload, validateDraft, type DraftState } from "@/lib/editor/draft";
+import { draftReducer, emptyDraft, toInvoicePayload, toDocumentPayload, toDeliveryNotePayload, validateDraft, shouldSkipQuickSave, type DraftState } from "@/lib/editor/draft";
 import { computeDraftTotals } from "@/lib/editor/totals";
 import type { EditorMode } from "@/lib/editor/constants";
 import type { EffectivePrintOptions } from "@/lib/pdf/theme";
@@ -355,6 +355,11 @@ export function DocumentEditor({
     return () => clearTimeout(t);
   }, [justSaved]);
   async function quickSave(): Promise<void> {
+    // Ohne Aenderung nichts schreiben (kein ChangeLog-/Aktivitaetseintrag mit leerem Diff).
+    if (shouldSkipQuickSave(draft)) {
+      setJustSaved(true);
+      return;
+    }
     const id = await save({ navigate: false });
     if (id) setJustSaved(true);
   }
